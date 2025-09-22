@@ -16,14 +16,14 @@ CACHEPOOL_DIR := $(shell git rev-parse --show-toplevel 2>/dev/null || echo $$CAC
 SOFTWARE_DIR ?= ${CACHEPOOL_DIR}/software
 
 # Host compilers (for DPI, simulators, tools)
-CXX ?= /usr/pack/gcc-11.2.0-af/linux-x64/bin/g++
-CC  ?= /usr/pack/gcc-11.2.0-af/linux-x64/bin/gcc
+CXX := /usr/pack/gcc-11.2.0-af/linux-x64/bin/g++
+CC  := /usr/pack/gcc-11.2.0-af/linux-x64/bin/gcc
 CXX_PATH ?= $(shell realpath -P $(CXX))
 CC_PATH  ?= $(shell realpath -P $(CC))
 GCC_LIB  ?= /usr/pack/gcc-11.2.0-af/linux-x64/lib64
 
 # Tools
-CMAKE  ?= cmake
+CMAKE  ?= cmake-3.28.3
 PYTHON ?= python3.6
 
 # -------- Toolchain (exports GCC/LLVM/Spike/Bender install dirs) --------
