@@ -139,6 +139,15 @@ package cachepool_pkg;
 
   localparam fpu_implementation_t FPUImplementation [NumCores] = '{default: FPUImplementation_Core};
 
+  ///////////////////////////////
+  //  CachePool L0 (HPDcache)  //
+  ///////////////////////////////
+
+  // Address width of cache
+  localparam int unsigned L0AddrWidth         = `ifdef ADDR_WIDTH `ADDR_WIDTH `else 0 `endif;
+  // Number of cache controller (private L0 to each CC)
+  localparam int unsigned NumL0CacheCtrl      = `ifdef NUM_CORES_PER_TILE `NUM_CORES_PER_TILE `else 0 `endif;
+
   ////////////////////
   //  CachePool L1  //
   ////////////////////

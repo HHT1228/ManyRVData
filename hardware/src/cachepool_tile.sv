@@ -17,6 +17,7 @@
 `include "snitch_vm/typedef.svh"
 `include "tcdm_interface/assign.svh"
 `include "tcdm_interface/typedef.svh"
+`include "hpdcache_typedef.svh"
 
 /// Tile implementation for CachePool
 module cachepool_tile
@@ -24,6 +25,7 @@ module cachepool_tile
   import spatz_pkg::*;
   import fpnew_pkg::fpu_implementation_t;
   import snitch_pma_pkg::snitch_pma_t;
+  import hpdcache_pkg::*;
   #(
     /// Width of physical address.
     parameter int                     unsigned               AxiAddrWidth                       = 48,
@@ -244,6 +246,88 @@ module cachepool_tile
     default           : '0
   };
 
+  // L0 HPDCache constants
+  localparam int unsigned HPDCACHE_NREQUESTERS = NrTCDMPortsPerCore,
+
+  // TODO: Make these parameters configurable (in config.mk, cachepool_pkg.sv)
+  localparam hpdcache_pkg::hpdcache_user_cfg_t HPDcacheUserCfg = '{
+      nRequesters: HPDCACHE_NREQUESTERS,
+      paWidth: 21,          // TODO: need test and confirm, is this tag width? (VIPT)
+      wordWidth: 32,
+      sets: 32,
+      ways: 4,
+      clWords: 16,
+      reqWords: 1,
+      reqTransIdWidth: 6,
+      reqSrcIdWidth: 3,
+      victimSel: hpdcache_pkg::HPDCACHE_VICTIM_RANDOM,
+      dataWaysPerRamWord: 2,
+      dataSetsPerRam: 32,
+      dataRamByteEnable: 1'b1,
+      accessWords: 8,
+      mshrSets: 16,
+      mshrWays: 2,
+      mshrWaysPerRamWord: 2,
+      mshrSetsPerRam: 16,
+      mshrRamByteEnable: 1'b1,
+      mshrUseRegbank: 1,
+      cbufEntries: 2,
+      refillCoreRspFeedthrough: 1'b1,
+      refillFifoDepth: 2,
+      wbufDirEntries: 1,
+      wbufDataEntries: 1,
+      wbufWords: 16,          // Unsure
+      wbufTimecntWidth: 3,
+      rtabEntries: 2,
+      flushEntries: 2,
+      flushFifoDepth: 2,
+      memAddrWidth: L1AddrWidth,
+      memIdWidth: 6,
+      memDataWidth: L1LineWidth,
+      wtEn: 1'b1,
+      wbEn: 1'b0,             // Disable write-back
+      lowLatency: 1'b1
+  },
+
+  localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcache_pkg::hpdcacheBuildConfig(
+      HPDcacheUserCfg
+  ),
+
+  localparam type hpdcache_mem_addr_t = logic [HPDcacheCfg.u.memAddrWidth-1:0],
+  localparam type hpdcache_mem_id_t = logic [HPDcacheCfg.u.memIdWidth-1:0],
+  localparam type hpdcache_mem_data_t = logic [HPDcacheCfg.u.memDataWidth-1:0],
+  localparam type hpdcache_mem_be_t = logic [HPDcacheCfg.u.memDataWidth/8-1:0],
+  localparam type hpdcache_mem_req_t =
+      `HPDCACHE_DECL_MEM_REQ_T(hpdcache_mem_addr_t, hpdcache_mem_id_t),
+  localparam type hpdcache_mem_resp_r_t =
+      `HPDCACHE_DECL_MEM_RESP_R_T(hpdcache_mem_id_t, hpdcache_mem_data_t),
+  localparam type hpdcache_mem_req_w_t =
+      `HPDCACHE_DECL_MEM_REQ_W_T(hpdcache_mem_data_t, hpdcache_mem_be_t),
+  localparam type hpdcache_mem_resp_w_t =
+      `HPDCACHE_DECL_MEM_RESP_W_T(hpdcache_mem_id_t),
+
+  localparam type hpdcache_tag_t = logic [HPDcacheCfg.tagWidth-1:0],
+  localparam type hpdcache_data_word_t = logic [HPDcacheCfg.u.wordWidth-1:0],
+  localparam type hpdcache_data_be_t = logic [HPDcacheCfg.u.wordWidth/8-1:0],
+  localparam type hpdcache_req_offset_t = logic [HPDcacheCfg.reqOffsetWidth-1:0],
+  localparam type hpdcache_req_data_t = hpdcache_data_word_t [HPDcacheCfg.u.reqWords-1:0],
+  localparam type hpdcache_req_be_t = hpdcache_data_be_t [HPDcacheCfg.u.reqWords-1:0],
+  localparam type hpdcache_req_sid_t = logic [HPDcacheCfg.u.reqSrcIdWidth-1:0],
+  localparam type hpdcache_req_tid_t = logic [HPDcacheCfg.u.reqTransIdWidth-1:0],
+  localparam type hpdcache_req_t =
+      `HPDCACHE_DECL_REQ_T(hpdcache_req_offset_t,
+                           hpdcache_req_data_t,
+                           hpdcache_req_be_t,
+                           hpdcache_req_sid_t,
+                           hpdcache_req_tid_t,
+                           hpdcache_tag_t),
+  localparam type hpdcache_rsp_t =
+      `HPDCACHE_DECL_RSP_T(hpdcache_req_data_t,
+                           hpdcache_req_sid_t,
+                           hpdcache_req_tid_t),
+
+  localparam type hpdcache_wbuf_timecnt_t = logic [HPDcacheCfg.u.wbufTimecntWidth-1:0]
+
   // --------
   // Typedefs
   // --------
@@ -445,6 +529,20 @@ module cachepool_tile
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] cache_rsp_write;
   data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] cache_rsp_data;
   tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] cache_rsp_meta;
+
+  // For L0 cache
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_valid;
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_ready;
+  tcdm_addr_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_addr_offset;
+  tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_meta;
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_write;
+  data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_data;
+
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_valid;
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_ready;
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_write;
+  data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_data;
+  tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_meta;
 
   logic            [NumL1CacheCtrl-1:0][NumTagBankPerCtrl-1:0] l1_tag_bank_req;
   logic            [NumL1CacheCtrl-1:0][NumTagBankPerCtrl-1:0] l1_tag_bank_we;
@@ -696,6 +794,167 @@ module cachepool_tile
   logic                   [NumL1CacheCtrl-1 : 0] cache_refill_req_valid, cache_refill_req_ready;
   cache_refill_rsp_chan_t [NumL1CacheCtrl-1 : 0] cache_refill_rsp;
   logic                   [NumL1CacheCtrl-1 : 0] cache_refill_rsp_valid, cache_refill_rsp_ready;
+
+  // Prepare the cache request for L0
+  // TODO: spill reg?
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_cache_connect
+    for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_signals
+      assign l0_cache_req_valid[cb][j] = cache_req[j][cb].q_valid;
+      // assign l0_cache_req_addr [cb][j] = cache_req[j][cb].q.addr;
+      assign l0_cache_req_addr_offset [cb][j] = cache_req[j][cb].q.addr[dynamic_offset-1:0];
+      assign l0_cache_req_meta [cb][j] = cache_req[j][cb].q.user;
+      assign l0_cache_req_write[cb][j] = cache_req[j][cb].q.write;
+      assign l0_cache_req_data [cb][j] = cache_req[j][cb].q.data;
+
+      // TODO: handle rsp signals
+      // assign cache_rsp_reg.p_valid = cache_rsp_valid[cb][j];
+      // assign cache_rsp_reg.q_ready = cache_req_ready[cb][j];
+      // assign cache_rsp_reg.p.data  = cache_rsp_data [cb][j];
+      // assign cache_rsp_reg.p.user  = cache_rsp_meta [cb][j];
+
+      // assign cache_rsp_reg.p.write = cache_rsp_write[cb][j];
+    end
+  end
+
+  
+  // Assign processed signals to hpd-format signals
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_req_valid, hpd_l0_cache_req_ready;
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_rsp_valid;
+  hpdcache_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req;
+  hpdcache_rsp_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp;
+  hpdcache_tag_t l0_cache_tag;
+  logic l0_wbuf_empty;
+
+  assign hpd_l0_cache_req_valid = l0_cache_req_valid;
+  assign l0_cache_req.addr_offset = l0_cache_req_addr_offset[dynamic_offset-1:0];
+  assign l0_cache_req.wdata = l0_cache_req_data;
+  // BE
+  assign l0_cache_req.size = $clog2(DataWidth/8);
+  assign l0_cache_req.sid  = l0_cache_req_meta.core_id;
+  assign l0_cache_req.tid  = l0_cache_req_meta.req_id;
+  assign l0_cache_req.need_rsp = !l0_cache_req_write;
+  assign l0_cache_req.op = l0_cache_req_write ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
+  // TODO: AMO
+
+  // Memory interface signals (interfacing L0 and L1)
+  logic [NumL0CacheCtrl-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_mem_req_read;
+  logic [NumL0CacheCtrl-1:0] hpd_l0_mem_resp_read_ready, hpd_l0_mem_resp_read_valid;
+  hpdcache_mem_resp_t [NumL0CacheCtrl-1:0] hpd_l0_mem_resp_read;
+  logic [NumL0CacheCtrl-1:0] l0_mem_req_write_ready, l0_mem_req_write_valid;
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_mem_req_write;
+  logic [NumL0CacheCtrl-1:0] l0_mem_req_write_data_ready, l0_mem_req_write_data_valid;
+  hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0] l0_mem_req_write_data;
+  logic [NumL0CacheCtrl-1:0] l0_mem_resp_write_ready, l0_mem_resp_write_valid;
+  hpdcache_mem_resp_w_t [NumL0CacheCtrl-1:0] l0_mem_resp_write;
+
+  // for (genvar i = 0; i < NrTCDMPortsPerCore; i++) begin: gen_req_transpose
+  //   for (genvar j = 0; j < NumL1CacheCtrl; j++) begin:
+      // Cache request valid
+      // assign l0_cache_req_valid[j][i] = cache_req[i][j].q_valid;
+
+      // Cache request
+      // assign l0_cache_req[j][i].addr_offset = cache_req[i][j].q.addr[dynamic_offset-1:0];
+      // assign l0_cache_req[j][i].wdata = cache_req[i][j].q.data;
+      // assign l0_cache_req[j][i].be = cache_req[i][j].q.strb;
+      // assign l0_cache_req[j][i].size = $clog2(DataWidth/8);
+      // assign l0_cache_req[j][i].sid = cache_req[i][j].q.user.core_id;
+      // assign l0_cache_req[j][i].tid = cache_req[i][j].q.user.req_id;
+      // assign l0_cache_req[j][i].need_rsp = !cache_req[i][j].q.write;
+      // assign l0_cache_req[j][i].op = cache_req[i][j].q.write ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
+
+      // always_comb begin
+      //   if(cache_req[i][j].q.write) begin
+      //     l0_cache_req[j][i].op = HPDCACHE_REQ_STORE;
+      //   end else if (!cache_req[i][j].q.write) begin
+      //     l0_cache_req[j][i].op = HPDCACHE_REQ_LOAD;
+      //   end
+      // end
+
+      // Cache request tag
+  //     assign l0_cache_tag = cache_req[i][j].q.addr[L0AddrWidth-1:dynamic_offset];
+  //   end
+  // end
+
+  // Connecting cache_req (after unmerge before xbar to L0 D$)
+  for (genvar i = 0; i < NumL0CacheCtrl; i++) begin: gen_l0_cache
+    hpdcache  #(
+      .HPDcacheCfg          (HPDcacheCfg),
+      .wbuf_timecnt_t       (hpdcache_wbuf_timecnt_t),
+      .hpdcache_tag_t       (hpdcache_tag_t),
+      .hpdcache_data_word_t (hpdcache_data_word_t),
+      .hpdcache_data_be_t   (hpdcache_data_be_t),
+      .hpdcache_req_offset_t(hpdcache_req_offset_t),
+      .hpdcache_req_data_t  (hpdcache_req_data_t),
+      .hpdcache_req_be_t    (hpdcache_req_be_t),
+      .hpdcache_req_sid_t   (hpdcache_req_sid_t),
+      .hpdcache_req_tid_t   (hpdcache_req_tid_t),
+      .hpdcache_req_t       (hpdcache_req_t),
+      .hpdcache_rsp_t       (hpdcache_rsp_t),
+      .hpdcache_mem_addr_t  (hpdcache_mem_addr_t),
+      .hpdcache_mem_id_t    (hpdcache_mem_id_t),
+      .hpdcache_mem_data_t  (hpdcache_mem_data_t),
+      .hpdcache_mem_be_t    (hpdcache_mem_be_t),
+      .hpdcache_mem_req_t   (hpdcache_mem_req_t),
+      .hpdcache_mem_req_w_t (hpdcache_mem_req_w_t),
+      .hpdcache_mem_resp_r_t(hpdcache_mem_resp_r_t),
+      .hpdcache_mem_resp_w_t(hpdcache_mem_resp_w_t)
+    ) i_l0_cache (
+      .clk_i(clk_i),
+      .rst_ni(rst_ni),
+      .wbuf_flush_i(),
+
+      .core_req_valid_i           (l0_cache_req_valid[i]),
+      .core_req_ready_o           (hpd_l0_cache_req_ready[i]),
+      .core_req_i                 (l0_cache_req[i]),
+      .core_req_abort_i           (5'b0),
+      .core_req_tag_i             (l0_cache_tag[i]),
+      .core_req_pma_i             (/* unused */),
+      .core_rsp_valid_o           (hpd_l0_cache_rsp_valid[i]),
+      .core_rsp_o                 (l0_cache_rsp[i]),
+
+      .mem_req_read_ready_i       (l0_mem_req_read_ready[i]),
+      .mem_req_read_valid_o       (l0_mem_req_read_valid[i]),
+      .mem_req_read_o             (l0_mem_req_read[i]),
+      .mem_resp_read_ready_o      (hpd_l0_mem_resp_read_ready[i]),
+      .mem_resp_read_valid_i      (hpd_l0_mem_resp_read_valid[i]),
+      .mem_resp_read_i            (hpd_l0_mem_resp_read[i]),
+
+      .mem_req_write_ready_i      (l0_mem_req_write_ready[i]),
+      .mem_req_write_valid_o      (l0_mem_req_write_valid[i]),
+      .mem_req_write_o            (l0_mem_req_write[i]),
+      .mem_req_write_data_ready_i (l0_mem_req_write_data_ready[i]),
+      .mem_req_write_data_valid_o (l0_mem_req_write_data_valid[i]),
+      .mem_req_write_data_o       (l0_mem_req_write_data[i]),
+      .mem_resp_write_ready_o     (hpd_l0_mem_resp_write_ready[i]),
+      .mem_resp_write_valid_i     (hpd_l0_mem_resp_write_valid[i]),
+      .mem_resp_write_i           (hpd_l0_mem_resp_write[i]),
+
+      .evt_cache_write_miss_o     (/* unused */),
+      .evt_cache_read_miss_o      (/* unused */),
+      .evt_uncached_req_o         (/* unused */),
+      .evt_cmo_req_o              (/* unused */),
+      .evt_write_req_o            (/* unused */),
+      .evt_read_req_o             (/* unused */),
+      .evt_prefetch_req_o         (/* unused */),
+      .evt_req_on_hold_o          (/* unused */),
+      .evt_rtab_rollback_o        (/* unused */),
+      .evt_stall_refill_o         (/* unused */),
+      .evt_stall_o                (/* unused */),
+
+      .wbuf_empty_o               (l0_wbuf_empty),
+
+      .cfg_enable_i             (),
+      .cfg_wbuf_threshold_i(),
+      .cfg_wbuf_reset_timecnt_on_write_i(),
+      .cfg_wbuf_sequential_waw_i(),
+      .cfg_wbuf_inhibit_write_coalescing_i(),
+      .cfg_prefetch_updt_plru_i(),
+      .cfg_error_on_cacheable_amo_i(),
+      .cfg_rtab_single_entry_i(),
+      .cfg_default_wb_i()
+    );
+  end
 
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_l1_cache_ctrl
     cachepool_cache_ctrl #(
