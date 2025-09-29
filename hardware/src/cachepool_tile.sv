@@ -537,6 +537,7 @@ module cachepool_tile
   tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_meta;
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_write;
   data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_data;
+  amo_op_e    [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_amo;
 
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_valid;
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_ready;
@@ -805,17 +806,9 @@ module cachepool_tile
       assign l0_cache_req_meta [cb][j] = cache_req[j][cb].q.user;
       assign l0_cache_req_write[cb][j] = cache_req[j][cb].q.write;
       assign l0_cache_req_data [cb][j] = cache_req[j][cb].q.data;
-
-      // TODO: handle rsp signals
-      // assign cache_rsp_reg.p_valid = cache_rsp_valid[cb][j];
-      // assign cache_rsp_reg.q_ready = cache_req_ready[cb][j];
-      // assign cache_rsp_reg.p.data  = cache_rsp_data [cb][j];
-      // assign cache_rsp_reg.p.user  = cache_rsp_meta [cb][j];
-
-      // assign cache_rsp_reg.p.write = cache_rsp_write[cb][j];
+      assign l0_cache_req_amo  [cb][j] = cache_req[j][cb].q.amo;
     end
   end
-
   
   // Assign processed signals to hpd-format signals
   logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_req_valid, hpd_l0_cache_req_ready;
@@ -833,20 +826,71 @@ module cachepool_tile
   assign l0_cache_req.sid  = l0_cache_req_meta.core_id;
   assign l0_cache_req.tid  = l0_cache_req_meta.req_id;
   assign l0_cache_req.need_rsp = !l0_cache_req_write;
-  assign l0_cache_req.op = l0_cache_req_write ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
-  // TODO: AMO
+  // assign l0_cache_req.op = l0_cache_req_write ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
+  
+  // L0 request op field handling (W/R/AMO)
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_cache_op
+    for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_op_signals
+      always_comb begin
+        if (l0_cache_req_amo[cb][j] == AMONone) begin
+          l0_cache_req[cb][j].op = l0_cache_req_write[cb][j] ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
+        end else begin
+          case (l0_cache_req_amo)
+            AMOSwap:      l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_SWAP;
+            AMOAdd:       l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_ADD;
+            AMOAnd:       l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_AND;
+            AMOOr:        l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_OR;
+            AMOXor:       l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_XOR;
+            AMOMax:       l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_MAX;
+            AMOMaxU:      l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_MAXU;
+            AMOMin:       l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_MIN;
+            AMOMinU:      l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_MINU;
+            AMOLR:        l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_LR;
+            AMOSC:        l0_cache_req[cb][j].op = HPDCACHE_REQ_AMO_SC;
+            default:      l0_cache_req[cb][j].op = HPDCACHE_REQ_LOAD; // default to load
+          endcase
+        end
+      end
+    end
+  end
 
   // Memory interface signals (interfacing L0 and L1)
-  logic [NumL0CacheCtrl-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
-  hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_mem_req_read;
-  logic [NumL0CacheCtrl-1:0] hpd_l0_mem_resp_read_ready, hpd_l0_mem_resp_read_valid;
-  hpdcache_mem_resp_t [NumL0CacheCtrl-1:0] hpd_l0_mem_resp_read;
-  logic [NumL0CacheCtrl-1:0] l0_mem_req_write_ready, l0_mem_req_write_valid;
-  hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_mem_req_write;
-  logic [NumL0CacheCtrl-1:0] l0_mem_req_write_data_ready, l0_mem_req_write_data_valid;
-  hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0] l0_mem_req_write_data;
-  logic [NumL0CacheCtrl-1:0] l0_mem_resp_write_ready, l0_mem_resp_write_valid;
-  hpdcache_mem_resp_w_t [NumL0CacheCtrl-1:0] l0_mem_resp_write;
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read;
+
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_read_ready, l0_mem_resp_read_valid;
+  hpdcache_mem_resp_r_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_read;
+
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_ready, l0_mem_req_write_valid;
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write;
+
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_data_ready, l0_mem_req_write_data_valid;
+  hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_data;
+
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_write_ready, l0_mem_resp_write_valid;
+  hpdcache_mem_resp_w_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_write;
+
+  // Interfacing output form L1 to L0
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_cache_connect
+    for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_signals
+      // Decouple read and write channels (the HPD way)
+      always_comb begin
+        if (!cache_rsp_write[cb][j]) begin
+          l0_mem_req_read_ready[cb][j] = cache_rsp_ready[cb][j];
+          l0_mem_resp_read_valid[cb][j] = cache_rsp_valid[cb][j];
+          // Need to be verified:
+          l0_mem_resp_read[cb][j].data = cache_rsp_data[cb][j];
+          l0_mem_resp_read[cb][j].id = cache_rsp_meta[cb][j].req_id;
+        end else begin
+          l0_mem_req_write_ready[cb][j] = cache_rsp_ready[cb][j];
+          l0_mem_req_write_data_ready[cb][j] = cache_rsp_ready[cb][j];
+          l0_mem_resp_write_valid[cb][j] = cache_rsp_valid[cb][j];
+          // Need to be verified:
+          l0_mem_resp_write[cb][j].id = cache_rsp_meta[cb][j].req_id;
+        end
+      end
+    end
+  end
 
   // for (genvar i = 0; i < NrTCDMPortsPerCore; i++) begin: gen_req_transpose
   //   for (genvar j = 0; j < NumL1CacheCtrl; j++) begin:
@@ -916,9 +960,9 @@ module cachepool_tile
       .mem_req_read_ready_i       (l0_mem_req_read_ready[i]),
       .mem_req_read_valid_o       (l0_mem_req_read_valid[i]),
       .mem_req_read_o             (l0_mem_req_read[i]),
-      .mem_resp_read_ready_o      (hpd_l0_mem_resp_read_ready[i]),
-      .mem_resp_read_valid_i      (hpd_l0_mem_resp_read_valid[i]),
-      .mem_resp_read_i            (hpd_l0_mem_resp_read[i]),
+      .mem_resp_read_ready_o      (l0_mem_resp_read_ready[i]),
+      .mem_resp_read_valid_i      (l0_mem_resp_read_valid[i]),
+      .mem_resp_read_i            (l0_mem_resp_read[i]),
 
       .mem_req_write_ready_i      (l0_mem_req_write_ready[i]),
       .mem_req_write_valid_o      (l0_mem_req_write_valid[i]),
@@ -926,9 +970,9 @@ module cachepool_tile
       .mem_req_write_data_ready_i (l0_mem_req_write_data_ready[i]),
       .mem_req_write_data_valid_o (l0_mem_req_write_data_valid[i]),
       .mem_req_write_data_o       (l0_mem_req_write_data[i]),
-      .mem_resp_write_ready_o     (hpd_l0_mem_resp_write_ready[i]),
-      .mem_resp_write_valid_i     (hpd_l0_mem_resp_write_valid[i]),
-      .mem_resp_write_i           (hpd_l0_mem_resp_write[i]),
+      .mem_resp_write_ready_o     (l0_mem_resp_write_ready[i]),
+      .mem_resp_write_valid_i     (l0_mem_resp_write_valid[i]),
+      .mem_resp_write_i           (l0_mem_resp_write[i]),
 
       .evt_cache_write_miss_o     (/* unused */),
       .evt_cache_read_miss_o      (/* unused */),
@@ -944,15 +988,15 @@ module cachepool_tile
 
       .wbuf_empty_o               (l0_wbuf_empty),
 
-      .cfg_enable_i             (),
-      .cfg_wbuf_threshold_i(),
-      .cfg_wbuf_reset_timecnt_on_write_i(),
-      .cfg_wbuf_sequential_waw_i(),
-      .cfg_wbuf_inhibit_write_coalescing_i(),
-      .cfg_prefetch_updt_plru_i(),
-      .cfg_error_on_cacheable_amo_i(),
-      .cfg_rtab_single_entry_i(),
-      .cfg_default_wb_i()
+      .cfg_enable_i                       (1'b1),
+      .cfg_wbuf_threshold_i               (3'd2), // copied from hpdcache_lint.sv
+      .cfg_wbuf_reset_timecnt_on_write_i  (1'b1),
+      .cfg_wbuf_sequential_waw_i          (1'b0),
+      .cfg_wbuf_inhibit_write_coalescing_i(1'b0),
+      .cfg_prefetch_updt_plru_i           (1'b0),
+      .cfg_error_on_cacheable_amo_i       (1'b0),
+      .cfg_rtab_single_entry_i            (1'b0),
+      .cfg_default_wb_i                   (1'b0))
     );
   end
 
