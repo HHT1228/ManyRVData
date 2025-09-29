@@ -32,3 +32,5 @@ hardware/deps/*
 *.tdb
 util/lint/sg_projects
 util/lint/tmp
+sim.sh
+scratchpad.txt
