@@ -255,7 +255,7 @@ module cachepool_tile
   // TODO: Make these parameters configurable (in config.mk, cachepool_pkg.sv)
   localparam hpdcache_pkg::hpdcache_user_cfg_t HPDcacheUserCfg = '{
       nRequesters: HPDCACHE_NREQUESTERS,
-      paWidth: 21,          // TODO: need test and confirm, is this tag width? (VIPT)
+      paWidth: 32,          // TODO: need test and confirm, is this tag width? (VIPT)
       wordWidth: 32,
       sets: 32,
       ways: 4,
@@ -276,7 +276,7 @@ module cachepool_tile
       mshrUseRegbank: 1,
       refillCoreRspFeedthrough: 1'b1,
       refillFifoDepth: 2,
-      wbufDirEntries: 1,
+      wbufDirEntries: 2,
       wbufDataEntries: 1,
       wbufWords: 16,          // Unsure
       wbufTimecntWidth: 3,
@@ -290,9 +290,11 @@ module cachepool_tile
       wbEn: 1'b0              // Disable write-back
   };
 
-  localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcache_pkg::hpdcacheBuildConfig(
-      HPDcacheUserCfg
-  );
+  // localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcache_pkg::hpdcacheBuildConfig(
+  //     HPDcacheUserCfg
+  // );
+
+  localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcacheBuildConfig(HPDcacheUserCfg);
 
   // localparam type hpdcache_mem_addr_t = logic [HPDcacheCfg.u.memAddrWidth-1:0];
   // localparam type hpdcache_mem_id_t = logic [HPDcacheCfg.u.memIdWidth-1:0];
@@ -319,7 +321,6 @@ module cachepool_tile
   `HPDCACHE_TYPEDEF_MEM_RESP_R_T(hpdcache_mem_resp_r_t, hpdcache_mem_id_t, hpdcache_mem_data_t);
   `HPDCACHE_TYPEDEF_MEM_REQ_W_T(hpdcache_mem_req_w_t, hpdcache_mem_data_t, hpdcache_mem_be_t);
   `HPDCACHE_TYPEDEF_MEM_RESP_W_T(hpdcache_mem_resp_w_t, hpdcache_mem_id_t);
-
 
   // localparam type hpdcache_tag_t = logic [HPDcacheCfg.tagWidth-1:0];
   // localparam type hpdcache_data_word_t = logic [HPDcacheCfg.u.wordWidth-1:0];
@@ -586,7 +587,7 @@ module cachepool_tile
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_write;
   data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_data;
   amo_op_e    [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_amo;
-
+  
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_valid;
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_ready;
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_write;
@@ -864,14 +865,20 @@ module cachepool_tile
   end
   
   // Assign processed signals to hpd-format signals
-  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_req_valid, hpd_l0_cache_req_ready;
-  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_rsp_valid;
-  hpdcache_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req;
-  hpdcache_rsp_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp;
-  hpdcache_tag_t l0_cache_tag;
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_req_valid, hpd_l0_cache_req_ready;
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_rsp_valid;
+  // hpdcache_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req;
+  // hpdcache_rsp_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp;
+  // hpdcache_tag_t l0_cache_tag;
+  logic hpd_l0_cache_req_valid[NumL0CacheCtrl][NrTCDMPortsPerCore];
+  logic hpd_l0_cache_req_ready[NumL0CacheCtrl][NrTCDMPortsPerCore];
+  logic hpd_l0_cache_rsp_valid[NumL0CacheCtrl][NrTCDMPortsPerCore];
+  hpdcache_req_t l0_cache_req[NumL0CacheCtrl][NrTCDMPortsPerCore];
+  hpdcache_rsp_t l0_cache_rsp[NumL0CacheCtrl][NrTCDMPortsPerCore];
+  hpdcache_tag_t l0_cache_tag[NumL0CacheCtrl][NrTCDMPortsPerCore];
   logic l0_wbuf_empty;
 
-  assign hpd_l0_cache_req_valid = l0_cache_req_valid;
+  // assign hpd_l0_cache_req_valid = l0_cache_req_valid;
   // assign l0_cache_req.addr_offset = l0_cache_req_addr_offset;
   // assign l0_cache_req.wdata = l0_cache_req_data;
   // // BE
@@ -885,6 +892,7 @@ module cachepool_tile
   // L0 request op field handling (W/R/AMO)
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_cache_op
     for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_op_signals
+      assign hpd_l0_cache_req_valid[cb][j] = l0_cache_req_valid[cb][j];
       assign l0_cache_req[cb][j].addr_offset = l0_cache_req_addr_offset[cb][j];
       assign l0_cache_req[cb][j].wdata = l0_cache_req_data[cb][j];
       // BE
@@ -892,6 +900,7 @@ module cachepool_tile
       assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
       assign l0_cache_req[cb][j].tid  = l0_cache_req_reqid[cb][j];
       assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
+      assign l0_cache_tag[cb][j] = cache_req[j][cb].q.addr[L0AddrWidth-1:11];   // TODO: verify the tag width, remove hardcoding
 
       always_comb begin
         if (l0_cache_req_amo[cb][j] == AMONone) begin
@@ -915,44 +924,141 @@ module cachepool_tile
       end
     end
   end
-
+  
   // Memory interface signals (interfacing L0 and L1)
-  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
-  hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read;
+  // Combine the response signals into a struct for handling
+  l1_rsp_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l1_rsp_combined;
 
-  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_read_ready, l0_mem_resp_read_valid;
-  hpdcache_mem_resp_r_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_read;
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
+    for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_rsp_signals
+      assign l1_rsp_combined[cb][j].valid = cache_rsp_valid[cb][j];
+      assign l1_rsp_combined[cb][j].ready = cache_rsp_ready[cb][j];
+      assign l1_rsp_combined[cb][j].write = cache_rsp_write[cb][j];
+      assign l1_rsp_combined[cb][j].data  = cache_rsp_data [cb][j];
+      assign l1_rsp_combined[cb][j].meta  = cache_rsp_meta [cb][j];
+    end
+  end
 
-  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_ready, l0_mem_req_write_valid;
-  hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write;
+  // FIFO parameters and internal signals
+  // TODO: move it to the top after working
+  localparam int unsigned N_IN       = 5;      // push 5 items per accepted push
+  localparam int unsigned DATA_WIDTH = 32;      // small width for easy viewing
+  localparam int unsigned DEPTH      = 16;     // non-POT to exercise wrap-around
+  localparam bit          FALL_THROUGH = 1'b0; // disabled for N_IN>1 (per module)
+  localparam int unsigned ADDR_DEPTH = (DEPTH > 1) ? $clog2(DEPTH) : 1;
 
-  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_data_ready, l0_mem_req_write_data_valid;
-  hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_data;
+  logic [NumL0CacheCtrl-1:0]  l1_l0_fifo_flush, l1_l0_fifo_full, l1_l0_fifo_empty, l1_l0_fifo_push, l1_l0_fifo_pop;
+  logic [NumL0CacheCtrl-1:0][ADDR_DEPTH-1:0] l1_l0_fifo_usage;
+  l1_rsp_t [NumL0CacheCtrl-1:0] l1_l0_fifo_out;
 
-  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_write_ready, l0_mem_resp_write_valid;
-  hpdcache_mem_resp_w_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_write;
+  // One FIFO per L0 cache to buffer the incoming requests
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l1_l0_fifo
+    asymmetric_fifo #(
+      .N_IN        (N_IN        ),
+      .DATA_WIDTH  (DATA_WIDTH  ),
+      .DEPTH       (DEPTH       ),
+      .dtype       (l1_rsp_t    ),
+      .FALL_THROUGH(FALL_THROUGH)
+    ) i_l1_l0_fifo (
+      .clk_i      (clk_i),
+      .rst_ni     (rst_ni),
+      .flush_i    (l1_l0_fifo_flush),
+      .testmode_i (1'b0),
+      .full_o     (l1_l0_fifo_full[cb]),
+      .empty_o    (l1_l0_fifo_empty[cb]),
+      .usage_o    (l1_l0_fifo_usage[cb]),
+      .data_i     (l1_rsp_combined[cb]),
+      .push_i     (l1_l0_fifo_push[cb]),
+      .data_o     (l1_l0_fifo_out[cb]),
+      .pop_i      (l1_l0_fifo_pop[cb])
+    );
+  end
+
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
+  // hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read;
+
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_read_ready, l0_mem_resp_read_valid;
+  // hpdcache_mem_resp_r_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_read;
+
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_ready, l0_mem_req_write_valid;
+  // hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write;
+
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_data_ready, l0_mem_req_write_data_valid;
+  // hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_write_data;
+
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_write_ready, l0_mem_resp_write_valid;
+  // hpdcache_mem_resp_w_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_resp_write;
+
+  logic [NumL0CacheCtrl-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_mem_req_read;
+
+  logic [NumL0CacheCtrl-1:0] l0_mem_resp_read_ready, l0_mem_resp_read_valid;
+  hpdcache_mem_resp_r_t [NumL0CacheCtrl-1:0] l0_mem_resp_read;
+
+  logic [NumL0CacheCtrl-1:0] l0_mem_req_write_ready, l0_mem_req_write_valid;
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_mem_req_write;
+
+  logic [NumL0CacheCtrl-1:0] l0_mem_req_write_data_ready, l0_mem_req_write_data_valid;
+  hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0] l0_mem_req_write_data;
+
+  logic [NumL0CacheCtrl-1:0] l0_mem_resp_write_ready, l0_mem_resp_write_valid;
+  hpdcache_mem_resp_w_t [NumL0CacheCtrl-1:0] l0_mem_resp_write;
 
   // Interfacing output form L1 to L0
-  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_l1_cache_connect
-    for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_l1_cache_signals
-      // Decouple read and write channels (the HPD way)
-      always_comb begin
-        if (!cache_rsp_write[cb][j]) begin
-          l0_mem_req_read_ready[cb][j] = cache_rsp_ready[cb][j];
-          l0_mem_resp_read_valid[cb][j] = cache_rsp_valid[cb][j];
-          // Need to be verified:
-          // l0_mem_resp_read[cb][j].data = cache_rsp_data[cb][j];
-          // l0_mem_resp_read[cb][j].id = cache_rsp_meta[cb][j].req_id;
-          l0_mem_resp_read[cb][j].mem_resp_r_data = cache_rsp_data[cb][j];
-          l0_mem_resp_read[cb][j].mem_resp_r_id = cache_rsp_meta[cb][j].req_id;
-        end else begin
-          l0_mem_req_write_ready[cb][j] = cache_rsp_ready[cb][j];
-          l0_mem_req_write_data_ready[cb][j] = cache_rsp_ready[cb][j];
-          l0_mem_resp_write_valid[cb][j] = cache_rsp_valid[cb][j];
-          // Need to be verified:
-          // l0_mem_resp_write[cb][j].id = cache_rsp_meta[cb][j].req_id;
-          l0_mem_resp_write[cb][j].mem_resp_w_id = cache_rsp_meta[cb][j].req_id;
-        end
+  // for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_l1_cache_connect
+  //   for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_l1_cache_signals
+  //     // Decouple read and write channels (the HPD way)
+  //     always_comb begin
+  //       if (!cache_rsp_write[cb][j]) begin
+  //         l0_mem_req_read_ready[cb][j] = cache_rsp_ready[cb][j];
+  //         l0_mem_resp_read_valid[cb][j] = cache_rsp_valid[cb][j];
+  //         // Need to be verified:
+  //         // l0_mem_resp_read[cb][j].data = cache_rsp_data[cb][j];
+  //         // l0_mem_resp_read[cb][j].id = cache_rsp_meta[cb][j].req_id;
+  //         l0_mem_resp_read[cb][j].mem_resp_r_data = cache_rsp_data[cb][j];
+  //         l0_mem_resp_read[cb][j].mem_resp_r_id = cache_rsp_meta[cb][j].req_id;
+  //       end else begin
+  //         l0_mem_req_write_ready[cb][j] = cache_rsp_ready[cb][j];
+  //         l0_mem_req_write_data_ready[cb][j] = cache_rsp_ready[cb][j];
+  //         l0_mem_resp_write_valid[cb][j] = cache_rsp_valid[cb][j];
+  //         // Need to be verified:
+  //         // l0_mem_resp_write[cb][j].id = cache_rsp_meta[cb][j].req_id;
+  //         l0_mem_resp_write[cb][j].mem_resp_w_id = cache_rsp_meta[cb][j].req_id;
+  //       end
+  //     end
+  //   end
+  // end
+
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_op_signals
+    assign l1_l0_fifo_flush[cb] = 1'b0;
+    always_comb begin
+      if (!l1_l0_fifo_out[cb].write) begin
+        l0_mem_req_read_ready[cb] = l1_l0_fifo_out[cb].ready;
+        l0_mem_resp_read_valid[cb] = l1_l0_fifo_out[cb].valid;
+        // Need to be verified:
+        // l0_mem_resp_read[cb].data = cache_rsp_data[cb][j];
+        // l0_mem_resp_read[cb].id = cache_rsp_meta[cb][j].req_id;
+        l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_fifo_out[cb].data;
+        l0_mem_resp_read[cb].mem_resp_r_id = l1_l0_fifo_out[cb].meta.req_id;
+
+        // TODO: verify the pop_i control flow
+        // Pop when the data is consumed
+        l1_l0_fifo_pop[cb] = l1_l0_fifo_out[cb].valid && l1_l0_fifo_out[cb].ready;
+        // Don't push when it's a read response
+        l1_l0_fifo_push[cb] = 1'b0;
+      end else begin
+        l0_mem_req_write_ready[cb] = l1_l0_fifo_out[cb].ready;
+        l0_mem_req_write_data_ready[cb] = l1_l0_fifo_out[cb].ready;
+        l0_mem_resp_write_valid[cb] = l1_l0_fifo_out[cb].valid;
+        // Need to be verified:
+        // l0_mem_resp_write[cb].id = cache_rsp_meta[cb][j].req_id;
+        l0_mem_resp_write[cb].mem_resp_w_id = l1_l0_fifo_out[cb].meta.req_id;
+
+        // TODO: same as above
+        // Pop when the data is consumed
+        l1_l0_fifo_pop[cb] = l1_l0_fifo_out[cb].valid && l1_l0_fifo_out[cb].ready;
+        // Don't push when it's a write response
+        l1_l0_fifo_push[cb] = 1'b0;
       end
     end
   end
@@ -1013,7 +1119,7 @@ module cachepool_tile
       .rst_ni                             (rst_ni),
       .wbuf_flush_i                       (/* unused */),
 
-      .core_req_valid_i                   (l0_cache_req_valid[i]),
+      .core_req_valid_i                   (hpd_l0_cache_req_valid[i]),
       .core_req_ready_o                   (hpd_l0_cache_req_ready[i]),
       .core_req_i                         (l0_cache_req[i]),
       .core_req_abort_i                   (5'b0),
