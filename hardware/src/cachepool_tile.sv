@@ -924,20 +924,6 @@ module cachepool_tile
       end
     end
   end
-  
-  // Memory interface signals (interfacing L0 and L1)
-  // Combine the response signals into a struct for handling
-  l1_rsp_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l1_rsp_combined;
-
-  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
-    for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_rsp_signals
-      assign l1_rsp_combined[cb][j].valid = cache_rsp_valid[cb][j];
-      assign l1_rsp_combined[cb][j].ready = cache_rsp_ready[cb][j];
-      assign l1_rsp_combined[cb][j].write = cache_rsp_write[cb][j];
-      assign l1_rsp_combined[cb][j].data  = cache_rsp_data [cb][j];
-      assign l1_rsp_combined[cb][j].meta  = cache_rsp_meta [cb][j];
-    end
-  end
 
   // FIFO parameters and internal signals
   // TODO: move it to the top after working
@@ -950,9 +936,27 @@ module cachepool_tile
   logic [NumL0CacheCtrl-1:0]  l1_l0_fifo_flush, l1_l0_fifo_full, l1_l0_fifo_empty, l1_l0_fifo_push, l1_l0_fifo_pop;
   logic [NumL0CacheCtrl-1:0][ADDR_DEPTH-1:0] l1_l0_fifo_usage;
   l1_rsp_t [NumL0CacheCtrl-1:0] l1_l0_fifo_out;
+  
+  // Memory interface signals (interfacing L0 and L1)
+  // Combine the response signals into a struct for handling
+  l1_rsp_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l1_rsp_combined;
+  // logic [NumL0CacheCtrl-1:0]  l1_rsp_any_valid;   // At least one valid in the combined response of the chosen CC
+
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l1_rsp_combine
+    for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l1_rsp_combine_signals
+      assign l1_rsp_combined[cb][j].valid = cache_rsp_valid[cb][j];
+      assign l1_rsp_combined[cb][j].ready = cache_rsp_ready[cb][j];
+      assign l1_rsp_combined[cb][j].write = cache_rsp_write[cb][j];
+      assign l1_rsp_combined[cb][j].data  = cache_rsp_data [cb][j];
+      assign l1_rsp_combined[cb][j].meta  = cache_rsp_meta [cb][j];
+    end
+    // assign l1_rsp_any_valid[cb] = |(cache_rsp_valid[cb]);
+    assign l1_l0_fifo_push[cb] = |(cache_rsp_valid[cb]);
+  end
 
   // One FIFO per L0 cache to buffer the incoming requests
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l1_l0_fifo
+    // assign l1_l0_fifo_push[cb] = l1_rsp_any_valid[cb];
     asymmetric_fifo #(
       .N_IN        (N_IN        ),
       .DATA_WIDTH  (DATA_WIDTH  ),
