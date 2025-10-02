@@ -247,9 +247,9 @@ module cachepool_tile
     default           : '0
   };
 
-  /////////////////////////////////////////
-  // L0 HPDcache parameters and typedefs //
-  /////////////////////////////////////////
+  ////////////////////////////
+  // L0 HPDcache parameters //
+  ////////////////////////////
   localparam int unsigned HPDCACHE_NREQUESTERS = NrTCDMPortsPerCore;
 
   // TODO: Make these parameters configurable (in config.mk, cachepool_pkg.sv)
@@ -295,85 +295,6 @@ module cachepool_tile
   // );
 
   localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcacheBuildConfig(HPDcacheUserCfg);
-
-  // localparam type hpdcache_mem_addr_t = logic [HPDcacheCfg.u.memAddrWidth-1:0];
-  // localparam type hpdcache_mem_id_t = logic [HPDcacheCfg.u.memIdWidth-1:0];
-  // localparam type hpdcache_mem_data_t = logic [HPDcacheCfg.u.memDataWidth-1:0];
-  // localparam type hpdcache_mem_be_t = logic [HPDcacheCfg.u.memDataWidth/8-1:0];
-  // localparam type hpdcache_mem_req_t =
-  //     `HPDCACHE_DECL_MEM_REQ_T(hpdcache_mem_addr_t, hpdcache_mem_id_t);
-  // localparam type hpdcache_mem_resp_r_t =
-  //     `HPDCACHE_DECL_MEM_RESP_R_T(hpdcache_mem_id_t, hpdcache_mem_data_t);
-  // localparam type hpdcache_mem_req_w_t =
-  //     `HPDCACHE_DECL_MEM_REQ_W_T(hpdcache_mem_data_t, hpdcache_mem_be_t);
-  // localparam type hpdcache_mem_resp_w_t =
-  //     `HPDCACHE_DECL_MEM_RESP_W_T(hpdcache_mem_id_t);
-  
-  typedef logic [HPDcacheCfg.u.memAddrWidth-1:0]    hpdcache_mem_addr_t;
-  typedef logic [HPDcacheCfg.u.memIdWidth-1:0]      hpdcache_mem_id_t;
-  typedef logic [HPDcacheCfg.u.memDataWidth-1:0]    hpdcache_mem_data_t;
-  typedef logic [HPDcacheCfg.u.memDataWidth/8-1:0]  hpdcache_mem_be_t;
-  // `HPDCACHE_DECL_MEM_REQ_T(hpdcache_mem_addr_t, )
-  // `HPDCACHE_DECL_MEM_RESP_R_T(hpdcache_mem_id_t, hpdcache_mem_data_t)
-  // `HPDCACHE_DECL_MEM_REQ_W_T(hpdcache_mem_data_t, hpdcache_mem_be_t)
-  // `HPDCACHE_DECL_MEM_RESP_W_T(hpdcache_mem_id_t)
-  `HPDCACHE_TYPEDEF_MEM_REQ_T(hpdcache_mem_req_t, hpdcache_mem_addr_t, hpdcache_mem_id_t);
-  `HPDCACHE_TYPEDEF_MEM_RESP_R_T(hpdcache_mem_resp_r_t, hpdcache_mem_id_t, hpdcache_mem_data_t);
-  `HPDCACHE_TYPEDEF_MEM_REQ_W_T(hpdcache_mem_req_w_t, hpdcache_mem_data_t, hpdcache_mem_be_t);
-  `HPDCACHE_TYPEDEF_MEM_RESP_W_T(hpdcache_mem_resp_w_t, hpdcache_mem_id_t);
-
-  // localparam type hpdcache_tag_t = logic [HPDcacheCfg.tagWidth-1:0];
-  // localparam type hpdcache_data_word_t = logic [HPDcacheCfg.u.wordWidth-1:0];
-  // localparam type hpdcache_data_be_t = logic [HPDcacheCfg.u.wordWidth/8-1:0];
-  // localparam type hpdcache_req_offset_t = logic [HPDcacheCfg.reqOffsetWidth-1:0];
-  // localparam type hpdcache_req_data_t = hpdcache_data_word_t [HPDcacheCfg.u.reqWords-1:0];
-  // localparam type hpdcache_req_be_t = hpdcache_data_be_t [HPDcacheCfg.u.reqWords-1:0];
-  // localparam type hpdcache_req_sid_t = logic [HPDcacheCfg.u.reqSrcIdWidth-1:0];
-  // localparam type hpdcache_req_tid_t = logic [HPDcacheCfg.u.reqTransIdWidth-1:0];
-  // localparam type hpdcache_req_t =
-  //     `HPDCACHE_DECL_REQ_T(hpdcache_req_offset_t,
-  //                          hpdcache_req_data_t,
-  //                          hpdcache_req_be_t,
-  //                          hpdcache_req_sid_t,
-  //                          hpdcache_req_tid_t,
-  //                          hpdcache_tag_t);
-  // localparam type hpdcache_rsp_t =
-  //     `HPDCACHE_DECL_RSP_T(hpdcache_req_data_t,
-  //                          hpdcache_req_sid_t,
-  //                          hpdcache_req_tid_t);
-
-  // localparam type hpdcache_wbuf_timecnt_t = logic [HPDcacheCfg.u.wbufTimecntWidth-1:0];
-
-  typedef logic [HPDcacheCfg.tagWidth-1:0]                  hpdcache_tag_t;
-  typedef logic [HPDcacheCfg.u.wordWidth-1:0]               hpdcache_data_word_t;
-  typedef logic [HPDcacheCfg.u.wordWidth/8-1:0]             hpdcache_data_be_t;
-  typedef logic [HPDcacheCfg.reqOffsetWidth-1:0]            hpdcache_req_offset_t;
-  typedef hpdcache_data_word_t [HPDcacheCfg.u.reqWords-1:0] hpdcache_req_data_t;
-  typedef hpdcache_data_be_t   [HPDcacheCfg.u.reqWords-1:0] hpdcache_req_be_t;
-  typedef logic [HPDcacheCfg.u.reqSrcIdWidth-1:0]           hpdcache_req_sid_t;
-  typedef logic [HPDcacheCfg.u.reqTransIdWidth-1:0]         hpdcache_req_tid_t;
-  // `HPDCACHE_DECL_REQ_T(hpdcache_req_offset_t,
-  //                         hpdcache_req_data_t,
-  //                         hpdcache_req_be_t,
-  //                         hpdcache_req_sid_t,
-  //                         hpdcache_req_tid_t,
-  //                         hpdcache_tag_t)
-  // `HPDCACHE_DECL_RSP_T(hpdcache_req_data_t,
-  //                         hpdcache_req_sid_t,
-  //                         hpdcache_req_tid_t)
-  `HPDCACHE_TYPEDEF_REQ_T(hpdcache_req_t,
-                          hpdcache_req_offset_t,
-                          hpdcache_req_data_t,
-                          hpdcache_req_be_t,
-                          hpdcache_req_sid_t,
-                          hpdcache_req_tid_t,
-                          hpdcache_tag_t);
-  `HPDCACHE_TYPEDEF_RSP_T(hpdcache_rsp_t,
-                          hpdcache_req_data_t,
-                          hpdcache_req_sid_t,
-                          hpdcache_req_tid_t);
-
-  typedef logic [HPDcacheCfg.u.wbufTimecntWidth-1:0] hpdcache_wbuf_timecnt_t;
 
   // --------
   // Typedefs
@@ -508,6 +429,97 @@ module cachepool_tile
     l0_pte_t [1:0] ptw_pte;
     logic [1:0] ptw_is_4mega;
   } hive_rsp_t;
+
+  ////////////////////////////
+  // L0 HPDcache typedefs   //
+  ////////////////////////////
+
+  // localparam type hpdcache_mem_addr_t = logic [HPDcacheCfg.u.memAddrWidth-1:0];
+  // localparam type hpdcache_mem_id_t = logic [HPDcacheCfg.u.memIdWidth-1:0];
+  // localparam type hpdcache_mem_data_t = logic [HPDcacheCfg.u.memDataWidth-1:0];
+  // localparam type hpdcache_mem_be_t = logic [HPDcacheCfg.u.memDataWidth/8-1:0];
+  // localparam type hpdcache_mem_req_t =
+  //     `HPDCACHE_DECL_MEM_REQ_T(hpdcache_mem_addr_t, hpdcache_mem_id_t);
+  // localparam type hpdcache_mem_resp_r_t =
+  //     `HPDCACHE_DECL_MEM_RESP_R_T(hpdcache_mem_id_t, hpdcache_mem_data_t);
+  // localparam type hpdcache_mem_req_w_t =
+  //     `HPDCACHE_DECL_MEM_REQ_W_T(hpdcache_mem_data_t, hpdcache_mem_be_t);
+  // localparam type hpdcache_mem_resp_w_t =
+  //     `HPDCACHE_DECL_MEM_RESP_W_T(hpdcache_mem_id_t);
+  
+  typedef logic [HPDcacheCfg.u.memAddrWidth-1:0]    hpdcache_mem_addr_t;
+  typedef logic [HPDcacheCfg.u.memIdWidth-1:0]      hpdcache_mem_id_t;
+  typedef logic [HPDcacheCfg.u.memDataWidth-1:0]    hpdcache_mem_data_t;
+  typedef logic [HPDcacheCfg.u.memDataWidth/8-1:0]  hpdcache_mem_be_t;
+  // `HPDCACHE_DECL_MEM_REQ_T(hpdcache_mem_addr_t, )
+  // `HPDCACHE_DECL_MEM_RESP_R_T(hpdcache_mem_id_t, hpdcache_mem_data_t)
+  // `HPDCACHE_DECL_MEM_REQ_W_T(hpdcache_mem_data_t, hpdcache_mem_be_t)
+  // `HPDCACHE_DECL_MEM_RESP_W_T(hpdcache_mem_id_t)
+  `HPDCACHE_TYPEDEF_MEM_REQ_T(hpdcache_mem_req_t, hpdcache_mem_addr_t, hpdcache_mem_id_t);
+  `HPDCACHE_TYPEDEF_MEM_RESP_R_T(hpdcache_mem_resp_r_t, hpdcache_mem_id_t, hpdcache_mem_data_t);
+  `HPDCACHE_TYPEDEF_MEM_REQ_W_T(hpdcache_mem_req_w_t, hpdcache_mem_data_t, hpdcache_mem_be_t);
+  `HPDCACHE_TYPEDEF_MEM_RESP_W_T(hpdcache_mem_resp_w_t, hpdcache_mem_id_t);
+
+  // localparam type hpdcache_tag_t = logic [HPDcacheCfg.tagWidth-1:0];
+  // localparam type hpdcache_data_word_t = logic [HPDcacheCfg.u.wordWidth-1:0];
+  // localparam type hpdcache_data_be_t = logic [HPDcacheCfg.u.wordWidth/8-1:0];
+  // localparam type hpdcache_req_offset_t = logic [HPDcacheCfg.reqOffsetWidth-1:0];
+  // localparam type hpdcache_req_data_t = hpdcache_data_word_t [HPDcacheCfg.u.reqWords-1:0];
+  // localparam type hpdcache_req_be_t = hpdcache_data_be_t [HPDcacheCfg.u.reqWords-1:0];
+  // localparam type hpdcache_req_sid_t = logic [HPDcacheCfg.u.reqSrcIdWidth-1:0];
+  // localparam type hpdcache_req_tid_t = logic [HPDcacheCfg.u.reqTransIdWidth-1:0];
+  // localparam type hpdcache_req_t =
+  //     `HPDCACHE_DECL_REQ_T(hpdcache_req_offset_t,
+  //                          hpdcache_req_data_t,
+  //                          hpdcache_req_be_t,
+  //                          hpdcache_req_sid_t,
+  //                          hpdcache_req_tid_t,
+  //                          hpdcache_tag_t);
+  // localparam type hpdcache_rsp_t =
+  //     `HPDCACHE_DECL_RSP_T(hpdcache_req_data_t,
+  //                          hpdcache_req_sid_t,
+  //                          hpdcache_req_tid_t);
+
+  // localparam type hpdcache_wbuf_timecnt_t = logic [HPDcacheCfg.u.wbufTimecntWidth-1:0];
+
+  typedef logic [HPDcacheCfg.tagWidth-1:0]                  hpdcache_tag_t;
+  typedef logic [HPDcacheCfg.u.wordWidth-1:0]               hpdcache_data_word_t;
+  typedef logic [HPDcacheCfg.u.wordWidth/8-1:0]             hpdcache_data_be_t;
+  typedef logic [HPDcacheCfg.reqOffsetWidth-1:0]            hpdcache_req_offset_t;
+  typedef hpdcache_data_word_t [HPDcacheCfg.u.reqWords-1:0] hpdcache_req_data_t;
+  typedef hpdcache_data_be_t   [HPDcacheCfg.u.reqWords-1:0] hpdcache_req_be_t;
+  typedef logic [HPDcacheCfg.u.reqSrcIdWidth-1:0]           hpdcache_req_sid_t;
+  typedef logic [HPDcacheCfg.u.reqTransIdWidth-1:0]         hpdcache_req_tid_t;
+  // `HPDCACHE_DECL_REQ_T(hpdcache_req_offset_t,
+  //                         hpdcache_req_data_t,
+  //                         hpdcache_req_be_t,
+  //                         hpdcache_req_sid_t,
+  //                         hpdcache_req_tid_t,
+  //                         hpdcache_tag_t)
+  // `HPDCACHE_DECL_RSP_T(hpdcache_req_data_t,
+  //                         hpdcache_req_sid_t,
+  //                         hpdcache_req_tid_t)
+  `HPDCACHE_TYPEDEF_REQ_T(hpdcache_req_t,
+                          hpdcache_req_offset_t,
+                          hpdcache_req_data_t,
+                          hpdcache_req_be_t,
+                          hpdcache_req_sid_t,
+                          hpdcache_req_tid_t,
+                          hpdcache_tag_t);
+  `HPDCACHE_TYPEDEF_RSP_T(hpdcache_rsp_t,
+                          hpdcache_req_data_t,
+                          hpdcache_req_sid_t,
+                          hpdcache_req_tid_t);
+
+  typedef logic [HPDcacheCfg.u.wbufTimecntWidth-1:0] hpdcache_wbuf_timecnt_t;
+  
+  typedef struct packed {
+    logic           valid;
+    logic           ready;
+    logic           write;
+    data_t          data;
+    tcdm_user_t     meta;
+  } l1_rsp_t;
 
   // -----------
   // Assignments
@@ -876,7 +888,7 @@ module cachepool_tile
   hpdcache_req_t l0_cache_req[NumL0CacheCtrl][NrTCDMPortsPerCore];
   hpdcache_rsp_t l0_cache_rsp[NumL0CacheCtrl][NrTCDMPortsPerCore];
   hpdcache_tag_t l0_cache_tag[NumL0CacheCtrl][NrTCDMPortsPerCore];
-  logic l0_wbuf_empty;
+  // logic [NumL0CacheCtrl-1:0] l0_wbuf_empty;    // FIXME: illegal port connection for some reason
 
   // assign hpd_l0_cache_req_valid = l0_cache_req_valid;
   // assign l0_cache_req.addr_offset = l0_cache_req_addr_offset;
@@ -1049,7 +1061,7 @@ module cachepool_tile
         // Pop when the data is consumed
         l1_l0_fifo_pop[cb] = l1_l0_fifo_out[cb].valid && l1_l0_fifo_out[cb].ready;
         // Don't push when it's a read response
-        l1_l0_fifo_push[cb] = 1'b0;
+        // l1_l0_fifo_push[cb] = 1'b0;
       end else begin
         l0_mem_req_write_ready[cb] = l1_l0_fifo_out[cb].ready;
         l0_mem_req_write_data_ready[cb] = l1_l0_fifo_out[cb].ready;
@@ -1062,7 +1074,7 @@ module cachepool_tile
         // Pop when the data is consumed
         l1_l0_fifo_pop[cb] = l1_l0_fifo_out[cb].valid && l1_l0_fifo_out[cb].ready;
         // Don't push when it's a write response
-        l1_l0_fifo_push[cb] = 1'b0;
+        // l1_l0_fifo_push[cb] = 1'b0;
       end
     end
   end
@@ -1126,7 +1138,7 @@ module cachepool_tile
       .core_req_valid_i                   (hpd_l0_cache_req_valid[i]),
       .core_req_ready_o                   (hpd_l0_cache_req_ready[i]),
       .core_req_i                         (l0_cache_req[i]),
-      .core_req_abort_i                   (5'b0),
+      .core_req_abort_i                   ('{default: 1'b0}),
       .core_req_tag_i                     (l0_cache_tag[i]),
       .core_req_pma_i                     (/* unused */),
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid[i]),
@@ -1161,7 +1173,7 @@ module cachepool_tile
       .evt_stall_refill_o                 (/* unused */),
       .evt_stall_o                        (/* unused */),
 
-      .wbuf_empty_o                       (l0_wbuf_empty),
+      .wbuf_empty_o                       (/* unused */),
 
       .cfg_enable_i                       (1'b1),
       .cfg_wbuf_threshold_i               (3'd2), // copied from hpdcache_lint.sv

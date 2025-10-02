@@ -30,6 +30,7 @@ sources:
   - hardware/src/tcdm_cache_interco.sv
   - hardware/src/tcdm_id_remapper.sv
   - hardware/src/spatz_cache_amo.sv
+  - hardware/src/asymmetric_fifo.sv
   # Level 1
   - hardware/src/cachepool_pkg.sv
   - hardware/src/cachepool_cc.sv

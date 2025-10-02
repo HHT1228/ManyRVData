@@ -142,18 +142,18 @@ module asymmetric_fifo #(
         end
     end
 
-// `ifndef COMMON_CELLS_ASSERTS_OFF
-//     `ASSERT_INIT(depth_pos,  DEPTH > 0, "DEPTH must be greater than 0.")
-//     `ASSERT_INIT(n_in_range, (N_IN >= 1) && (N_IN <= FifoDepth),
-//                  "N_IN must be in 1..DEPTH.")
-//     `ASSERT_INIT(fall_through_n1, !(FALL_THROUGH && (N_IN != 1)),
-//                  "FALL_THROUGH is only supported for N_IN==1 (to avoid data loss).")
+`ifndef COMMON_CELLS_ASSERTS_OFF
+    `ASSERT_INIT(depth_pos,  DEPTH > 0, "DEPTH must be greater than 0.")
+    `ASSERT_INIT(n_in_range, (N_IN >= 1) && (N_IN <= FifoDepth),
+                 "N_IN must be in 1..DEPTH.")
+    `ASSERT_INIT(fall_through_n1, !(FALL_THROUGH && (N_IN != 1)),
+                 "FALL_THROUGH is only supported for N_IN==1 (to avoid data loss).")
 
-//     `ASSERT(full_write, full_o |-> ~push_i, clk_i, !rst_ni,
-//             "Trying to push although FIFO cannot accept a full N_IN burst.")
+    `ASSERT(full_write, full_o |-> ~push_i, clk_i, !rst_ni,
+            "Trying to push although FIFO cannot accept a full N_IN burst.")
 
-//     `ASSERT(empty_read, empty_o |-> ~pop_i, clk_i, !rst_ni,
-//             "Trying to pop data although the FIFO is empty.")
-// `endif
+    `ASSERT(empty_read, empty_o |-> ~pop_i, clk_i, !rst_ni,
+            "Trying to pop data although the FIFO is empty.")
+`endif
 
 endmodule // asymmetric_fifo

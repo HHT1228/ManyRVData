@@ -266,15 +266,6 @@ package cachepool_pkg;
 
   `REQRSP_TYPEDEF_ALL (cache_trans, axi_addr_t, axi_data_t, axi_strb_t, refill_user_t)
 
-  // For L0 cache
-  typedef struct packed {
-    logic           valid;
-    logic           ready;
-    logic           write;
-    data_t          data;
-    tcdm_user_t     meta;
-  } l1_rsp_t;
-
   // L2 Memory
   localparam int unsigned NumL2Channel        = `ifdef L2_CHANNEL `L2_CHANNEL `else 0 `endif;
   localparam int unsigned L2BankWidth         = `ifdef L2_BANK_WIDTH `L2_BANK_WIDTH `else 0 `endif;
