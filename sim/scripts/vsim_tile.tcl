@@ -30,6 +30,13 @@ for {set c 0}  {$c < 4} {incr c} {
 	add wave -noupdate -group tile[$1] -group cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/*
 }
 
+# Add waves for L0 HPDcache
+for {set c 0} {$c < 4} {incr c} {
+	onerror {resume}
+
+	add wave -noupdate -group tile[$1] -group l0_cache[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/*
+}
+
 for {set c 0} {$c < 5} {incr c} {
   add wave -noupdate -group tile[$1] -group cache_xbar -group xbar[$c]	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_cache_xbar[$c]/i_cache_xbar/*
 }

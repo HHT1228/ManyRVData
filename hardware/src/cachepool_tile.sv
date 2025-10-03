@@ -274,11 +274,12 @@ module cachepool_tile
       mshrSetsPerRam: 16,
       mshrRamByteEnable: 1'b1,
       mshrUseRegbank: 1,
+      cbufEntries: 2,
       refillCoreRspFeedthrough: 1'b1,
       refillFifoDepth: 2,
       wbufDirEntries: 2,
       wbufDataEntries: 1,
-      wbufWords: 16,          // Unsure
+      wbufWords: 1,          // Unsure
       wbufTimecntWidth: 3,
       rtabEntries: 2,
       flushEntries: 2,
@@ -287,7 +288,8 @@ module cachepool_tile
       memIdWidth: 6,
       memDataWidth: L1LineWidth,
       wtEn: 1'b1,
-      wbEn: 1'b0              // Disable write-back
+      wbEn: 1'b0,              // Disable write-back
+      lowLatency: 1'b1
   };
 
   // localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcache_pkg::hpdcacheBuildConfig(
@@ -600,11 +602,11 @@ module cachepool_tile
   data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_data;
   amo_op_e    [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_amo;
   
-  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_valid;
-  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_ready;
-  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_write;
-  data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_data;
-  tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_meta;
+  // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_valid;
+  // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_ready;
+  // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_write;
+  // data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_data;
+  // tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_meta;
 
   logic            [NumL1CacheCtrl-1:0][NumTagBankPerCtrl-1:0] l1_tag_bank_req;
   logic            [NumL1CacheCtrl-1:0][NumTagBankPerCtrl-1:0] l1_tag_bank_we;
@@ -907,13 +909,13 @@ module cachepool_tile
       assign hpd_l0_cache_req_valid[cb][j] = l0_cache_req_valid[cb][j];
       assign l0_cache_req[cb][j].addr_offset = l0_cache_req_addr_offset[cb][j];
       assign l0_cache_req[cb][j].wdata = l0_cache_req_data[cb][j];
-      // BE
+      assign l0_cache_req[cb][j].be = 32'h00F0;                                         // TODO: remove hardcoding
       assign l0_cache_req[cb][j].size = $clog2(DataWidth/8);
       assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
       assign l0_cache_req[cb][j].tid  = l0_cache_req_reqid[cb][j];
       assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
-      assign l0_cache_tag[cb][j] = cache_req[j][cb].q.addr[L0AddrWidth-1:11];   // TODO: verify the tag width, remove hardcoding
-
+      assign l0_cache_req[cb][j].addr_tag = cache_req[j][cb].q.addr[L0AddrWidth-1:11];
+      assign l0_cache_tag[cb][j] = l0_cache_req[cb][j].addr_offset[L0AddrWidth-1:11];   // TODO: verify the tag width, remove hardcoding
       always_comb begin
         if (l0_cache_req_amo[cb][j] == AMONone) begin
           l0_cache_req[cb][j].op = l0_cache_req_write[cb][j] ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
