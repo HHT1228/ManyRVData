@@ -250,16 +250,18 @@ module cachepool_tile
   ////////////////////////////
   // L0 HPDcache parameters //
   ////////////////////////////
-  localparam int unsigned HPDCACHE_NREQUESTERS = NrTCDMPortsPerCore;
+  localparam int unsigned NrL0CoaleserInputs = NrTCDMPortsPerCore - 1;
+  // localparam int unsigned HPDCACHE_NREQUESTERS = NrTCDMPortsPerCore;
+  localparam int unsigned HPDCACHE_NREQUESTERS = 2;   // Snitch + Spatz
 
   // TODO: Make these parameters configurable (in config.mk, cachepool_pkg.sv)
   localparam hpdcache_pkg::hpdcache_user_cfg_t HPDcacheUserCfg = '{
       nRequesters: HPDCACHE_NREQUESTERS,
       paWidth: 32,          // TODO: need test and confirm, is this tag width? (VIPT)
-      wordWidth: 32,
-      sets: 32,
+      wordWidth: 64,    // TODO: extend to 128 for coalesced data, other parameters need to be changed accordingly
+      sets: 16,
       ways: 4,
-      clWords: 16,
+      clWords: 8,
       reqWords: 1,
       reqTransIdWidth: 6,
       reqSrcIdWidth: 3,
@@ -523,6 +525,19 @@ module cachepool_tile
     tcdm_user_t     meta;
   } l1_rsp_t;
 
+  typedef struct packed {
+    hpdcache_req_t       hpd_req;
+    hpdcache_rsp_t       hpd_rsp;
+  } hpd_coal_info_t;
+
+  // typedef struct packed {
+  //   hpdcache_req_t       hpd_req;
+
+  //   hpdcache_req_sid_t   hpd_rsp_sid;
+  //   hpdcache_req_tid_t   hpd_rsp_tid;
+  // } hpd_coal_info_t;
+
+
   // -----------
   // Assignments
   // -----------
@@ -601,6 +616,8 @@ module cachepool_tile
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_write;
   data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_data;
   amo_op_e    [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_amo;
+
+  addr_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_addr;   // Preserve the full addr
   
   // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_valid;
   // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_ready;
@@ -869,37 +886,59 @@ module cachepool_tile
     for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_req_signals
       assign l0_cache_req_valid[cb][j] = cache_req[j][cb].q_valid;
       // assign l0_cache_req_addr [cb][j] = cache_req[j][cb].q.addr;
-      assign l0_cache_req_addr_offset [cb][j] = cache_req[j][cb].q.addr;    // TODO: not sure if should use the full addr
+      assign l0_cache_req_addr_offset [cb][j] = cache_req[j][cb].q.addr[HPDcacheCfg.reqOffsetWidth-1:0];
       assign l0_cache_req_coreid[cb][j] = cache_req[j][cb].q.user.core_id;
       assign l0_cache_req_reqid [cb][j] = cache_req[j][cb].q.user.req_id;
       assign l0_cache_req_write [cb][j] = cache_req[j][cb].q.write;
       assign l0_cache_req_data  [cb][j] = cache_req[j][cb].q.data;
       assign l0_cache_req_amo   [cb][j] = cache_req[j][cb].q.amo;
+      assign l0_cache_req_addr  [cb][j] = cache_req[j][cb].q.addr;
     end
   end
   
   // Assign processed signals to hpd-format signals
-  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_req_valid, hpd_l0_cache_req_ready;
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_req_valid;
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_req_ready;
   // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_rsp_valid;
-  // hpdcache_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req;
-  // hpdcache_rsp_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp;
-  // hpdcache_tag_t l0_cache_tag;
-  logic hpd_l0_cache_req_valid[NumL0CacheCtrl][NrTCDMPortsPerCore];
-  logic hpd_l0_cache_req_ready[NumL0CacheCtrl][NrTCDMPortsPerCore];
-  logic hpd_l0_cache_rsp_valid[NumL0CacheCtrl][NrTCDMPortsPerCore];
-  hpdcache_req_t l0_cache_req[NumL0CacheCtrl][NrTCDMPortsPerCore];
-  hpdcache_rsp_t l0_cache_rsp[NumL0CacheCtrl][NrTCDMPortsPerCore];
-  hpdcache_tag_t l0_cache_tag[NumL0CacheCtrl][NrTCDMPortsPerCore];
-  // logic [NumL0CacheCtrl-1:0] l0_wbuf_empty;    // FIXME: illegal port connection for some reason
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_valid;
+  // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_rsp_write;
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_write;
+  data_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_data;  // TODO: is dimension correct?
+  
+  hpdcache_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req;
+  hpdcache_rsp_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp;
+  hpdcache_tag_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_tag;
+  // logic [NumL0CacheCtrl-1:0] l0_wbuf_empty;    // FIXME: illegal port connection for some reason\
 
-  // assign hpd_l0_cache_req_valid = l0_cache_req_valid;
-  // assign l0_cache_req.addr_offset = l0_cache_req_addr_offset;
-  // assign l0_cache_req.wdata = l0_cache_req_data;
-  // // BE
-  // assign l0_cache_req.size = $clog2(DataWidth/8);
-  // assign l0_cache_req.sid  = l0_cache_req_coreid;
-  // assign l0_cache_req.tid  = l0_cache_req_reqid;
-  // assign l0_cache_req.need_rsp = !l0_cache_req_write;
+  // Calescer upstream response signals
+  logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] hpd_l0_cache_rsp_ready;
+
+  // Coalesced requests
+  logic hpd_l0_cache_req_valid_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic hpd_l0_cache_req_ready_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic hpd_l0_cache_rsp_valid_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  hpdcache_req_t l0_cache_req_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  hpdcache_rsp_t l0_cache_rsp_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  // hpd_rsp_coal_t l0_cache_rsp_coal_info [NumL0CacheCtrl];
+  hpdcache_tag_t l0_cache_tag_coal[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  addr_t l0_cache_req_coal_addr[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic [DataWidth*NrL0CoaleserInputs-1:0] l0_cache_req_coal_wdata[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+
+  // hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_info;  // [:][4] is not used, declared for dimension matching
+  hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_coal_req_info;  // [:][4] is not used, declared for dimension matching
+  hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_coal_rsp_info;
+
+  // Coalesing infos: only user and writes are processed using info field of coalescer
+  tcdm_user_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_user; // upstream
+  tcdm_meta_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_info; // upstream
+  tcdm_user_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_user; // upstream
+  tcdm_meta_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_info; // upstream
+
+  // tcdm_user_t [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS] l0_cache_req_downstream_user;
+  tcdm_meta_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info;  // downstream
+  logic       [NumL0CacheCtrl-1:0] l0_cache_req_downstream_write; // downstream
+  tcdm_user_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_user;  // downstream
+  tcdm_meta_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info;  // downstream
 
   // assign l0_cache_req.op = l0_cache_req_write ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
   
@@ -907,15 +946,22 @@ module cachepool_tile
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_cache_op
     for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_op_signals
       assign hpd_l0_cache_req_valid[cb][j] = l0_cache_req_valid[cb][j];
+
       assign l0_cache_req[cb][j].addr_offset = l0_cache_req_addr_offset[cb][j];
       assign l0_cache_req[cb][j].wdata = l0_cache_req_data[cb][j];
-      assign l0_cache_req[cb][j].be = 32'h00F0;                                         // TODO: remove hardcoding
+      assign l0_cache_req[cb][j].be = 32'hFFFF;                                         // TODO: remove hardcoding
       assign l0_cache_req[cb][j].size = $clog2(DataWidth/8);
       assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
       assign l0_cache_req[cb][j].tid  = l0_cache_req_reqid[cb][j];
-      assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
-      assign l0_cache_req[cb][j].addr_tag = cache_req[j][cb].q.addr[L0AddrWidth-1:11];
-      assign l0_cache_tag[cb][j] = l0_cache_req[cb][j].addr_offset[L0AddrWidth-1:11];   // TODO: verify the tag width, remove hardcoding
+      // assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
+      assign l0_cache_req[cb][j].need_rsp = 1'b1;
+      assign l0_cache_req[cb][j].addr_tag = cache_req[j][cb].q.addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+
+      assign l0_cache_tag[cb][j] = cache_req[j][cb].q.addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+
+      // assign l0_cache_req_info[cb][j].hpd_req = l0_cache_req[cb][j];
+      assign l0_cache_coal_rsp_info[cb][j].hpd_rsp = l0_cache_rsp_coal[cb][j];
+      
       always_comb begin
         if (l0_cache_req_amo[cb][j] == AMONone) begin
           l0_cache_req[cb][j].op = l0_cache_req_write[cb][j] ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
@@ -936,8 +982,95 @@ module cachepool_tile
           endcase
         end
       end
+
+      // Upstream request user for coalescer
+      assign l0_cache_req_user[cb][j].core_id = l0_cache_req_coreid[cb][j];
+      assign l0_cache_req_user[cb][j].is_amo = (l0_cache_req_amo[cb][j] != AMONone);
+      assign l0_cache_req_user[cb][j].req_id  = l0_cache_req_reqid[cb][j];
+      // TODO: remove hardcoding
+      assign l0_cache_req_user[cb][j].is_fpu = (j != NrTCDMPortsPerCore-1);  // channel 4 is snitch, not fpu
+
+      // Upstream request info for coalescer
+      assign l0_cache_req_info[cb][j].user = l0_cache_req_user[cb][j];
+      assign l0_cache_req_info[cb][j].write = l0_cache_req_write[cb][j];
     end
   end
+
+  // Coalesce the spatz traffics (channel 0 to 3)
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_req_coalescer
+    par_coalescer_extend_window #(
+      .ReqAddrWidth        (L0AddrWidth ),
+      .NumPorts            (NrL0CoaleserInputs),
+      .info_t              (tcdm_meta_t),
+      .down_id_t           (),
+      .UpstreamDataWidth   (DataWidth),
+      .DownstreamDataWidth (DataWidth*NrL0CoaleserInputs)
+    ) i_par_coalescer_extend_window (
+      .clk_i                       (clk_i),
+      .rst_ni                      (rst_ni),
+      .id_i                        ('0),
+
+      .upstream_req_valid_i        (hpd_l0_cache_req_valid[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_req_ready_o        (hpd_l0_cache_req_ready[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_req_addr_i         (l0_cache_req_addr[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_req_info_i         (l0_cache_req_info[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_req_write_i        (l0_cache_req_write[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_req_wdata_i        (l0_cache_req_data[cb][NrL0CoaleserInputs-1:0]),
+
+      .upstream_resp_valid_o       (l0_core_rsp_valid[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_resp_ready_i       (cache_rsp_ready[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_resp_write_o       (l0_core_rsp_write[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_resp_data_o        (l0_core_rsp_data[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_resp_info_o        (l0_core_rsp_info[cb][NrL0CoaleserInputs-1:0]),
+
+      .downstream_req_valid_o      (hpd_l0_cache_req_valid_coal[cb][0]),
+      .downstream_req_ready_i      (hpd_l0_cache_req_ready_coal[cb][0]),
+      .downstream_req_addr_o       (l0_cache_req_coal_addr[cb][0]),
+      .downstream_req_info_o       (l0_cache_req_downstream_info[cb][0]),
+      .downstream_req_write_o      (l0_cache_req_downstream_write[cb][0]),      // maybe redundant
+      .downstream_req_wdata_o      (l0_cache_req_coal_wdata[cb][0]),
+      .downstream_req_wmask_o      (/* Unused */),
+
+      .downstream_resp_valid_i     (hpd_l0_cache_rsp_valid_coal[cb][0]),
+      .downstream_resp_ready_o     (/* Unused */),
+      .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),
+      .downstream_resp_info_i      (l0_cache_rsp_downstream_info[cb]),
+      .downstream_resp_write_i     (/* Unused */)
+    );
+    
+    /* Upstream rsp processing */
+    assign l0_core_rsp_user[cb][0] = l0_core_rsp_info[cb][0].user;
+    // TODO: assign to appropriate input ports of CC when closing the loop
+    // Wire error and aborted signals
+    // channel 1 bypass (snitch)
+    
+    /* Downstream req processing */
+    // Data and address
+    assign l0_cache_req_coal[cb][0].addr_offset = l0_cache_req_coal_addr[cb][0][HPDcacheCfg.reqOffsetWidth-1:0];
+    assign l0_cache_req_coal[cb][0].wdata = l0_cache_req_coal_wdata[cb][0];
+    assign l0_cache_req_coal[cb][0].addr_tag = l0_cache_req_coal_addr[cb][0][L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+    assign l0_cache_tag_coal[cb][0] = l0_cache_req_coal_addr[cb][0][L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+    // Explicit handling of fields not included in the coalescer info
+    assign l0_cache_req_coal[cb][0].op = l0_cache_req[cb][0].op;  // Assume 4 requests from spatz are of the same type
+    assign l0_cache_req_coal[cb][0].be = l0_cache_req[cb][0].be;
+    assign l0_cache_req_coal[cb][0].size = NrL0CoaleserInputs * l0_cache_req[cb][0].size;
+    assign l0_cache_req_coal[cb][0].need_rsp = 1'b1;
+    // Meta data handling using info from coalescer
+    assign l0_cache_req_coal[cb][0].sid  = l0_cache_req_downstream_info[cb][0].user.core_id;
+    assign l0_cache_req_coal[cb][0].tid  = l0_cache_req_downstream_info[cb][0].user.req_id;
+    // channel 4 (snitch) bypass coalescer, it is not involved in the coalescing
+    assign hpd_l0_cache_req_valid_coal[cb][1] = hpd_l0_cache_req_valid[cb][NrTCDMPortsPerCore-1];
+    assign hpd_l0_cache_req_ready[cb][NrTCDMPortsPerCore-1] = hpd_l0_cache_req_ready_coal[cb][1];
+    assign l0_cache_req_coal[cb][1] = l0_cache_req[cb][NrTCDMPortsPerCore-1];
+    // Handle tag for coalesced requests
+    assign l0_cache_tag_coal[cb][1] = l0_cache_tag[cb][NrTCDMPortsPerCore-1];
+    // assign l0_cache_tag_coal[cb][0] = l0_cache_tag[cb][0];
+  end
+
+
+
+  // FIXME: rework the rsp handling: remove FIFO, add coalescer, maybe arbitration logic
+  // TODO: handle metadata of core_rsp manually
 
   // FIFO parameters and internal signals
   // TODO: move it to the top after working
@@ -967,7 +1100,6 @@ module cachepool_tile
     // assign l1_rsp_any_valid[cb] = |(cache_rsp_valid[cb]);
     assign l1_l0_fifo_push[cb] = |(cache_rsp_valid[cb]);
   end
-
   // One FIFO per L0 cache to buffer the incoming requests
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l1_l0_fifo
     // assign l1_l0_fifo_push[cb] = l1_rsp_any_valid[cb];
@@ -1137,14 +1269,14 @@ module cachepool_tile
       .rst_ni                             (rst_ni),
       .wbuf_flush_i                       (/* unused */),
 
-      .core_req_valid_i                   (hpd_l0_cache_req_valid[i]),
-      .core_req_ready_o                   (hpd_l0_cache_req_ready[i]),
-      .core_req_i                         (l0_cache_req[i]),
+      .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
+      .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
+      .core_req_i                         (l0_cache_req_coal[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
-      .core_req_tag_i                     (l0_cache_tag[i]),
+      .core_req_tag_i                     (l0_cache_tag_coal[i]),
       .core_req_pma_i                     (/* unused */),
-      .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid[i]),
-      .core_rsp_o                         (l0_cache_rsp[i]),
+      .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
+      .core_rsp_o                         (l0_cache_rsp_coal[i]),
 
       .mem_req_read_ready_i               (l0_mem_req_read_ready[i]),
       .mem_req_read_valid_o               (l0_mem_req_read_valid[i]),
