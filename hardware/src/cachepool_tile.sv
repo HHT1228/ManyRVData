@@ -1005,7 +1005,7 @@ module cachepool_tile
       .down_id_t           (),
       .UpstreamDataWidth   (DataWidth),
       .DownstreamDataWidth (DataWidth*NrL0CoaleserInputs)
-    ) i_par_coalescer_extend_window (
+    ) i_core_l0_coalescer (
       .clk_i                       (clk_i),
       .rst_ni                      (rst_ni),
       .id_i                        ('0),
@@ -1026,8 +1026,8 @@ module cachepool_tile
       .downstream_req_valid_o      (hpd_l0_cache_req_valid_coal[cb][0]),
       .downstream_req_ready_i      (hpd_l0_cache_req_ready_coal[cb][0]),
       .downstream_req_addr_o       (l0_cache_req_coal_addr[cb][0]),
-      .downstream_req_info_o       (l0_cache_req_downstream_info[cb][0]),
-      .downstream_req_write_o      (l0_cache_req_downstream_write[cb][0]),      // maybe redundant
+      .downstream_req_info_o       (l0_cache_req_downstream_info[cb]),
+      .downstream_req_write_o      (l0_cache_req_downstream_write[cb]),      // maybe redundant
       .downstream_req_wdata_o      (l0_cache_req_coal_wdata[cb][0]),
       .downstream_req_wmask_o      (/* Unused */),
 
@@ -1056,8 +1056,8 @@ module cachepool_tile
     assign l0_cache_req_coal[cb][0].size = NrL0CoaleserInputs * l0_cache_req[cb][0].size;
     assign l0_cache_req_coal[cb][0].need_rsp = 1'b1;
     // Meta data handling using info from coalescer
-    assign l0_cache_req_coal[cb][0].sid  = l0_cache_req_downstream_info[cb][0].user.core_id;
-    assign l0_cache_req_coal[cb][0].tid  = l0_cache_req_downstream_info[cb][0].user.req_id;
+    assign l0_cache_req_coal[cb][0].sid  = l0_cache_req_downstream_info[cb].user.core_id;
+    assign l0_cache_req_coal[cb][0].tid  = l0_cache_req_downstream_info[cb].user.req_id;
     // channel 4 (snitch) bypass coalescer, it is not involved in the coalescing
     assign hpd_l0_cache_req_valid_coal[cb][1] = hpd_l0_cache_req_valid[cb][NrTCDMPortsPerCore-1];
     assign hpd_l0_cache_req_ready[cb][NrTCDMPortsPerCore-1] = hpd_l0_cache_req_ready_coal[cb][1];

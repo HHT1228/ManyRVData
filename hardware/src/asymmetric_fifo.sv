@@ -1,6 +1,6 @@
 // Modified from fifo_v3.sv in common_cells
 
-// `include "common_cells/assertions.svh"
+`include "common_cells/assertions.svh"
 // - Accepts N_IN items per push via data_i[N_IN]
 // - Pops 1 item per pop (same as original)
 module asymmetric_fifo #(
