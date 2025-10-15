@@ -251,8 +251,10 @@ module cachepool_tile
   // L0 HPDcache parameters //
   ////////////////////////////
   localparam int unsigned NrL0CoaleserInputs = NrTCDMPortsPerCore - 1;
+  localparam int unsigned NrL0L1ArbiterInputs = 2;
   // localparam int unsigned HPDCACHE_NREQUESTERS = NrTCDMPortsPerCore;
   localparam int unsigned HPDCACHE_NREQUESTERS = 2;   // Snitch + Spatz
+  localparam int unsigned ReqIdWidth = $clog2(NumSpatzOutstandingLoads[0]);
 
   // TODO: Make these parameters configurable (in config.mk, cachepool_pkg.sv)
   localparam hpdcache_pkg::hpdcache_user_cfg_t HPDcacheUserCfg = '{
@@ -264,12 +266,12 @@ module cachepool_tile
       clWords: 4,
       reqWords: 1,
       reqTransIdWidth: 6,
-      reqSrcIdWidth: 3,
+      reqSrcIdWidth: 5,
       victimSel: hpdcache_pkg::HPDCACHE_VICTIM_RANDOM,
       dataWaysPerRamWord: 2,
       dataSetsPerRam: 32,
       dataRamByteEnable: 1'b1,
-      accessWords: 8,
+      accessWords: 4,
       mshrSets: 16,
       mshrWays: 2,
       mshrWaysPerRamWord: 2,
@@ -287,7 +289,7 @@ module cachepool_tile
       flushEntries: 2,
       flushFifoDepth: 2,
       memAddrWidth: L1AddrWidth,
-      memIdWidth: 6,
+      memIdWidth: CoreIDWidth + ReqIdWidth,
       memDataWidth: L1LineWidth,
       wtEn: 1'b1,
       wbEn: 1'b0,              // Disable write-back
@@ -299,6 +301,7 @@ module cachepool_tile
   // );
 
   localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcacheBuildConfig(HPDcacheUserCfg);
+  localparam int unsigned coalescedDataWidth = HPDcacheCfg.u.wordWidth;
 
   // --------
   // Typedefs
@@ -450,6 +453,9 @@ module cachepool_tile
   //     `HPDCACHE_DECL_MEM_REQ_W_T(hpdcache_mem_data_t, hpdcache_mem_be_t);
   // localparam type hpdcache_mem_resp_w_t =
   //     `HPDCACHE_DECL_MEM_RESP_W_T(hpdcache_mem_id_t);
+
+  typedef logic [coalescedDataWidth-1:0]            coalesced_data_t;
+  typedef logic [L1LineWidth-1:0]                   cacheline_data_t;
   
   typedef logic [HPDcacheCfg.u.memAddrWidth-1:0]    hpdcache_mem_addr_t;
   typedef logic [HPDcacheCfg.u.memIdWidth-1:0]      hpdcache_mem_id_t;
@@ -517,18 +523,18 @@ module cachepool_tile
 
   typedef logic [HPDcacheCfg.u.wbufTimecntWidth-1:0] hpdcache_wbuf_timecnt_t;
   
-  typedef struct packed {
-    logic           valid;
-    logic           ready;
-    logic           write;
-    data_t          data;
-    tcdm_user_t     meta;
-  } l1_rsp_t;
+  // typedef struct packed {
+  //   logic           valid;
+  //   logic           ready;
+  //   logic           write;
+  //   data_t          data;
+  //   tcdm_user_t     meta;
+  // } l1_rsp_t;
 
-  typedef struct packed {
-    hpdcache_req_t       hpd_req;
-    hpdcache_rsp_t       hpd_rsp;
-  } hpd_coal_info_t;
+  // typedef struct packed {
+  //   hpdcache_req_t       hpd_req;
+  //   hpdcache_rsp_t       hpd_rsp;
+  // } hpd_coal_info_t;
 
   // typedef struct packed {
   //   hpdcache_req_t       hpd_req;
@@ -618,6 +624,8 @@ module cachepool_tile
   amo_op_e    [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_amo;
 
   addr_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_addr;   // Preserve the full addr
+
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l1_rsp_ready_coal;  // Temp signal for observation
   
   // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_valid;
   // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp_ready;
@@ -925,8 +933,8 @@ module cachepool_tile
   logic [DataWidth*NrL0CoaleserInputs-1:0] l0_cache_req_coal_wdata[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
 
   // hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_info;  // [:][4] is not used, declared for dimension matching
-  hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_coal_req_info;  // [:][4] is not used, declared for dimension matching
-  hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_coal_rsp_info;
+  // hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_coal_req_info;  // [:][4] is not used, declared for dimension matching
+  // hpd_coal_info_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_coal_rsp_info;
 
   // Coalesing infos: only user and writes are processed using info field of coalescer
   tcdm_user_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_user; // upstream
@@ -950,7 +958,7 @@ module cachepool_tile
       assign l0_cache_req[cb][j].addr_offset = l0_cache_req_addr_offset[cb][j];
       assign l0_cache_req[cb][j].wdata = l0_cache_req_data[cb][j];
       assign l0_cache_req[cb][j].be = 32'hFFFF;                                         // TODO: remove hardcoding
-      assign l0_cache_req[cb][j].size = $clog2(DataWidth/8);
+      assign l0_cache_req[cb][j].size = $clog2(coalescedDataWidth/8);                   // TODO: remove hardcoding
       assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
       assign l0_cache_req[cb][j].tid  = l0_cache_req_reqid[cb][j];
       // assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
@@ -960,7 +968,7 @@ module cachepool_tile
       assign l0_cache_tag[cb][j] = cache_req[j][cb].q.addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
 
       // assign l0_cache_req_info[cb][j].hpd_req = l0_cache_req[cb][j];
-      assign l0_cache_coal_rsp_info[cb][j].hpd_rsp = l0_cache_rsp_coal[cb][j];
+      // assign l0_cache_coal_rsp_info[cb][j].hpd_rsp = l0_cache_rsp_coal[cb][j];
       
       always_comb begin
         if (l0_cache_req_amo[cb][j] == AMONone) begin
@@ -1052,15 +1060,26 @@ module cachepool_tile
     // Explicit handling of fields not included in the coalescer info
     assign l0_cache_req_coal[cb][0].op = l0_cache_req[cb][0].op;  // Assume 4 requests from spatz are of the same type
     assign l0_cache_req_coal[cb][0].be = l0_cache_req[cb][0].be;
-    assign l0_cache_req_coal[cb][0].size = NrL0CoaleserInputs * l0_cache_req[cb][0].size;
+    // assign l0_cache_req_coal[cb][0].size = NrL0CoaleserInputs * l0_cache_req[cb][0].size;
+    assign l0_cache_req_coal[cb][0].size = $clog2(coalescedDataWidth/8);
     assign l0_cache_req_coal[cb][0].need_rsp = 1'b1;
     // Meta data handling using info from coalescer
     assign l0_cache_req_coal[cb][0].sid  = l0_cache_req_downstream_info[cb].user.core_id;
     assign l0_cache_req_coal[cb][0].tid  = l0_cache_req_downstream_info[cb].user.req_id;
+
     // channel 4 (snitch) bypass coalescer, it is not involved in the coalescing
     assign hpd_l0_cache_req_valid_coal[cb][1] = hpd_l0_cache_req_valid[cb][NrTCDMPortsPerCore-1];
     assign hpd_l0_cache_req_ready[cb][NrTCDMPortsPerCore-1] = hpd_l0_cache_req_ready_coal[cb][1];
-    assign l0_cache_req_coal[cb][1] = l0_cache_req[cb][NrTCDMPortsPerCore-1];
+    // assign l0_cache_req_coal[cb][1] = l0_cache_req[cb][NrTCDMPortsPerCore-1];
+    assign l0_cache_req_coal[cb][1].addr_offset = l0_cache_req[cb][NrTCDMPortsPerCore-1].addr_offset;
+    assign l0_cache_req_coal[cb][1].wdata = l0_cache_req[cb][NrTCDMPortsPerCore-1].wdata;
+    assign l0_cache_req_coal[cb][1].be = 32'h000F;  // TODO: need sanity check, remove hardcodings
+    assign l0_cache_req_coal[cb][1].size = $clog2(coalescedDataWidth/8);
+    assign l0_cache_req_coal[cb][1].sid = l0_cache_req[cb][NrTCDMPortsPerCore-1].sid;
+    assign l0_cache_req_coal[cb][1].tid = l0_cache_req[cb][NrTCDMPortsPerCore-1].tid;
+    assign l0_cache_req_coal[cb][1].need_rsp = 1'b1;
+    assign l0_cache_req_coal[cb][1].op = l0_cache_req[cb][NrTCDMPortsPerCore-1].op;
+    assign l0_cache_req_coal[cb][1].addr_tag = l0_cache_req[cb][NrTCDMPortsPerCore-1].addr_tag;
     // Handle tag for coalesced requests
     assign l0_cache_tag_coal[cb][1] = l0_cache_tag[cb][NrTCDMPortsPerCore-1];
     // assign l0_cache_tag_coal[cb][0] = l0_cache_tag[cb][0];
@@ -1097,250 +1116,60 @@ module cachepool_tile
   hpdcache_mem_resp_w_t [NumL0CacheCtrl-1:0] l0_mem_resp_write;
 
   // Interfacing output form L1 to L0
-  // for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l0_l1_cache_connect
-  //   for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_l1_cache_signals
-  //     // Decouple read and write channels (the HPD way)
-  //     always_comb begin
-  //       if (!cache_rsp_write[cb][j]) begin
-  //         l0_mem_req_read_ready[cb][j] = cache_rsp_ready[cb][j];
-  //         l0_mem_resp_read_valid[cb][j] = cache_rsp_valid[cb][j];
-  //         // Need to be verified:
-  //         // l0_mem_resp_read[cb][j].data = cache_rsp_data[cb][j];
-  //         // l0_mem_resp_read[cb][j].id = cache_rsp_meta[cb][j].req_id;
-  //         l0_mem_resp_read[cb][j].mem_resp_r_data = cache_rsp_data[cb][j];
-  //         l0_mem_resp_read[cb][j].mem_resp_r_id = cache_rsp_meta[cb][j].req_id;
-  //       end else begin
-  //         l0_mem_req_write_ready[cb][j] = cache_rsp_ready[cb][j];
-  //         l0_mem_req_write_data_ready[cb][j] = cache_rsp_ready[cb][j];
-  //         l0_mem_resp_write_valid[cb][j] = cache_rsp_valid[cb][j];
-  //         // Need to be verified:
-  //         // l0_mem_resp_write[cb][j].id = cache_rsp_meta[cb][j].req_id;
-  //         l0_mem_resp_write[cb][j].mem_resp_w_id = cache_rsp_meta[cb][j].req_id;
-  //       end
-  //     end
-  //   end
-  // end
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrL0L1ArbiterInputs-1:0] l0_mem_req_combined; // 0: read, 1: write
+  logic              [NumL0CacheCtrl-1:0][NrL0L1ArbiterInputs-1:0] l0_mem_req_valid_combined, l0_mem_req_ready_combined;
+  hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_l1_req;
+  logic              [NumL0CacheCtrl-1:0] l0_l1_req_valid;
+  logic              [NumL0CacheCtrl-1:0] arb_out_id; // placeholder, unused for now
+  hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0] l0_l1_req_wdata;
 
-  // for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_op_signals
-  //   assign l1_l0_fifo_flush[cb] = 1'b0;
-  //   always_comb begin
-  //     if (!l1_l0_fifo_out[cb].write) begin
-  //       l0_mem_req_read_ready[cb] = l1_l0_fifo_out[cb].ready;
-  //       l0_mem_resp_read_valid[cb] = l1_l0_fifo_out[cb].valid;
-  //       // Need to be verified:
-  //       // l0_mem_resp_read[cb].data = cache_rsp_data[cb][j];
-  //       // l0_mem_resp_read[cb].id = cache_rsp_meta[cb][j].req_id;
-  //       l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_fifo_out[cb].data;
-  //       l0_mem_resp_read[cb].mem_resp_r_id = l1_l0_fifo_out[cb].meta.req_id;
+  // Dummy signals that will be connected to L1
+  // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_l1_req_valid;
+  // logic                 [NumL1CacheCtrl-1:0] l0_l1_req_ready;
+  tcdm_addr_t           [NumL1CacheCtrl-1:0] l0_l1_req_addr;
+  tcdm_user_t           [NumL1CacheCtrl-1:0] l0_l1_req_meta;
+  logic                 [NumL1CacheCtrl-1:0] l0_l1_req_write;
+  cacheline_data_t      [NumL1CacheCtrl-1:0] l0_l1_req_data;
 
-  //       // TODO: verify the pop_i control flow
-  //       // Pop when the data is consumed
-  //       l1_l0_fifo_pop[cb] = l1_l0_fifo_out[cb].valid && l1_l0_fifo_out[cb].ready;
-  //       // Don't push when it's a read response
-  //       // l1_l0_fifo_push[cb] = 1'b0;
-  //     end else begin
-  //       l0_mem_req_write_ready[cb] = l1_l0_fifo_out[cb].ready;
-  //       l0_mem_req_write_data_ready[cb] = l1_l0_fifo_out[cb].ready;
-  //       l0_mem_resp_write_valid[cb] = l1_l0_fifo_out[cb].valid;
-  //       // Need to be verified:
-  //       // l0_mem_resp_write[cb].id = cache_rsp_meta[cb][j].req_id;
-  //       l0_mem_resp_write[cb].mem_resp_w_id = l1_l0_fifo_out[cb].meta.req_id;
 
-  //       // TODO: same as above
-  //       // Pop when the data is consumed
-  //       l1_l0_fifo_pop[cb] = l1_l0_fifo_out[cb].valid && l1_l0_fifo_out[cb].ready;
-  //       // Don't push when it's a write response
-  //       // l1_l0_fifo_push[cb] = 1'b0;
-  //     end
-  //   end
-  // end
-
-  // for (genvar i = 0; i < NrTCDMPortsPerCore; i++) begin: gen_req_transpose
-  //   for (genvar j = 0; j < NumL1CacheCtrl; j++) begin:
-      // Cache request valid
-      // assign l0_cache_req_valid[j][i] = cache_req[i][j].q_valid;
-
-      // Cache request
-      // assign l0_cache_req[j][i].addr_offset = cache_req[i][j].q.addr[dynamic_offset-1:0];
-      // assign l0_cache_req[j][i].wdata = cache_req[i][j].q.data;
-      // assign l0_cache_req[j][i].be = cache_req[i][j].q.strb;
-      // assign l0_cache_req[j][i].size = $clog2(DataWidth/8);
-      // assign l0_cache_req[j][i].sid = cache_req[i][j].q.user.core_id;
-      // assign l0_cache_req[j][i].tid = cache_req[i][j].q.user.req_id;
-      // assign l0_cache_req[j][i].need_rsp = !cache_req[i][j].q.write;
-      // assign l0_cache_req[j][i].op = cache_req[i][j].q.write ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
-
-      // always_comb begin
-      //   if(cache_req[i][j].q.write) begin
-      //     l0_cache_req[j][i].op = HPDCACHE_REQ_STORE;
-      //   end else if (!cache_req[i][j].q.write) begin
-      //     l0_cache_req[j][i].op = HPDCACHE_REQ_LOAD;
-      //   end
-      // end
-
-      // Cache request tag
-  //     assign l0_cache_tag = cache_req[i][j].q.addr[L0AddrWidth-1:dynamic_offset];
-  //   end
-  // end
-
-  logic [NumL0CacheCtrl-1:0] l1_l0_req_read_ready_coal, l1_l0_mem_req_read_valid_coal;
-
-  // logic [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_rsp_read_ready_coal, l1_l0_rsp_read_valid_coal;
-  // hpdcache_mem_resp_r_t [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_rsp_read_coal;
-
-  logic   [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_req_ready_coal, l1_l0_req_valid_coal;
-  addr_t  [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_req_addr_coal;
-  data_t  [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_req_data_coal;   // TODO: data width might be incorrect
-  logic   [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_req_write_coal;
-
-  data_t  [NumL0CacheCtrl-1:0] l0_l1_rsp_data_coal;
-  logic   [NumL0CacheCtrl-1:0] l0_l1_rsp_ready_coal;
-  logic   [NumL0CacheCtrl-1:0] l0_l1_rsp_write_coal;
-  
-  // Coalesing infos: only user and writes are processed using info field of coalescer
-  tcdm_user_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l1_l0_rsp_user; // upstream
-  tcdm_meta_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l1_l0_rsp_info; // upstream
-  // tcdm_user_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_user; // upstream
-  // tcdm_meta_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_info; // upstream
-
-  tcdm_user_t [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_req_downstream_user;  // downstream
-  tcdm_meta_t [NumL0CacheCtrl-1:0][HPDCACHE_NREQUESTERS-1:0] l1_l0_req_downstream_info;  // downstream
-
-  tcdm_user_t [NumL0CacheCtrl-1:0] l0_l1_rsp_downstream_user;  // downstream
-  tcdm_meta_t [NumL0CacheCtrl-1:0] l0_l1_rsp_downstream_info;  // downstream
-
-  // Processing of user and info from L1 into coalescer-ready format
-  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l1_l0_coal_info
-    for (genvar j = 0; j < NrL0CoaleserInputs; j++) begin : gen_l1_l0_coal_info_signals
-      // Upstream request user for coalescer
-      assign l1_l0_rsp_user[cb][j].core_id = cache_rsp_meta[cb][j].core_id;
-      assign l1_l0_rsp_user[cb][j].is_amo = cache_rsp_meta[cb][j].is_amo;
-      assign l1_l0_rsp_user[cb][j].req_id  = cache_rsp_meta[cb][j].req_id;
-      assign l1_l0_rsp_user[cb][j].is_fpu = cache_rsp_meta[cb][j].is_fpu;
-
-      assign l1_l0_rsp_info[cb][j].user = l1_l0_rsp_user[cb][j];
-      assign l1_l0_rsp_info[cb][j].write = cache_rsp_write[cb][j];
-    end
-  end
-
-  // NOTE: current implemation prioritizes read over write when both are valid
-  // NOTE: doesn't differentiate between snitch/spatz as HPD produced only one request
-  // Process user and info from HPD to downstream of coalescer (downstream rsp i)
-  // arbitrate between r/w from HPD to downstream of coalescer (downstream rsp i)
-  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_l1_coal_info
-    always_comb begin
-      if (l0_mem_req_read_valid[cb]) begin
-        // sid /core_id and fpu flag doesn't exist, maybe need to modify HPDcache
-        l0_l1_rsp_downstream_user[cb].req_id = l0_mem_req_read[cb].mem_req_id;
-        // TODO: mem_req_command has nothing equivalent to AMONone, AMO_ADD by default, what to do?
-        l0_l1_rsp_downstream_user[cb].is_amo = (l0_mem_req_read[cb].mem_req_command != HPDCACHE_REQ_STORE) && (l0_mem_req_read[cb].mem_req_command != HPDCACHE_REQ_LOAD);
-        // l0_l1_rsp_downstream_user[cb].is_amo = l0_mem_req_read[cb].mem_req_command == AMONone;
-        l0_l1_rsp_data_coal[cb] = '0;        // No data payload for read request
-      end else begin
-        l0_l1_rsp_downstream_user[cb].req_id = l0_mem_req_write[cb].mem_req_id;
-        l0_l1_rsp_downstream_user[cb].is_amo = (l0_mem_req_write[cb].mem_req_command != HPDCACHE_REQ_STORE) && (l0_mem_req_write[cb].mem_req_command != HPDCACHE_REQ_LOAD);
-        l0_l1_rsp_data_coal[cb] = l0_mem_req_write_data[cb].mem_req_w_data;
-      end
-    end
-
-    assign l0_l1_rsp_write_coal[cb] = !(l0_mem_req_read_valid[cb]);
-    assign l0_l1_rsp_downstream_info[cb].user = l0_l1_rsp_downstream_user[cb];
-  end
-  
-  // Coalescer upstream output signals (dangling)
-  // TODO: connect to L1 when ready
-  logic       [NrL0CoaleserInputs-1:0][NrTCDMPortsPerCore-1:0] l0_l1_rsp_valid, l0_l1_rsp_write;
-  // TODO: data width alignment check
-  data_t      [DataWidth-1:0][NrTCDMPortsPerCore-1:0] l0_l1_rsp_data;   // be and last fields dropped as L1 doesn't accept these
-  tcdm_meta_t [NrL0CoaleserInputs-1:0][NrTCDMPortsPerCore-1:0] l0_l1_rsp_uptream_info;
-  tcdm_user_t [NrL0CoaleserInputs-1:0][NrTCDMPortsPerCore-1:0] l0_l1_rsp_upstream_user;  // upstream
-
-  // Coalescing spatz traffic from L1 to L0
-  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : gen_l1_l0_coalescer
-    par_coalescer_extend_window #(
-      .ReqAddrWidth        (L0AddrWidth),
-      .NumPorts            (NrL0CoaleserInputs),
-      .info_t              (tcdm_meta_t),
-      .down_id_t           (),
-      .UpstreamDataWidth   (DataWidth),
-      .DownstreamDataWidth (DataWidth*NrL0CoaleserInputs)
-    ) i_core_l0_coalescer (
-      .clk_i                       (clk_i),
-      .rst_ni                      (rst_ni),
-      .id_i                        ('0),
-
-      .upstream_req_valid_i        (cache_rsp_valid[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_req_ready_o        (cache_rsp_ready[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_req_addr_i         (/* Unused */),
-      .upstream_req_info_i         (l1_l0_rsp_info[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_req_write_i        (cache_rsp_write[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_req_wdata_i        (cache_rsp_data[cb][NrL0CoaleserInputs-1:0]),
-
-      .upstream_resp_valid_o       (l0_l1_rsp_valid[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_resp_ready_i       (cache_req_ready[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_resp_write_o       (l0_l1_rsp_write[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_resp_data_o        (l0_l1_rsp_data[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_resp_info_o        (l0_l1_rsp_uptream_info[cb][NrL0CoaleserInputs-1:0]),
-
-      .downstream_req_valid_o      (l1_l0_req_valid_coal[cb][0]),
-      .downstream_req_ready_i      ((l0_mem_resp_read_ready[cb] | l0_mem_resp_write_ready[cb])),  // OR
-      .downstream_req_addr_o       (l1_l0_req_addr_coal[cb][0]),                                  // Seems redundant
-      .downstream_req_info_o       (l1_l0_req_downstream_info[cb][0]),
-      .downstream_req_write_o      (l1_l0_req_write_coal[cb][0]),
-      .downstream_req_wdata_o      (l1_l0_req_data_coal[cb][0]),
-      .downstream_req_wmask_o      (/* Unused */),
-
-      .downstream_resp_valid_i     (l0_mem_req_read_valid[cb] | l0_mem_req_write_valid[cb]),  // OR
-      .downstream_resp_ready_o     (l0_l1_rsp_ready_coal[cb][0]),   // TODO: connect to L1
-      .downstream_resp_data_i      (l0_l1_rsp_data_coal),
-      .downstream_resp_info_i      (l0_l1_rsp_downstream_info[cb][0]),
-      .downstream_resp_write_i     (l0_l1_rsp_write_coal[cb][0])
+  // RR arbiter to select between R/W channel of HPDcache
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: l0_l1_req_arbiter
+    // Combine R/W channel requests
+    assign l0_mem_req_combined[cb][0] = l0_mem_req_read[cb];
+    assign l0_mem_req_combined[cb][1] = l0_mem_req_write[cb];
+    // Combine upstream handshake signals
+    assign l0_mem_req_valid_combined[cb][0] = l0_mem_req_read_valid[cb];
+    assign l0_mem_req_valid_combined[cb][1] = l0_mem_req_write_valid[cb];
+    rr_arb_tree #(
+      .NumIn     (NrL0L1ArbiterInputs),
+      .DataType  (hpdcache_mem_req_t),
+      .AxiVldRdy (1'b1),  // treat req/gnt as valid/ready
+    ) i_l0_l1_rr_arb (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .flush_i (1'b0),
+      .rr_i    (1'b1),
+      .req_i   (l0_mem_req_valid_combined[cb]),  // valid_i
+      .gnt_o   (l0_mem_req_ready_combined[cb]),  // ready_o TODO: decouple and connect to L0
+      .data_i  (l0_mem_req_combined[cb]),
+      .req_o   (l0_l1_req_valid[cb]),            // valid_o TODO: connect to L1 `core_req_valid_i` when ready
+      .gnt_i   (cache_req_ready[cb]),            // ready_i
+      .data_o  (l0_l1_req[cb]),
+      .idx_o   (arb_out_id[cb])
     );
-    // Channel 4 l1-l0 wiring (bypass coalescer)
-    assign l1_l0_req_downstream_user[cb][1] = cache_rsp_user[cb][NrTCDMPortsPerCore-1];
-    assign l1_l0_req_downstream_info[cb][1].user = l1_l0_req_downstream_user[cb][1];      // redundancy
-    assign l1_l0_req_valid_coal[cb][1] = cache_rsp_valid[cb][NrTCDMPortsPerCore-1];
-    assign l1_l0_req_addr_coal[cb][1] = '0;
-    assign l1_l0_req_write_coal[cb][1] = cache_rsp_write[cb][NrTCDMPortsPerCore-1];
-    assign l1_l0_req_data_coal[cb][1] = cache_rsp_data[cb][NrTCDMPortsPerCore-1];
+    // TODO: how to handle separate req and data channels for write? Use a large type? separate handshake (valid?)
+    // core_req_ready_o can go directly into hpdcache (to 2 ports), but what about data_valid?
+    // Idea: send data into core_req_wdata_i when data_valid is asserted by HPDcache
+    assign l0_l1_req_wdata[cb] = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
 
-    // hpdcache_mem_req processing (R/W share same type)
-    for (genvar j = 0; j < NrL0CoaleserInputs; j++) begin: gen_l0_mem_req_metadata_signals
-      assign l0_l1_rsp_upstream_user[cb][j] = l0_l1_rsp_upstream_info[cb][j].user;
-    end
-
-    // wire channel 4 l0-l1 signals
-    // FIXME: no field from HPDcache mem_req to identify the core_id
-  end
-
-  // Arbitrate between two responses from L1 to L0 (snitch vs coalesced spatz)
-  // Current implementation prioritizes snitch over spatz
-  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l1_l0_arbitraiton
-    always_comb begin
-      if (l1_l0_req_valid_coal[cb][1]) begin
-        if (!l1_l0_req_write_coal[cb][1]) begin  // Snitch read
-          l0_mem_resp_read_valid[cb] = l1_l0_req_valid_coal[cb][1];
-          l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_req_data_coal[cb][1];
-          l0_mem_resp_read[cb].mem_resp_r_id = l1_l0_req_downstream_info[cb][1].user.req_id;
-        end else begin                           // Snitch write
-          l0_mem_resp_write_valid[cb] = l1_l0_req_valid_coal[cb][1];
-          // No data payload for write response
-          l0_mem_resp_write[cb].mem_resp_w_id = l1_l0_req_downstream_info[cb][1].user.req_id;
-          l0_mem_resp_write[cb].is_atomic = l1_l0_req_downstream_info[cb][1].user.is_amo;
-        end
-      end else begin
-        if (!l1_l0_req_write_coal[cb][0]) begin  // Spatz read
-          l0_mem_resp_read_valid[cb] = l1_l0_req_valid_coal[cb][0];
-          l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_req_data_coal[cb][0];
-          l0_mem_resp_read[cb].mem_resp_r_id = l1_l0_req_downstream_info[cb][0].user.req_id;
-        end else begin                           // Spatz write
-          l0_mem_resp_write_valid[cb] = l1_l0_req_valid_coal[cb][0];
-          // No data payload for write response
-          l0_mem_resp_write[cb].mem_resp_w_id = l1_l0_req_downstream_info[cb][0].user.req_id;
-          l0_mem_resp_write[cb].is_atomic = l1_l0_req_downstream_info[cb][0].user.is_amo;
-        end
-      end
-    end
+    // Translate HPD requests to L1 requests
+    assign l0_l1_req_addr[cb] = {l0_l1_req[cb].addr_tag, l0_l1_req[cb].addr_offset};
+    assign l0_l1_req_meta[cb].is_amo = (l0_l1_req[cb].op != HPDCACHE_REQ_LOAD) && (l0_l1_req[cb].op != HPDCACHE_REQ_STORE);
+    // TODO: need to modify mem_req_id field to include both core_id and req_id. CHANGE NEXT TWO LINES
+    assign l0_l1_req_meta[cb].req_id  = l0_l1_req[cb].mem_req_id;
+    assign l0_l1_req_meta[cb].core_id = l0_l1_req[cb].mem_req_id;
+    assign l0_l1_req_write[cb] = (l0_l1_req[cb].op == HPDCACHE_REQ_STORE);
+    assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
   end
 
   // Connecting cache_req (after unmerge before xbar to L0 D$)
