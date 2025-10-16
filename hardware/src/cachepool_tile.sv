@@ -265,8 +265,8 @@ module cachepool_tile
       ways: 4,
       clWords: 4,
       reqWords: 1,
-      reqTransIdWidth: 6,
-      reqSrcIdWidth: 5,
+      reqTransIdWidth: ReqIdWidth,
+      reqSrcIdWidth: 1 + CoreIDWidth, // +1 for is_fpu (spatz) tracking
       victimSel: hpdcache_pkg::HPDCACHE_VICTIM_RANDOM,
       dataWaysPerRamWord: 2,
       dataSetsPerRam: 32,
@@ -619,6 +619,7 @@ module cachepool_tile
   // tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_meta;
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] [CoreIDWidth-1:0] l0_cache_req_coreid;
   reqid_t     [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_reqid;
+  logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_is_fpu;
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_write;
   data_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_data;
   amo_op_e    [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_amo;
@@ -897,6 +898,7 @@ module cachepool_tile
       assign l0_cache_req_addr_offset [cb][j] = cache_req[j][cb].q.addr[HPDcacheCfg.reqOffsetWidth-1:0];
       assign l0_cache_req_coreid[cb][j] = cache_req[j][cb].q.user.core_id;
       assign l0_cache_req_reqid [cb][j] = cache_req[j][cb].q.user.req_id;
+      assign l0_cache_req_is_fpu[cb][j] = cache_req[j][cb].q.user.is_fpu;
       assign l0_cache_req_write [cb][j] = cache_req[j][cb].q.write;
       assign l0_cache_req_data  [cb][j] = cache_req[j][cb].q.data;
       assign l0_cache_req_amo   [cb][j] = cache_req[j][cb].q.amo;
@@ -959,7 +961,8 @@ module cachepool_tile
       assign l0_cache_req[cb][j].wdata = l0_cache_req_data[cb][j];
       assign l0_cache_req[cb][j].be = 32'hFFFF;                                         // TODO: remove hardcoding
       assign l0_cache_req[cb][j].size = $clog2(coalescedDataWidth/8);                   // TODO: remove hardcoding
-      assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
+      // assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
+      assign l0_cache_req[cb][j].sid = {l0_cache_req_is_fpu[cb][j], l0_cache_req_coreid[cb][j]};  // Keep track of is_fpu using an extended bit of sid
       assign l0_cache_req[cb][j].tid  = l0_cache_req_reqid[cb][j];
       // assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
       assign l0_cache_req[cb][j].need_rsp = 1'b1;
@@ -1132,7 +1135,7 @@ module cachepool_tile
   cacheline_data_t      [NumL1CacheCtrl-1:0] l0_l1_req_data;
 
 
-  // RR arbiter to select between R/W channel of HPDcache
+  /* RR arbiter to select between R/W channel of HPDcache */
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: l0_l1_req_arbiter
     // Combine R/W channel requests
     assign l0_mem_req_combined[cb][0] = l0_mem_req_read[cb];
@@ -1170,6 +1173,30 @@ module cachepool_tile
     assign l0_l1_req_meta[cb].core_id = l0_l1_req[cb].mem_req_id;
     assign l0_l1_req_write[cb] = (l0_l1_req[cb].op == HPDCACHE_REQ_STORE);
     assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
+  end
+
+  /* Upstream traffic from L1 to L0 */
+  // Logic to identify R/W response from L1 in order to interface to the AXI-llike interface of HPDcache
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: l1_l0_rsp_connect
+    always_comb begin
+      // TODO: current dimension will not work, need to change IO dimension of L1 before this will work
+      // Remove the dummy [0] when dimension resolved
+      if (cache_rsp_write[cb][0]) begin  // write response should go to write channel of HPDcache
+        l0_mem_resp_write_valid[cb] = cache_rsp_valid[cb][0];
+        // cache_rsp_ready[cb][0] = l0_mem_resp_write_ready[cb];
+
+        l0_mem_resp_write[cb].mem_resp_w_is_atomic = cache_rsp_meta[cb][0].is_amo;
+        l0_mem_resp_write[cb].mem_resp_w_id = {cache_rsp_meta[cb][0].is_fpu, cache_rsp_meta[cb][0].core_id, cache_rsp_meta[cb][0].req_id}; // doesn't sound right
+        // core_resp_data_o from L1 unused on write response as no data is expected
+      end else begin                  // read response should go to read channel of HPDcache
+        l0_mem_resp_read_valid[cb] = cache_rsp_valid[cb][0];
+        // cache_rsp_ready[cb][0] = l0_mem_resp_read_ready[cb];
+
+        l0_mem_resp_read[cb].mem_resp_r_id = {cache_rsp_meta[cb][0].is_fpu, cache_rsp_meta[cb][0].core_id, cache_rsp_meta[cb][0].req_id}; // doesn't sound right
+        l0_mem_resp_read[cb].mem_resp_r_data = cache_rsp_data[cb][0];
+        l0_mem_resp_read[cb].mem_resp_r_last = 1'b1;
+      end
+    end
   end
 
   // Connecting cache_req (after unmerge before xbar to L0 D$)
