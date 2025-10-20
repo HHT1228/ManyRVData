@@ -1035,23 +1035,40 @@ module cachepool_tile
     end
   end
 
-  // FIXME: downstream info has more inherent fields, need handling.
-  downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info_ext;
-  downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info_ext;
-  // Coalesce the spatz traffics between CC and L0 (channel 0 to 3)
-  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_req_coalescer
-    for (genvar j = 0; j < ExtPorts; j++) begin
-      // Only works when ExtFactor is 1
-      assign l0_cache_req_downstream_info_ext[cb].infos[j] = l0_cache_req_info[cb][j];
-    end
+  // Stupid solution to go around the internal typedef, kinda disgusting what i'm doing here...
+  // localparam int unsigned ExtPorts = NrL0CoaleserInputs;
+  // typedef logic [1:0] offset_t;
+  // typedef struct packed {
+  //   logic id; 
+  //   logic       [ExtPorts-1:0] hitmap; 
+  //   offset_t    [ExtPorts-1:0] ofsts; 
+  //   tcdm_meta_t [ExtPorts-1:0] infos; 
+  //   logic bypass_coalescer;
+  // } downstream_info_t;
 
-    par_coalescer_extend_window #(
+  // downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info_ext;
+  // downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info_ext;
+
+  // for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_downstream_info_ext
+  //   assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth-1:0];
+  //   assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth]; // extended bit
+  //   assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid;
+  //   // hpdcache_rsp_t has no field to track AMO or OP
+  //   assign l0_cache_rsp_downstream_info[cb].user = l0_cache_rsp_downstream_user[cb];
+  //   for (genvar j = 0; j < ExtPorts; j++) begin
+  //     assign l0_cache_rsp_downstream_info_ext[cb].infos[j] = l0_cache_rsp_downstream_info[cb];
+  //   end
+  // end
+
+  // Coalesce the spatz traffics between CC and L0 (channel 0 to 3)
+  // localparam int unsigned wordWidth
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_req_coalescer
+    par_coalescer_top #(
       .ReqAddrWidth        (L0AddrWidth ),
       .NumPorts            (NrL0CoaleserInputs),
-      .ExtFactor           (1),
       .info_t              (tcdm_meta_t),
-      .UpstreamDataWidth   (DataWidth),
-      .DownstreamDataWidth (DataWidth*NrL0CoaleserInputs)
+      .UpstreamDataWidth   (DataWidth),           // TODO: not sure if this is the correct parameter to use
+      .DownstreamDataWidth (coalescedDataWidth)
     ) i_core_l0_coalescer (
       .clk_i                       (clk_i),
       .rst_ni                      (rst_ni),
@@ -1073,7 +1090,7 @@ module cachepool_tile
       .downstream_req_valid_o      (hpd_l0_cache_req_valid_coal[cb][0]),
       .downstream_req_ready_i      (hpd_l0_cache_req_ready_coal[cb][0]),
       .downstream_req_addr_o       (l0_cache_req_coal_addr[cb][0]),
-      .downstream_req_info_o       (l0_cache_req_downstream_info_ext[cb]),
+      .downstream_req_info_o       (l0_cache_req_downstream_info[cb]),
       .downstream_req_write_o      (l0_cache_req_downstream_write[cb]),      // maybe redundant
       .downstream_req_wdata_o      (l0_cache_req_coal_wdata[cb][0]),
       .downstream_req_wmask_o      (/* Unused */),
@@ -1081,7 +1098,7 @@ module cachepool_tile
       .downstream_resp_valid_i     (hpd_l0_cache_rsp_valid_coal[cb][0]),
       .downstream_resp_ready_o     (/* Unused */),
       .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),
-      .downstream_resp_info_i      (l0_cache_rsp_downstream_info_ext[cb]),
+      .downstream_resp_info_i      (l0_cache_rsp_downstream_info[cb]),
       .downstream_resp_write_i     (/* Unused */)
     );
     
@@ -1104,7 +1121,7 @@ module cachepool_tile
     assign l0_cache_req_coal[cb][0].size = $clog2(coalescedDataWidth/8);
     assign l0_cache_req_coal[cb][0].need_rsp = 1'b1;
     // Meta data handling using info from coalescer
-    assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];  // TODO: indexing
+    // assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];  // TODO: indexing
     assign l0_cache_req_coal[cb][0].sid  = l0_cache_req_downstream_info[cb].user.core_id;
     assign l0_cache_req_coal[cb][0].tid  = l0_cache_req_downstream_info[cb].user.req_id;
 
@@ -1319,6 +1336,7 @@ module cachepool_tile
   // End HPDcache integration //
   //////////////////////////////
 
+  // FIXME: need to bypass the coalescer
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_l1_cache_ctrl
     cachepool_cache_ctrl #(
       // Core
