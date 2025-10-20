@@ -176,7 +176,8 @@ package cachepool_pkg;
   localparam int unsigned L1TagDataWidth      = `ifdef L1D_TAG_DATA_WIDTH `L1D_TAG_DATA_WIDTH `else 0 `endif;
 
   // Number of data banks assigned to each cache controller
-  localparam int unsigned NumDataBankPerCtrl  = (L1LineWidth / SpatzDataWidth) * L1AssoPerCtrl * L1BankFactor;
+  // localparam int unsigned NumDataBankPerCtrl  = (L1LineWidth / SpatzDataWidth) * L1AssoPerCtrl * L1BankFactor;
+  localparam int unsigned NumDataBankPerCtrl  = L1AssoPerCtrl * L1BankFactor; // insitu-cache as L2 takes cacheline-unit input
   // Number of tag banks assigned to each cache controller
   localparam int unsigned NumTagBankPerCtrl   = L1AssoPerCtrl * L1BankFactor;
   // Number of entrys of L1 Cache (total number across multiple cache controllers)

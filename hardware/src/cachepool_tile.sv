@@ -614,18 +614,18 @@ module cachepool_tile
   // tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] cache_rsp_meta;
 
   // L1 cache (as new L2) accepts 1 cacheline-unit traffic from L0
-  logic       [NumL1CacheCtrl-1:0] cache_req_valid;
-  logic       [NumL1CacheCtrl-1:0] cache_req_ready;
-  tcdm_addr_t [NumL1CacheCtrl-1:0] cache_req_addr;
-  tcdm_user_t [NumL1CacheCtrl-1:0] cache_req_meta;
-  logic       [NumL1CacheCtrl-1:0] cache_req_write;
-  data_t      [NumL1CacheCtrl-1:0] cache_req_data;
+  logic             [NumL1CacheCtrl-1:0] cache_req_valid;
+  logic             [NumL1CacheCtrl-1:0] cache_req_ready;
+  tcdm_addr_t       [NumL1CacheCtrl-1:0] cache_req_addr;
+  tcdm_user_t       [NumL1CacheCtrl-1:0] cache_req_meta;
+  logic             [NumL1CacheCtrl-1:0] cache_req_write;
+  cacheline_data_t  [NumL1CacheCtrl-1:0] cache_req_data;
 
-  logic       [NumL1CacheCtrl-1:0] cache_rsp_valid;
-  logic       [NumL1CacheCtrl-1:0] cache_rsp_ready;
-  logic       [NumL1CacheCtrl-1:0] cache_rsp_write;
-  data_t      [NumL1CacheCtrl-1:0] cache_rsp_data;
-  tcdm_user_t [NumL1CacheCtrl-1:0] cache_rsp_meta;
+  logic             [NumL1CacheCtrl-1:0] cache_rsp_valid;
+  logic             [NumL1CacheCtrl-1:0] cache_rsp_ready;
+  logic             [NumL1CacheCtrl-1:0] cache_rsp_write;
+  cacheline_data_t  [NumL1CacheCtrl-1:0] cache_rsp_data;
+  tcdm_user_t       [NumL1CacheCtrl-1:0] cache_rsp_meta;
 
   // For L0 cache
   logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_valid;
@@ -659,9 +659,11 @@ module cachepool_tile
   logic            [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_req;
   logic            [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_we;
   tcdm_bank_addr_t [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_addr;
-  data_t           [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_wdata;
+  // data_t           [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_wdata;
+  cacheline_data_t [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_wdata;
   logic            [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_be;
-  data_t           [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
+  // data_t           [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
+  cacheline_data_t [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
   logic            [NumL1CacheCtrl-1:0][NumDataBankPerCtrl-1:0] l1_data_bank_gnt;
 
   logic                       l1d_insn_valid;
@@ -888,7 +890,8 @@ module cachepool_tile
 
   // For address scrambling
   localparam NumSelBits = $clog2(NumL1CacheCtrl);
-  localparam NumWordPerLine = L1LineWidth / DataWidth;
+  // localparam NumWordPerLine = L1LineWidth / DataWidth;
+  localparam NumWordPerLine = 1;                              // Since L2 is now cacheline unit
   logic [SpatzAxiAddrWidth-1:0] bitmask_up, bitmask_lo;
   assign bitmask_lo = (1 << dynamic_offset) - 1;
   // We will keep AddrWidth - Offset - log2(CacheBanks) bits in the upper half, and add back the NumSelBits bits
@@ -1035,30 +1038,30 @@ module cachepool_tile
     end
   end
 
-  // Stupid solution to go around the internal typedef, kinda disgusting what i'm doing here...
-  // localparam int unsigned ExtPorts = NrL0CoaleserInputs;
-  // typedef logic [1:0] offset_t;
-  // typedef struct packed {
-  //   logic id; 
-  //   logic       [ExtPorts-1:0] hitmap; 
-  //   offset_t    [ExtPorts-1:0] ofsts; 
-  //   tcdm_meta_t [ExtPorts-1:0] infos; 
-  //   logic bypass_coalescer;
-  // } downstream_info_t;
+  // Coalescer downstream info handling
+  localparam int unsigned ExtPorts = NrL0CoaleserInputs;
+  typedef logic [1:0] offset_t;
+  typedef struct packed {
+    logic id; 
+    logic       [ExtPorts-1:0] hitmap; 
+    offset_t    [ExtPorts-1:0] ofsts; 
+    tcdm_meta_t [ExtPorts-1:0] infos; 
+    logic bypass_coalescer;
+  } downstream_info_t;
 
-  // downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info_ext;
-  // downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info_ext;
+  downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info_ext;
+  downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info_ext;
 
-  // for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_downstream_info_ext
-  //   assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth-1:0];
-  //   assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth]; // extended bit
-  //   assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid;
-  //   // hpdcache_rsp_t has no field to track AMO or OP
-  //   assign l0_cache_rsp_downstream_info[cb].user = l0_cache_rsp_downstream_user[cb];
-  //   for (genvar j = 0; j < ExtPorts; j++) begin
-  //     assign l0_cache_rsp_downstream_info_ext[cb].infos[j] = l0_cache_rsp_downstream_info[cb];
-  //   end
-  // end
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_downstream_info_ext
+    assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth-1:0];
+    assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth]; // extended bit
+    assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid;
+    // hpdcache_rsp_t has no field to track AMO or OP
+    assign l0_cache_rsp_downstream_info[cb].user = l0_cache_rsp_downstream_user[cb];
+    for (genvar j = 0; j < ExtPorts; j++) begin
+      assign l0_cache_rsp_downstream_info_ext[cb].infos[j] = l0_cache_rsp_downstream_info[cb];
+    end
+  end
 
   // Coalesce the spatz traffics between CC and L0 (channel 0 to 3)
   // localparam int unsigned wordWidth
@@ -1090,7 +1093,7 @@ module cachepool_tile
       .downstream_req_valid_o      (hpd_l0_cache_req_valid_coal[cb][0]),
       .downstream_req_ready_i      (hpd_l0_cache_req_ready_coal[cb][0]),
       .downstream_req_addr_o       (l0_cache_req_coal_addr[cb][0]),
-      .downstream_req_info_o       (l0_cache_req_downstream_info[cb]),
+      .downstream_req_info_o       (l0_cache_req_downstream_info_ext[cb]),
       .downstream_req_write_o      (l0_cache_req_downstream_write[cb]),      // maybe redundant
       .downstream_req_wdata_o      (l0_cache_req_coal_wdata[cb][0]),
       .downstream_req_wmask_o      (/* Unused */),
@@ -1098,7 +1101,7 @@ module cachepool_tile
       .downstream_resp_valid_i     (hpd_l0_cache_rsp_valid_coal[cb][0]),
       .downstream_resp_ready_o     (/* Unused */),
       .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),
-      .downstream_resp_info_i      (l0_cache_rsp_downstream_info[cb]),
+      .downstream_resp_info_i      (l0_cache_rsp_downstream_info_ext[cb]),
       .downstream_resp_write_i     (/* Unused */)
     );
     
@@ -1121,7 +1124,7 @@ module cachepool_tile
     assign l0_cache_req_coal[cb][0].size = $clog2(coalescedDataWidth/8);
     assign l0_cache_req_coal[cb][0].need_rsp = 1'b1;
     // Meta data handling using info from coalescer
-    // assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];  // TODO: indexing
+    assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];  // TODO: indexing
     assign l0_cache_req_coal[cb][0].sid  = l0_cache_req_downstream_info[cb].user.core_id;
     assign l0_cache_req_coal[cb][0].tid  = l0_cache_req_downstream_info[cb].user.req_id;
 
@@ -1336,7 +1339,6 @@ module cachepool_tile
   // End HPDcache integration //
   //////////////////////////////
 
-  // FIXME: need to bypass the coalescer
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_l1_cache_ctrl
     cachepool_cache_ctrl #(
       // Core
@@ -1478,7 +1480,7 @@ module cachepool_tile
       tc_sram_impl #(
         .NumWords   (L1CacheWayEntry/L1BankFactor),
         .DataWidth  (L1LineWidth),
-        .ByteWidth  (DataWidth  ),
+        .ByteWidth  (L1LineWidth),                              // TODO: not sure if it is legal
         .NumPorts   (1          ),
         .Latency    (1          ),
         .SimInit    ("zeros"    )
@@ -1491,7 +1493,7 @@ module cachepool_tile
         .we_i   ( l1_data_bank_we   [cb][j]  ),
         .addr_i ( l1_data_bank_addr [cb][j]  ),
         .wdata_i( l1_data_bank_wdata[cb][j+:NumWordPerLine]),
-        .be_i   ( l1_data_bank_be   [cb][j+:NumWordPerLine]),
+        .be_i   ( l1_data_bank_be   [cb][j+:NumWordPerLine]),   // FIXME: size mismatch
         .rdata_o( l1_data_bank_rdata[cb][j+:NumWordPerLine])
       );
 

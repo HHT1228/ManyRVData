@@ -34,7 +34,7 @@ refill_data_width ?= 128
 ##### L1 Data Cache #####
 
 # L1 data cacheline width (in Bit)
-l1d_cacheline_width ?= 128
+l1d_cacheline_width ?= 512
 
 # L1 data cache size (in KiB)
 l1d_size ?= 256
