@@ -266,7 +266,7 @@ module cachepool_tile
       ways: 4,
       clWords: 4,
       reqWords: 1,
-      reqTransIdWidth: ReqIdWidth,
+      reqTransIdWidth: 1 + ReqIdWidth, // +1 for write flag, hpd response does not have write field
       reqSrcIdWidth: 1 + CoreIDWidth, // +1 for is_fpu (spatz) tracking
       victimSel: hpdcache_pkg::HPDCACHE_VICTIM_RANDOM,
       dataWaysPerRamWord: 2,
@@ -283,7 +283,7 @@ module cachepool_tile
       refillCoreRspFeedthrough: 1'b1,
       refillFifoDepth: 2,
       wbufDirEntries: 2,
-      wbufDataEntries: 1,
+      wbufDataEntries: 2,
       wbufWords: 1,          // Unsure
       wbufTimecntWidth: 3,
       rtabEntries: 2,
@@ -918,7 +918,7 @@ module cachepool_tile
   data_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_core_rsp_data;  // TODO: is dimension correct?
   
   hpdcache_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req;
-  hpdcache_rsp_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp;
+  // hpdcache_rsp_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_rsp;
   hpdcache_tag_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_tag;
   // logic [NumL0CacheCtrl-1:0] l0_wbuf_empty;    // FIXME: illegal port connection for some reason\
 
@@ -948,13 +948,16 @@ module cachepool_tile
   tcdm_user_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_user;  // downstream
   tcdm_meta_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info;  // downstream
 
-  // TODO: spill reg for these two blocks?
+  // TODO: spill reg?
 
+  // FIXME: cache response not correctly going into the CC maybe
+  // FIXME: X dangling on channel 4
   // response from coalescer to CC
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
     for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_rsp_signals
       assign cache_rsp[j][cb].p_valid = l0_core_rsp_valid[cb][j];
-      assign l0_core_rsp_ready[cb][j] = cache_rsp[j][cb].q_ready;
+      // assign l0_core_rsp_ready[cb][j] = cache_rsp[j][cb].q_ready; // FIXME: dangling signal, loose end
+      assign l0_core_rsp_ready[cb][j] = cache_pready[j][cb];
 
       assign cache_rsp[j][cb].p.data  = l0_core_rsp_data[cb][j];
       assign cache_rsp[j][cb].p.user  = l0_core_rsp_user[cb][j];
@@ -995,7 +998,7 @@ module cachepool_tile
       assign l0_cache_req[cb][j].size = $clog2(coalescedDataWidth/8);                   // TODO: remove hardcoding
       // assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
       assign l0_cache_req[cb][j].sid = {l0_cache_req_is_fpu[cb][j], l0_cache_req_coreid[cb][j]};  // Keep track of is_fpu using an extended bit of sid
-      assign l0_cache_req[cb][j].tid  = l0_cache_req_reqid[cb][j];
+      assign l0_cache_req[cb][j].tid  = {l0_cache_req_write[cb][j], l0_cache_req_reqid[cb][j]};
       // assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
       assign l0_cache_req[cb][j].need_rsp = 1'b1;
       assign l0_cache_req[cb][j].addr_tag = cache_req[j][cb].q.addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
@@ -1045,8 +1048,7 @@ module cachepool_tile
     logic id; 
     logic       [ExtPorts-1:0] hitmap; 
     offset_t    [ExtPorts-1:0] ofsts; 
-    tcdm_meta_t [ExtPorts-1:0] infos; 
-    logic bypass_coalescer;
+    tcdm_meta_t [ExtPorts-1:0] infos;
   } downstream_info_t;
 
   downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info_ext;
@@ -1070,7 +1072,7 @@ module cachepool_tile
       .ReqAddrWidth        (L0AddrWidth ),
       .NumPorts            (NrL0CoaleserInputs),
       .info_t              (tcdm_meta_t),
-      .UpstreamDataWidth   (DataWidth),           // TODO: not sure if this is the correct parameter to use
+      .UpstreamDataWidth   (DataWidth),
       .DownstreamDataWidth (coalescedDataWidth)
     ) i_core_l0_coalescer (
       .clk_i                       (clk_i),
@@ -1086,7 +1088,7 @@ module cachepool_tile
 
       .upstream_resp_valid_o       (l0_core_rsp_valid[cb][NrL0CoaleserInputs-1:0]),
       .upstream_resp_ready_i       (l0_core_rsp_ready[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_resp_write_o       (l0_core_rsp_write[cb][NrL0CoaleserInputs-1:0]),
+      .upstream_resp_write_o       (l0_core_rsp_write[cb][NrL0CoaleserInputs-1:0]), // TODO: untrustworthy
       .upstream_resp_data_o        (l0_core_rsp_data[cb][NrL0CoaleserInputs-1:0]),
       .upstream_resp_info_o        (l0_core_rsp_info[cb][NrL0CoaleserInputs-1:0]),
 
@@ -1106,8 +1108,19 @@ module cachepool_tile
     );
     
     /* Upstream rsp processing */
-    assign l0_core_rsp_user[cb][0] = l0_core_rsp_info[cb][0].user;
-    // TODO: assign to appropriate input ports of CC when closing the loop
+    for (genvar j = 0; j < NrTCDMPortsPerCore - 1; j++) begin : gen_l0_cache_rsp_upstream_info
+      assign l0_core_rsp_user[cb][j] = l0_core_rsp_info[cb][j].user;
+    end
+    // assign l0_core_rsp_user[cb][0] = l0_core_rsp_info[cb][0].user;
+
+    // channel 1 wires to channel 4 (snitch bypass coalescer)
+    assign l0_core_rsp_valid[cb][NrTCDMPortsPerCore-1] = hpd_l0_cache_rsp_valid_coal[cb][1];
+    assign l0_core_rsp_data [cb][NrTCDMPortsPerCore-1] = l0_cache_rsp_coal[cb][1].rdata;
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth-1:0];
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu  = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth]; // extended bit
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].req_id  = l0_cache_rsp_coal[cb][1].tid;
+    assign l0_core_rsp_write[cb][NrTCDMPortsPerCore-1] = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth]; // extended bit
+
     // Wire error and aborted signals
     // channel 1 bypass (snitch)
     
@@ -1229,6 +1242,7 @@ module cachepool_tile
     // TODO: need to modify mem_req_id field to include both core_id and req_id. CHANGE NEXT TWO LINES
     assign l0_l1_req_meta[cb].req_id  = l0_l1_req[cb].mem_req_id;
     assign l0_l1_req_meta[cb].core_id = l0_l1_req[cb].mem_req_id;
+    assign l0_l1_req_meta[cb].is_fpu  = l0_l1_req[cb].mem_req_sid[CoreIDWidth]; // extended bit
     assign l0_l1_req_write[cb] = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
     assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
   end
@@ -1281,7 +1295,7 @@ module cachepool_tile
     ) i_l0_cache (
       .clk_i                              (clk_i),
       .rst_ni                             (rst_ni),
-      .wbuf_flush_i                       (/* unused */),
+      .wbuf_flush_i                       (1'b0),
 
       .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
       .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
@@ -1480,7 +1494,7 @@ module cachepool_tile
       tc_sram_impl #(
         .NumWords   (L1CacheWayEntry/L1BankFactor),
         .DataWidth  (L1LineWidth),
-        .ByteWidth  (L1LineWidth),                              // TODO: not sure if it is legal
+        .ByteWidth  (L1LineWidth), // L2 write granularity of cacheline, may require changes later
         .NumPorts   (1          ),
         .Latency    (1          ),
         .SimInit    ("zeros"    )
@@ -1493,7 +1507,7 @@ module cachepool_tile
         .we_i   ( l1_data_bank_we   [cb][j]  ),
         .addr_i ( l1_data_bank_addr [cb][j]  ),
         .wdata_i( l1_data_bank_wdata[cb][j+:NumWordPerLine]),
-        .be_i   ( l1_data_bank_be   [cb][j+:NumWordPerLine]),   // FIXME: size mismatch
+        .be_i   ( l1_data_bank_be   [cb][j+:NumWordPerLine]),
         .rdata_o( l1_data_bank_rdata[cb][j+:NumWordPerLine])
       );
 
