@@ -290,7 +290,7 @@ module cachepool_tile
       flushEntries: 2,
       flushFifoDepth: 2,
       memAddrWidth: L1AddrWidth,
-      memIdWidth: CoreIDWidth + ReqIdWidth,
+      memIdWidth: CoreIDWidth + ReqIdWidth + 2,
       memDataWidth: L1LineWidth,
       wtEn: 1'b1,
       wbEn: 1'b0,              // Disable write-back
@@ -640,6 +640,7 @@ module cachepool_tile
   amo_op_e    [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_amo;
 
   addr_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_addr;   // Preserve the full addr
+  strb_t      [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_strb;   // Preserve the full strb
 
   // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l1_rsp_ready_coal;  // Temp signal for observation
   
@@ -976,6 +977,7 @@ module cachepool_tile
       assign l0_cache_req_data  [cb][j] = cache_req[j][cb].q.data;
       assign l0_cache_req_amo   [cb][j] = cache_req[j][cb].q.amo;
       assign l0_cache_req_addr  [cb][j] = cache_req[j][cb].q.addr;
+      assign l0_cache_req_strb  [cb][j] = cache_req[j][cb].q.strb;
     end
   end
 
@@ -1052,23 +1054,22 @@ module cachepool_tile
   downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info_ext;
   downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info_ext;
 
-  // FIXME: corrupted, need to take care of ofsts, hitmap, id
+  localparam int unsigned offset = 0;
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_downstream_info_ext
     // hardcode stupid signals to make things work, hopefully
     assign l0_cache_rsp_downstream_info_ext[cb].id = 1'b0;
     assign l0_cache_rsp_downstream_info_ext[cb].hitmap = 4'hF;
-    localparam int CB_IDX = cb;
-    assign l0_cache_rsp_downstream_info_ext[cb].ofsts = CB_IDX; // FIXME
 
     assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth-1:0];
     assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth]; // extended bit
-    assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[ReqIDWidth-1:0];
+    assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth-1:0];
     assign l0_cache_rsp_downstream_info[cb].user    = l0_cache_rsp_downstream_user[cb];
     // hpdcache_rsp_t has no field to track AMO or OP
-    assign l0_cache_rsp_downstream_info[cb].write   = l0_cache_rsp_coal[cb][0].tid[ReqIDWidth];  // unreliable method
+    assign l0_cache_rsp_downstream_info[cb].write   = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth];  // unreliable method
     assign l0_cache_rsp_downstream_user[cb].is_amo  = 1'b0;  // TODO: cannot determine AMO from rsp
     for (genvar j = 0; j < ExtPorts; j++) begin
       assign l0_cache_rsp_downstream_info_ext[cb].infos[j] = l0_cache_rsp_downstream_info[cb];
+      assign l0_cache_rsp_downstream_info_ext[cb].ofsts[j] = j;
     end
   end
 
@@ -1111,7 +1112,7 @@ module cachepool_tile
       .downstream_resp_ready_o     (/* Unused */),
       .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),      // FIXME: uncertain value X
       .downstream_resp_info_i      (l0_cache_rsp_downstream_info_ext[cb]),
-      .downstream_resp_write_i     (l0_cache_rsp_coal[cb][0].tid[ReqIDWidth]) // unreliable method
+      .downstream_resp_write_i     (l0_cache_rsp_coal[cb][0].tid[ReqIDWidth]) // unreliable method FIXME: X
     );
     
     /* Upstream rsp processing */
@@ -1146,6 +1147,12 @@ module cachepool_tile
     assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];  // TODO: indexing
     assign l0_cache_req_coal[cb][0].sid  = l0_cache_req_downstream_info[cb].user.core_id;
     assign l0_cache_req_coal[cb][0].tid  = l0_cache_req_downstream_info[cb].user.req_id;
+    // Other fields of hpd cache handled independently
+    assign l0_cache_req_coal[cb][0].phys_indexed = 1'b1;
+    // assign l0_cache_req_coal[cb][0].pma.uncacheable = !(l0_cache_req_downstream_info[cb].user.is_amo);
+    assign l0_cache_req_coal[cb][0].pma.uncacheable = 1'b0; // TODO: do we have uncacheable transactions? amo?
+    assign l0_cache_req_coal[cb][0].pma.io = 1'b0;
+    assign l0_cache_req_coal[cb][0].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
 
     // channel 4 (snitch) bypass coalescer, it is not involved in the coalescing
     assign hpd_l0_cache_req_valid_coal[cb][1] = hpd_l0_cache_req_valid[cb][NrTCDMPortsPerCore-1];
@@ -1153,7 +1160,8 @@ module cachepool_tile
     // assign l0_cache_req_coal[cb][1] = l0_cache_req[cb][NrTCDMPortsPerCore-1];
     assign l0_cache_req_coal[cb][1].addr_offset = l0_cache_req[cb][NrTCDMPortsPerCore-1].addr_offset;
     assign l0_cache_req_coal[cb][1].wdata = l0_cache_req[cb][NrTCDMPortsPerCore-1].wdata;
-    assign l0_cache_req_coal[cb][1].be = 32'h000F;  // TODO: need sanity check, remove hardcodings
+    // assign l0_cache_req_coal[cb][1].be = 32'h000F;  // TODO: need sanity check, remove hardcodings
+    assign l0_cache_req_coal[cb][1].be = l0_cache_req_strb[cb][NrTCDMPortsPerCore-1];
     assign l0_cache_req_coal[cb][1].size = $clog2(coalescedDataWidth/8);
     assign l0_cache_req_coal[cb][1].sid = l0_cache_req[cb][NrTCDMPortsPerCore-1].sid;
     assign l0_cache_req_coal[cb][1].tid = l0_cache_req[cb][NrTCDMPortsPerCore-1].tid;
@@ -1163,6 +1171,12 @@ module cachepool_tile
     // Handle tag for coalesced requests
     assign l0_cache_tag_coal[cb][1] = l0_cache_tag[cb][NrTCDMPortsPerCore-1];
     // assign l0_cache_tag_coal[cb][0] = l0_cache_tag[cb][0];
+    // Other fields of hpd cache handled independently
+    assign l0_cache_req_coal[cb][1].phys_indexed = 1'b1;
+    // assign l0_cache_req_coal[cb][1].pma.uncacheable = !(l0_cache_req_downstream_info[cb].user.is_amo);
+    assign l0_cache_req_coal[cb][1].pma.uncacheable = 1'b0; // TODO: do we have uncacheable transactions? amo?
+    assign l0_cache_req_coal[cb][1].pma.io = 1'b0;
+    assign l0_cache_req_coal[cb][1].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
   end
 
   // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
@@ -1330,7 +1344,7 @@ module cachepool_tile
       .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
       .core_req_i                         (l0_cache_req_coal[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
-      .core_req_tag_i                     (l0_cache_tag_coal[i]),
+      .core_req_tag_i                     (l0_cache_tag_coal[i]),         // TODO: might be redundant
       .core_req_pma_i                     (/* unused */),
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
