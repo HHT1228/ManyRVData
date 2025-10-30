@@ -524,6 +524,12 @@ module cachepool_tile
 
   typedef logic [HPDcacheCfg.u.wbufTimecntWidth-1:0] hpdcache_wbuf_timecnt_t;
   
+  // TCDM request/response channels for cacheline transfers
+  `TCDM_TYPEDEF_REQ_CHAN_T(tcdm_req_chan_cacheline_t, addr_t, cacheline_data_t, strb_t, tcdm_user_t)
+  `TCDM_TYPEDEF_RSP_CHAN_T(tcdm_rsp_chan_cacheline_t, cacheline_data_t, tcdm_user_t)
+  `TCDM_TYPEDEF_REQ_T(tcdm_req_cacheline_t, tcdm_req_chan_cacheline_t)
+  `TCDM_TYPEDEF_RSP_T(tcdm_rsp_cacheline_t, tcdm_rsp_chan_cacheline_t)
+
   // typedef struct packed {
   //   logic           valid;
   //   logic           ready;
@@ -1116,7 +1122,7 @@ module cachepool_tile
 
       .downstream_resp_valid_i     (hpd_l0_cache_rsp_valid_coal[cb][0]),
       .downstream_resp_ready_o     (/* Unused */),
-      .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),      // FIXME: uncertain value X
+      .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),
       .downstream_resp_info_i      (l0_cache_rsp_downstream_info_ext[cb]),
       .downstream_resp_write_i     (l0_cache_rsp_coal[cb][0].tid[ReqIdWidth]) // unreliable method FIXME: X
     );
@@ -1236,10 +1242,10 @@ module cachepool_tile
   logic                 [NumL1CacheCtrl-1:0] l0_l1_req_write;
   cacheline_data_t      [NumL1CacheCtrl-1:0] l0_l1_req_data;
 
-  tcdm_req_t  [NumL1CacheCtrl-1:0] l0_l1_req_tcdm, l0_l1_tcdm_xbar_req;
-  tcdm_rsp_t  [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm, l1_l0_tcdm_xbar_rsp;
-  logic       [NumL1CacheCtrl-1:0] l1_l0_rsp_xbar_ready;
-  logic       [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm_ready;
+  tcdm_req_cacheline_t  [NumL1CacheCtrl-1:0] l0_l1_req_tcdm, l0_l1_tcdm_xbar_req;
+  tcdm_rsp_cacheline_t  [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm, l1_l0_tcdm_xbar_rsp;
+  logic                 [NumL1CacheCtrl-1:0] l1_l0_rsp_xbar_ready;
+  logic                 [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm_ready;
 
   /* RR arbiter to select between R/W channel of HPDcache */
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: gen_l0_l1_req_arbiter
@@ -1263,7 +1269,7 @@ module cachepool_tile
       .gnt_o   (l0_mem_req_ready_combined[cb]),  // ready_o
       .data_i  (l0_mem_req_combined[cb]),
       .req_o   (l0_l1_req_valid[cb]),            // valid_o
-      .gnt_i   (cache_req_ready[cb]),            // ready_i; bypassing xbar TODO
+      .gnt_i   (1'b1),                           // ready_i; old: cache_req_ready[cb]
       .data_o  (l0_l1_req[cb]),
       .idx_o   (arb_out_id[cb])
     );
@@ -1319,7 +1325,7 @@ module cachepool_tile
         // l0_mem_resp_write[cb].mem_resp_w_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
         l0_mem_resp_write[cb].mem_resp_w_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
                                                l1_l0_rsp_tcdm[cb].p.user.core_id,
-                                               l1_l0_rsp_tcdm[cb].p.user.is_amo,
+                                               l1_l0_rsp_tcdm[cb].p.write,
                                                l1_l0_rsp_tcdm[cb].p.user.req_id};
         // core_resp_data_o from L1 unused on write response as no data is expected
 
@@ -1343,7 +1349,7 @@ module cachepool_tile
         // l0_mem_resp_read[cb].mem_resp_r_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
         l0_mem_resp_read[cb].mem_resp_r_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
                                               l1_l0_rsp_tcdm[cb].p.user.core_id,
-                                              l1_l0_rsp_tcdm[cb].p.user.is_amo,
+                                              l1_l0_rsp_tcdm[cb].p.write,
                                               l1_l0_rsp_tcdm[cb].p.user.req_id};
         // l0_mem_resp_read[cb].mem_resp_r_data = cache_rsp_data[cb];
         l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_rsp_tcdm[cb].p.data;
@@ -1363,10 +1369,10 @@ module cachepool_tile
     .NumCore          (NumL0CacheCtrl),
     .NumCache         (NumL1CacheCtrl),
     .AddrWidth        (TCDMAddrWidth),
-    .tcdm_req_t       (tcdm_req_t),
-    .tcdm_rsp_t       (tcdm_rsp_t),
-    .tcdm_req_chan_t  (tcdm_req_chan_t),
-    .tcdm_rsp_chan_t  (tcdm_rsp_chan_t),
+    .tcdm_req_t       (tcdm_req_cacheline_t),
+    .tcdm_rsp_t       (tcdm_rsp_cacheline_t),
+    .tcdm_req_chan_t  (tcdm_req_chan_cacheline_t),
+    .tcdm_rsp_chan_t  (tcdm_rsp_chan_cacheline_t),
     .Topology()
   ) i_l0_l1_xbar (
     .clk_i            (clk_i),
@@ -1447,7 +1453,7 @@ module cachepool_tile
       .mem_req_write_data_valid_o         (l0_mem_req_write_data_valid[i]),
       .mem_req_write_data_o               (l0_mem_req_write_data[i]),
       .mem_resp_write_ready_o             (l0_mem_resp_write_ready[i]),
-      .mem_resp_write_valid_i             (l0_mem_resp_write_valid[i]),
+      .mem_resp_write_valid_i             (l0_mem_resp_write_valid[i]),    // FIXME: active for 2 cycles, causing HPDcache WBUF assertion
       .mem_resp_write_i                   (l0_mem_resp_write[i]),
 
       .evt_cache_write_miss_o             (/* unused */),
