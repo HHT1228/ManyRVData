@@ -772,7 +772,8 @@ module cachepool_tile
 
 
   logic  [NrTCDMPortsCores-1:0] unmerge_pready;
-  logic  [NrTCDMPortsPerCore-1:0][NumL1CacheCtrl-1:0] cache_pready, cache_xbar_pready, cache_amo_pready;
+  logic  [NrTCDMPortsPerCore-1:0][NumL1CacheCtrl-1:0] cache_pready, cache_xbar_pready;
+  logic  [NumL1CacheCtrl-1:0] cache_amo_pready;
 
   // TODO: remove this module
   // where to deal with cache flushing protection?
@@ -1761,7 +1762,7 @@ module cachepool_tile
       .NumSpatzFPUs            (NumSpatzFPUs               ),
       .NumSpatzIPUs            (NumSpatzIPUs               ),
       .TCDMAddrWidth           (SPMAddrWidth               )
-    ) i_spatz_cc (
+    ) i_cachepool_cc (
       .clk_i            (clk_i                               ),
       .rst_ni           (rst_ni                              ),
       .testmode_i       (1'b0                                ),
