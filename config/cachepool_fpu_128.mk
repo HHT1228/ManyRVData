@@ -29,7 +29,7 @@ addr_width ?= 32
 num_cores_per_tile ?= 4
 
 # Refill interconnection data width
-refill_data_width ?= 128
+refill_data_width ?= 512
 
 ##### L1 Data Cache #####
 

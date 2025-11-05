@@ -532,6 +532,12 @@ module cachepool_tile
   `TCDM_TYPEDEF_RSP_T(tcdm_rsp_cacheline_t, tcdm_rsp_chan_cacheline_t)
 
   // typedef struct packed {
+  //   hpdcache_req_sid_t  sid;
+  //   hpdcache_req_tid_t  tid;
+  //   hpdcache_mem_id_t   mem_id;
+  // } unique_mem_id_t;
+
+  // typedef struct packed {
   //   logic           valid;
   //   logic           ready;
   //   logic           write;
@@ -1120,7 +1126,7 @@ module cachepool_tile
       .downstream_req_valid_o      (hpd_l0_cache_req_valid_coal[cb][0]),
       .downstream_req_ready_i      (hpd_l0_cache_req_ready_coal[cb][0]),
       .downstream_req_addr_o       (l0_cache_req_coal_addr[cb][0]),
-      .downstream_req_info_o       (l0_cache_req_downstream_info_ext[cb]),   // FIXME: is_fpu get deasserted
+      .downstream_req_info_o       (l0_cache_req_downstream_info_ext[cb]),
       .downstream_req_write_o      (l0_cache_req_downstream_write[cb]),      // maybe redundant
       .downstream_req_wdata_o      (l0_cache_req_coal_wdata[cb][0]),
       .downstream_req_wmask_o      (/* Unused */),
@@ -1141,7 +1147,7 @@ module cachepool_tile
 
     // channel 1 wires to channel 4 (snitch bypass coalescer)
     assign l0_core_rsp_valid[cb][NrTCDMPortsPerCore-1]          = hpd_l0_cache_rsp_valid_coal[cb][1];
-    assign l0_core_rsp_data [cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].rdata; // FIXME: uncertain value X for some reason
+    assign l0_core_rsp_data [cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].rdata[DataWidth-1:0]; // truncate data from 128 to 32 bits
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth-1:0];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth]; // extended bit
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-2:ReqIdWidth+1];
@@ -1265,7 +1271,6 @@ module cachepool_tile
     // Combine upstream handshake signals
     assign l0_mem_req_valid_combined[cb][0] = l0_mem_req_read_valid[cb];
     assign l0_mem_req_valid_combined[cb][1] = l0_mem_req_write_valid[cb];
-    // TODO: change signals accordingly with new xbar
     rr_arb_tree #(
       .NumIn     (NrL0L1ArbiterInputs),
       .DataType  (hpdcache_mem_req_t),
@@ -1291,9 +1296,9 @@ module cachepool_tile
     // // Translate HPD requests to L1 requests
     // assign l0_l1_req_addr[cb] = l0_l1_req[cb].mem_req_addr;
     assign l0_l1_req_meta_int[cb].is_amo = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_ATOMIC);
-    // TODO: verify
-    assign l0_l1_req_meta_int[cb].req_id  = l0_l1_req[cb].mem_req_id[ReqIdWidth-1:0];
-    assign l0_l1_req_meta_int[cb].core_id = l0_l1_req[cb].mem_req_id[tidWidth-2:ReqIdWidth+1];
+    assign l0_l1_req_meta_int[cb].req_id  = l0_l1_req[cb].mem_req_id[ReqIdWidth-1:0] + cb; // make req_id unique across cores
+    // assign l0_l1_req_meta_int[cb].core_id = l0_l1_req[cb].mem_req_id[tidWidth-2:ReqIdWidth+1];
+    assign l0_l1_req_meta_int[cb].core_id = cb;  // manually tag core_id
     assign l0_l1_req_meta_int[cb].is_fpu  = l0_l1_req[cb].mem_req_id[tidWidth-1];
     // assign l0_l1_req_write[cb] = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
     // assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
@@ -1303,15 +1308,13 @@ module cachepool_tile
     assign l0_mem_req_write_ready [cb] = l0_mem_req_ready_combined[cb][1];
 
     // translate hpd requests to tcdm requests for xbar
-    assign l0_l1_req_tcdm[cb].q.addr = l0_l1_req[cb].mem_req_addr;
+    assign l0_l1_req_tcdm[cb].q.addr  = l0_l1_req[cb].mem_req_addr;
     assign l0_l1_req_tcdm[cb].q.write = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
-    assign l0_l1_req_tcdm[cb].q.amo = AMONone;                      // AMO handled by HPDcache, should not pass to L2
-    assign l0_l1_req_tcdm[cb].q.data = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
-    assign l0_l1_req_tcdm[cb].q.strb = 32'hFFFF;                    // TODO: remove hardcoding
-    assign l0_l1_req_tcdm[cb].q.user = l0_l1_req_meta_int[cb];
+    assign l0_l1_req_tcdm[cb].q.amo   = AMONone;                      // AMO handled by HPDcache, should not pass to L2
+    assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
+    assign l0_l1_req_tcdm[cb].q.strb  = 32'hFFFF;                    // TODO: remove hardcoding
+    assign l0_l1_req_tcdm[cb].q.user  = l0_l1_req_meta_int[cb];
     assign l0_l1_req_tcdm[cb].q_valid = l0_l1_req_valid[cb];
-
-    // assign l0_l1_req_tcdm_ready[cb] = cache_req_ready[cb];
 
   end
 
@@ -1333,10 +1336,11 @@ module cachepool_tile
         l0_mem_resp_write[cb].mem_resp_w_is_atomic = l1_l0_rsp_tcdm[cb].p.user.is_amo;
         l0_mem_resp_write[cb].mem_resp_w_error = HPDCACHE_MEM_RESP_OK; // grounded for now
         // l0_mem_resp_write[cb].mem_resp_w_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
-        l0_mem_resp_write[cb].mem_resp_w_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
-                                               l1_l0_rsp_tcdm[cb].p.user.core_id,
-                                               l1_l0_rsp_tcdm[cb].p.write,
-                                               l1_l0_rsp_tcdm[cb].p.user.req_id};
+        // l0_mem_resp_write[cb].mem_resp_w_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
+        //                                        l1_l0_rsp_tcdm[cb].p.user.core_id,
+        //                                        l1_l0_rsp_tcdm[cb].p.write,
+        //                                        l1_l0_rsp_tcdm[cb].p.user.req_id};
+        l0_mem_resp_write[cb].mem_resp_w_id = l1_l0_rsp_tcdm[cb].p.user.req_id - cb; // reconstruct the original req_id
         // core_resp_data_o from L1 unused on write response as no data is expected
 
         // defaults of read response when handling write
@@ -1357,10 +1361,11 @@ module cachepool_tile
         // read response payload
         l0_mem_resp_read[cb].mem_resp_r_error = HPDCACHE_MEM_RESP_OK;    // grounded as there is nowhere for it to go
         // l0_mem_resp_read[cb].mem_resp_r_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
-        l0_mem_resp_read[cb].mem_resp_r_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
-                                              l1_l0_rsp_tcdm[cb].p.user.core_id,
-                                              l1_l0_rsp_tcdm[cb].p.write,
-                                              l1_l0_rsp_tcdm[cb].p.user.req_id};
+        // l0_mem_resp_read[cb].mem_resp_r_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
+        //                                       l1_l0_rsp_tcdm[cb].p.user.core_id,
+        //                                       l1_l0_rsp_tcdm[cb].p.write,
+        //                                       l1_l0_rsp_tcdm[cb].p.user.req_id};
+        l0_mem_resp_read[cb].mem_resp_r_id = l1_l0_rsp_tcdm[cb].p.user.req_id - cb; // reconstruct the original req_id
         // l0_mem_resp_read[cb].mem_resp_r_data = cache_rsp_data[cb];
         l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_rsp_tcdm[cb].p.data;
         l0_mem_resp_read[cb].mem_resp_r_last = 1'b1;
@@ -1382,8 +1387,7 @@ module cachepool_tile
     .tcdm_req_t       (tcdm_req_cacheline_t),
     .tcdm_rsp_t       (tcdm_rsp_cacheline_t),
     .tcdm_req_chan_t  (tcdm_req_chan_cacheline_t),
-    .tcdm_rsp_chan_t  (tcdm_rsp_chan_cacheline_t),
-    .Topology()
+    .tcdm_rsp_chan_t  (tcdm_rsp_chan_cacheline_t)
   ) i_l0_l1_xbar (
     .clk_i            (clk_i),
     .rst_ni           (rst_ni),
@@ -1407,7 +1411,8 @@ module cachepool_tile
     assign l1_l0_tcdm_xbar_rsp[cb].p.data   = cache_rsp_data[cb];
     assign l1_l0_tcdm_xbar_rsp[cb].p_valid  = cache_rsp_valid[cb];
     // assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = cache_rsp_ready[cb];
-    assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = l1_l0_rsp_xbar_ready[cb];
+    // assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = l1_l0_rsp_xbar_ready[cb];
+    assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = cache_req_ready[cb];
     assign l1_l0_tcdm_xbar_rsp[cb].p.user   = cache_rsp_meta[cb];
     assign l1_l0_tcdm_xbar_rsp[cb].p.write  = cache_rsp_write[cb];
   end

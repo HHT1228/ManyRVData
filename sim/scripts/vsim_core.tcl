@@ -178,3 +178,5 @@ add wave -noupdate -group tile[$1]_core[$2] -group Spatz -group RSP_FIFO /tb_cac
 add wave -noupdate -group tile[$1]_core[$2] -group Spatz -group RSP_FIFO /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_core[$2]/i_cachepool_cc/spatz_mem_rsp_pop
 add wave -noupdate -group tile[$1]_core[$2] -group Spatz -group RSP_FIFO /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_core[$2]/i_cachepool_cc/spatz_mem_rsp_push
 add wave -noupdate -group tile[$1]_core[$2] -group Spatz -group RSP_FIFO /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_core[$2]/i_cachepool_cc/spatz_mem_fifo_bypass
+
+add wave -noupdate -group tile[$1]_core[$2] -group reqrsp_mux /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_core[$2]/i_cachepool_cc/i_spm_reqrsp_mux/*

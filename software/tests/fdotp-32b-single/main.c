@@ -25,8 +25,10 @@
 
 int main() {
     // const uint32_t num_cores = snrt_cluster_core_num();
-    const uint32_t num_cores = 1;
-    const uint32_t cid = snrt_cluster_core_idx();
+  const uint32_t num_cores = 1;
+  const uint32_t cid = snrt_cluster_core_idx();
+
+  if (cid == 0) {
 
     const int measure_iter = 3;
 
@@ -45,19 +47,16 @@ int main() {
     const uint32_t rounds = (dotp_l.M > elem_per_round) ? ((dotp_l.M + elem_per_round - 1) / elem_per_round) : 1;
 
     const uint32_t dim = elem_per_round / num_cores;
-  // run entire test only on core 0 for single-core baseline
-  if (cid == 0) {
+    // run entire test only on core 0 for single-core baseline
 
     uint32_t offset = 31 - __builtin_clz(dim * sizeof(float));
 
-    if (cid == 0) {
-      // Set xbar policy
-      l1d_xbar_config(offset);
-      // Initialize the cache
-      l1d_init(0);
+    // Set xbar policy
+    l1d_xbar_config(offset);
+    // Initialize the cache
+    l1d_init(0);
 
-      printf ("round:%u, lmul:%u, dim:%u\n", rounds, lmul, dim);
-    }
+    printf ("round:%u, lmul:%u, dim:%u\n", rounds, lmul, dim);
 
     // snrt_cluster_hw_barrier();
 
@@ -71,8 +70,7 @@ int main() {
 
     for (int iter = 0; iter < measure_iter; iter ++) {
       // Start dump
-      if (cid == 0)
-        start_kernel();
+      start_kernel();
 
       // snrt_cluster_hw_barrier();
 
@@ -96,57 +94,51 @@ int main() {
       result[cid] = acc;
 
       // Wait for all cores to finish
-      snrt_cluster_hw_barrier();
+      // snrt_cluster_hw_barrier();
 
       // End timer and check if new best runtime
-      if (cid == 0) {
-        timer_tmp = benchmark_get_cycle() - timer_tmp;
-        timer = (timer < timer_tmp) ? timer : timer_tmp;
-        if (iter == 0)
-          timer_iter1 = timer;
+      timer_tmp = benchmark_get_cycle() - timer_tmp;
+      timer = (timer < timer_tmp) ? timer : timer_tmp;
+      if (iter == 0)
+        timer_iter1 = timer;
 
-        stop_kernel();
-      }
+      stop_kernel();
 
       // Final reduction
-      if (cid == 0) {
-        // timer_tmp = benchmark_get_cycle() - timer_tmp;
-        for (uint32_t i = 1; i < num_cores; ++i)
-          acc += result[i];
-        result[0] = acc;
-      }
+      // if (cid == 0) {
+      //   // timer_tmp = benchmark_get_cycle() - timer_tmp;
+      //   for (uint32_t i = 1; i < num_cores; ++i)
+      //     acc += result[i];
+      //   result[0] = acc;
+      // }
 
     }
 
     // snrt_cluster_hw_barrier();
 
     // Check and display results
-    if (cid == 0) {
-      // The timer did not count the reduction time
-      uint32_t performance = 1000 * 2 * dotp_l.M / timer;
-      uint32_t perf_iter1  = 1000 * 2 * dotp_l.M / timer_iter1;
-      uint32_t utilization = performance / (2 * num_cores * 4);
-      uint32_t util_iter1  = perf_iter1  / (2 * num_cores * 4);
-      write_cyc(timer);
+    // The timer did not count the reduction time
+    uint32_t performance = 1000 * 2 * dotp_l.M / timer;
+    uint32_t perf_iter1  = 1000 * 2 * dotp_l.M / timer_iter1;
+    uint32_t utilization = performance / (2 * num_cores * 4);
+    uint32_t util_iter1  = perf_iter1  / (2 * num_cores * 4);
+    write_cyc(timer);
 
-      printf("\n----- (%d) sp fdotp -----\n", dotp_l.M);
-      printf("The 1st execution took %u cycles.\n", timer_iter1);
-      printf("The performance is %u OP/1000cycle (%u%%o utilization).\n",
+    printf("\n----- (%d) sp fdotp -----\n", dotp_l.M);
+    printf("The 1st execution took %u cycles.\n", timer_iter1);
+    printf("The performance is %u OP/1000cycle (%u%%o utilization).\n",
             perf_iter1 , util_iter1);
-      printf("The execution took %u cycles.\n", timer);
-      printf("The performance is %u OP/1000cycle (%u%%o utilization).\n",
-            performance, utilization);
-    }
+    printf("The execution took %u cycles.\n", timer);
+    printf("The performance is %u OP/1000cycle (%u%%o utilization).\n",
+          performance, utilization);
 
-    if (cid == 0) {
-      if (fp_check(result[0], dotp_result*measure_iter)) {
-        printf("Check Failed!\n");
-      }
+    if (fp_check(result[0], dotp_result*measure_iter)) {
+      printf("Check Failed!\n");
     }
 
     // Wait for core 0 to display the results
     // snrt_cluster_hw_barrier();
-
-    return 0;
   }
+
+  return 0;
 }
