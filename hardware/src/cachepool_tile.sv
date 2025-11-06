@@ -1010,7 +1010,7 @@ module cachepool_tile
 
       assign l0_cache_req[cb][j].addr_offset = l0_cache_req_addr_offset[cb][j];
       assign l0_cache_req[cb][j].wdata = l0_cache_req_data[cb][j];
-      assign l0_cache_req[cb][j].be = 32'hFFFF;                                         // TODO: remove hardcoding
+      assign l0_cache_req[cb][j].be = 16'hFFFF;                                         // TODO: remove hardcoding
       assign l0_cache_req[cb][j].size = $clog2(coalescedDataWidth/8);                   // TODO: remove hardcoding
       // assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
       assign l0_cache_req[cb][j].sid = !(l0_cache_req_is_fpu[cb][j]);  // 0 for spatz, 1 for snitch
@@ -1190,8 +1190,7 @@ module cachepool_tile
     // assign l0_cache_req_coal[cb][1] = l0_cache_req[cb][NrTCDMPortsPerCore-1];
     assign l0_cache_req_coal[cb][1].addr_offset = l0_cache_req[cb][NrTCDMPortsPerCore-1].addr_offset;
     assign l0_cache_req_coal[cb][1].wdata = l0_cache_req[cb][NrTCDMPortsPerCore-1].wdata;
-    assign l0_cache_req_coal[cb][1].be = 32'hFFFF;  // TODO: need sanity check, remove hardcodings
-    // assign l0_cache_req_coal[cb][1].be = l0_cache_req_strb[cb][NrTCDMPortsPerCore-1];
+    assign l0_cache_req_coal[cb][1].be = (l0_cache_req_strb[cb][NrTCDMPortsPerCore-1]) << (l0_cache_req_coal[cb][1].addr_offset % (coalescedDataWidth/8));
     assign l0_cache_req_coal[cb][1].size = $clog2(coalescedDataWidth/8);
     // assign l0_cache_req_coal[cb][1].sid = l0_cache_req[cb][NrTCDMPortsPerCore-1].sid;
     assign l0_cache_req_coal[cb][1].sid = 1'b1; // snitch port
