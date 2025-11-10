@@ -274,17 +274,17 @@ module cachepool_tile
       dataSetsPerRam: 32,
       dataRamByteEnable: 1'b1,
       accessWords: 4,
-      mshrSets: 16,
-      mshrWays: 2,
-      mshrWaysPerRamWord: 2,
-      mshrSetsPerRam: 16,
+      mshrSets: 1,
+      mshrWays: 1,
+      mshrWaysPerRamWord: 1,
+      mshrSetsPerRam: 1,
       mshrRamByteEnable: 1'b1,
       mshrUseRegbank: 1,
       cbufEntries: 2,
       refillCoreRspFeedthrough: 1'b1,
       refillFifoDepth: 2,
-      wbufDirEntries: 2,
-      wbufDataEntries: 2,
+      wbufDirEntries: 8,
+      wbufDataEntries: 8,
       wbufWords: 1,          // Unsure
       wbufTimecntWidth: 3,
       rtabEntries: 2,
@@ -942,10 +942,16 @@ module cachepool_tile
 
   // Coalesced requests
   logic hpd_l0_cache_req_valid_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic hpd_l0_cache_req_valid_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic hpd_l0_cache_req_ready_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic hpd_l0_cache_req_ready_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic hpd_l0_cache_rsp_valid_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic hpd_l0_cache_rsp_valid_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic hpd_l0_cache_rsp_ready_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_req_t l0_cache_req_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  hpdcache_req_t l0_cache_req_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_rsp_t l0_cache_rsp_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  hpdcache_rsp_t l0_cache_rsp_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   // hpd_rsp_coal_t l0_cache_rsp_coal_info [NumL0CacheCtrl];
   hpdcache_tag_t l0_cache_tag_coal[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   addr_t l0_cache_req_coal_addr[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
@@ -1132,7 +1138,7 @@ module cachepool_tile
       .downstream_req_wmask_o      (/* Unused */),
 
       .downstream_resp_valid_i     (hpd_l0_cache_rsp_valid_coal[cb][0]),
-      .downstream_resp_ready_o     (/* Unused */),
+      .downstream_resp_ready_o     (hpd_l0_cache_rsp_ready_coal[cb][0]),
       .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),
       .downstream_resp_info_i      (l0_cache_rsp_downstream_info_ext[cb]),
       .downstream_resp_write_i     (l0_cache_rsp_coal[cb][0].tid[ReqIdWidth]) // unreliable method
@@ -1173,9 +1179,9 @@ module cachepool_tile
     // Meta data handling using info from coalescer
     assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];  // TODO: this is a mess
     // assign l0_cache_req_coal[cb][0].sid  = {l0_cache_req_downstream_info[cb].user.is_fpu, l0_cache_req_downstream_info[cb].user.core_id};
-    // assign l0_cache_req_coal[cb][0].sid  = {1'b1, l0_cache_req_downstream_info[cb].user.core_id}; // TODO: downstream info grounds is_fpu to 0, need to know why
+    // assign l0_cache_req_coal[cb][0].sid  = {1'b1, l0_cache_req_downstream_info[cb].user.core_id};
     assign l0_cache_req_coal[cb][0].sid  = 1'b0;  // spatz port
-    assign l0_cache_req_coal[cb][0].tid  = {l0_cache_req_downstream_info[cb].write, l0_cache_req_downstream_info[cb].user.req_id};
+    assign l0_cache_req_coal[cb][0].tid  = hpd_l0_cache_req_valid_coal[cb][0] ? {l0_cache_req_downstream_info[cb].user.is_fpu, l0_cache_req_downstream_info[cb].user.core_id, l0_cache_req_downstream_info[cb].write, l0_cache_req_downstream_info[cb].user.req_id} : '0; // TODO: check
     // Other fields of hpd cache handled independently
     assign l0_cache_req_coal[cb][0].phys_indexed = l0_cache_req[cb][0].phys_indexed;
     // assign l0_cache_req_coal[cb][0].pma.uncacheable = !(l0_cache_req_downstream_info[cb].user.is_amo);
@@ -1194,7 +1200,7 @@ module cachepool_tile
     assign l0_cache_req_coal[cb][1].size = $clog2(coalescedDataWidth/8);
     // assign l0_cache_req_coal[cb][1].sid = l0_cache_req[cb][NrTCDMPortsPerCore-1].sid;
     assign l0_cache_req_coal[cb][1].sid = 1'b1; // snitch port
-    assign l0_cache_req_coal[cb][1].tid = l0_cache_req[cb][NrTCDMPortsPerCore-1].tid;
+    assign l0_cache_req_coal[cb][1].tid = hpd_l0_cache_req_valid_coal[cb][1] ? l0_cache_req[cb][NrTCDMPortsPerCore-1].tid : '0;
     assign l0_cache_req_coal[cb][1].need_rsp = 1'b1;
     assign l0_cache_req_coal[cb][1].op = l0_cache_req[cb][NrTCDMPortsPerCore-1].op;
     assign l0_cache_req_coal[cb][1].addr_tag = l0_cache_req[cb][NrTCDMPortsPerCore-1].addr_tag;
@@ -1208,6 +1214,38 @@ module cachepool_tile
     // assign l0_cache_req_coal[cb][1].pma.io = 1'b0;
     // assign l0_cache_req_coal[cb][1].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
     assign l0_cache_req_coal[cb][1].pma = l0_cache_req[cb][NrTCDMPortsPerCore-1].pma;
+  end
+
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_coal_spill
+    for (genvar j = 0; j < HPDCACHE_NREQUESTERS; j++) begin : gen_l0_cache_coal_spill_signals
+      spill_register #(
+        .T      (hpdcache_req_t),
+        .Bypass (1'b0)
+      ) i_spill_reg_cache_req (
+        .clk_i   (clk_i),
+        .rst_ni  (rst_ni),
+        .valid_i (hpd_l0_cache_req_valid_coal[cb][j]),
+        .ready_o (hpd_l0_cache_req_ready_coal[cb][j]),
+        .data_i  (l0_cache_req_coal[cb][j]),
+        .valid_o (hpd_l0_cache_req_valid_coal_spill[cb][j]),
+        .ready_i (hpd_l0_cache_req_ready_coal_spill[cb][j]),
+        .data_o  (l0_cache_req_coal_spill[cb][j])
+      );
+
+      spill_register #(
+        .T      (hpdcache_rsp_t),
+        .Bypass (1'b0)
+      ) i_spill_reg_cache_rsp (
+        .clk_i   (clk_i),
+        .rst_ni  (rst_ni),
+        .valid_i (hpd_l0_cache_rsp_valid_coal_spill[cb][j]),
+        .ready_o (/* unused */),
+        .data_i  (l0_cache_rsp_coal_spill[cb][j]),
+        .valid_o (hpd_l0_cache_rsp_valid_coal[cb][j]),
+        .ready_i (hpd_l0_cache_rsp_ready_coal[cb][j]),
+        .data_o  (l0_cache_rsp_coal[cb][j])
+      );
+    end
   end
 
   // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
@@ -1314,6 +1352,15 @@ module cachepool_tile
     assign l0_l1_req_tcdm[cb].q.strb  = 32'hFFFF;                    // TODO: remove hardcoding
     assign l0_l1_req_tcdm[cb].q.user  = l0_l1_req_meta_int[cb];
     assign l0_l1_req_tcdm[cb].q_valid = l0_l1_req_valid[cb];
+
+    // intercept corrupted requests from L1 MSHR
+    // always_comb begin
+    //   if ((l0_l1_req_tcdm[cb].q.addr == 32'b0) && ((l0_l1_req_tcdm[cb].q.user.req_id - cb) == 0)) begin
+    //     l0_l1_req_tcdm[cb].q_valid = 1'b0;
+    //   end else begin
+    //     l0_l1_req_tcdm[cb].q_valid = l0_l1_req_valid[cb];
+    //   end
+    // end
 
   end
 
@@ -1444,14 +1491,14 @@ module cachepool_tile
       .rst_ni                             (rst_ni),
       .wbuf_flush_i                       (1'b0),
 
-      .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
-      .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
-      .core_req_i                         (l0_cache_req_coal[i]),
+      .core_req_valid_i                   (hpd_l0_cache_req_valid_coal_spill[i]),
+      .core_req_ready_o                   (hpd_l0_cache_req_ready_coal_spill[i]),
+      .core_req_i                         (l0_cache_req_coal_spill[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
-      .core_req_tag_i                     (l0_cache_tag_coal[i]),         // might be redundant
+      .core_req_tag_i                     (/* unused */),         // might be redundant old: l0_cache_tag_coal[i]
       .core_req_pma_i                     (/* unused */),
-      .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
-      .core_rsp_o                         (l0_cache_rsp_coal[i]),
+      .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal_spill[i]),
+      .core_rsp_o                         (l0_cache_rsp_coal_spill[i]),
 
       .mem_req_read_ready_i               (l0_mem_req_read_ready[i]),
       .mem_req_read_valid_o               (l0_mem_req_read_valid[i]),
@@ -1467,7 +1514,7 @@ module cachepool_tile
       .mem_req_write_data_valid_o         (l0_mem_req_write_data_valid[i]),
       .mem_req_write_data_o               (l0_mem_req_write_data[i]),
       .mem_resp_write_ready_o             (l0_mem_resp_write_ready[i]),
-      .mem_resp_write_valid_i             (l0_mem_resp_write_valid[i]),    // FIXME: active for 2 cycles, causing HPDcache WBUF assertion
+      .mem_resp_write_valid_i             (l0_mem_resp_write_valid[i]),
       .mem_resp_write_i                   (l0_mem_resp_write[i]),
 
       .evt_cache_write_miss_o             (/* unused */),

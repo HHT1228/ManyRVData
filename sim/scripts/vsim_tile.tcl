@@ -40,6 +40,14 @@ for {set c 0} {$c < 4} {incr c} {
 for {set c 0} {$c < 4} {incr c} {
 	onerror {resume}
 
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mshr	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_miss_handler_i/*
+
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/*
+
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group ctrl_pe	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_ctrl_pe_i/*
+
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group req_arbiter	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_arbiter_i/*
+
 	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group wbuf	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/gen_wbuf/hpdcache_wbuf_i/*
 
 	add wave -noupdate -group tile[$1] -group l0_cache[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_i
