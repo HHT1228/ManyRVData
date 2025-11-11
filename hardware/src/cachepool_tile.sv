@@ -283,8 +283,8 @@ module cachepool_tile
       cbufEntries: 2,
       refillCoreRspFeedthrough: 1'b1,
       refillFifoDepth: 2,
-      wbufDirEntries: 8,
-      wbufDataEntries: 8,
+      wbufDirEntries: 4,
+      wbufDataEntries: 4,
       wbufWords: 1,          // Unsure
       wbufTimecntWidth: 3,
       rtabEntries: 2,
@@ -942,16 +942,16 @@ module cachepool_tile
 
   // Coalesced requests
   logic hpd_l0_cache_req_valid_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
-  logic hpd_l0_cache_req_valid_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  // logic hpd_l0_cache_req_valid_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic hpd_l0_cache_req_ready_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
-  logic hpd_l0_cache_req_ready_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  // logic hpd_l0_cache_req_ready_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic hpd_l0_cache_rsp_valid_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
-  logic hpd_l0_cache_rsp_valid_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  // logic hpd_l0_cache_rsp_valid_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic hpd_l0_cache_rsp_ready_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_req_t l0_cache_req_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
-  hpdcache_req_t l0_cache_req_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  // hpdcache_req_t l0_cache_req_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_rsp_t l0_cache_rsp_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
-  hpdcache_rsp_t l0_cache_rsp_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  // hpdcache_rsp_t l0_cache_rsp_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   // hpd_rsp_coal_t l0_cache_rsp_coal_info [NumL0CacheCtrl];
   hpdcache_tag_t l0_cache_tag_coal[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   addr_t l0_cache_req_coal_addr[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
@@ -969,14 +969,13 @@ module cachepool_tile
   tcdm_user_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_user;  // downstream
   tcdm_meta_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info;  // downstream
 
-  // TODO: spill reg?
-
   // response from coalescer to CC
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
     for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_rsp_signals
       assign cache_rsp[j][cb].p_valid = l0_core_rsp_valid[cb][j];
-      assign cache_rsp[j][cb].q_ready = cache_pready[j][cb];
-      assign l0_core_rsp_ready[cb][j] = cache_rsp[j][cb].q_ready;
+      // assign cache_rsp[j][cb].q_ready = cache_pready[j][cb];
+      // assign l0_core_rsp_ready[cb][j] = cache_rsp[j][cb].q_ready;
+      assign l0_core_rsp_ready[cb][j] = cache_pready[j][cb];
 
       assign cache_rsp[j][cb].p.data  = l0_core_rsp_data[cb][j];
       assign cache_rsp[j][cb].p.user  = l0_core_rsp_user[cb][j];
@@ -987,13 +986,13 @@ module cachepool_tile
   // requests from CC to coalescer
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_req_connect
     for (genvar j = 0; j < NrTCDMPortsPerCore; j++) begin : gen_l0_cache_req_signals
+      assign cache_rsp[j][cb].q_ready = l0_cache_req_ready[cb][j];
       assign l0_cache_req_valid[cb][j] = cache_req[j][cb].q_valid;
       // assign l0_cache_req_addr [cb][j] = cache_req[j][cb].q.addr;
       assign l0_cache_req_addr_offset [cb][j] = cache_req[j][cb].q.addr[HPDcacheCfg.reqOffsetWidth-1:0];
       assign l0_cache_req_coreid[cb][j] = cache_req[j][cb].q.user.core_id;
       assign l0_cache_req_reqid [cb][j] = cache_req[j][cb].q.user.req_id;
       // assign l0_cache_req_is_fpu[cb][j] = cache_req[j][cb].q.user.is_fpu;
-      // TODO: is_fpu is always 0 from i_spatz_cc output, need to confirm if this is normal
       assign l0_cache_req_is_fpu[cb][j] = !(j == NrTCDMPortsPerCore-1);  // Port 4 is snitch, others spatz
       assign l0_cache_req_write [cb][j] = cache_req[j][cb].q.write;
       assign l0_cache_req_data  [cb][j] = cache_req[j][cb].q.data;
@@ -1029,7 +1028,7 @@ module cachepool_tile
       
       // Other fields of hpd cache handled independently
       assign l0_cache_req[cb][j].phys_indexed = 1'b1;
-      assign l0_cache_req[cb][j].pma.uncacheable = 1'b0; // TODO: do we have uncacheable transactions? amo?
+      assign l0_cache_req[cb][j].pma.uncacheable = 1'b0;
       assign l0_cache_req[cb][j].pma.io = 1'b0;
       assign l0_cache_req[cb][j].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
 
@@ -1117,7 +1116,7 @@ module cachepool_tile
       .id_i                        ('0),
 
       .upstream_req_valid_i        (l0_cache_req_valid[cb][NrL0CoaleserInputs-1:0]),
-      .upstream_req_ready_o        (l0_cache_req_ready[cb][NrL0CoaleserInputs-1:0]),  // loose end, maybe redundant
+      .upstream_req_ready_o        (l0_cache_req_ready[cb][NrL0CoaleserInputs-1:0]),  // FIXME: dangling
       .upstream_req_addr_i         (l0_cache_req_addr[cb][NrL0CoaleserInputs-1:0]),
       .upstream_req_info_i         (l0_cache_req_info[cb][NrL0CoaleserInputs-1:0]),
       .upstream_req_write_i        (l0_cache_req_write[cb][NrL0CoaleserInputs-1:0]),
@@ -1216,37 +1215,39 @@ module cachepool_tile
     assign l0_cache_req_coal[cb][1].pma = l0_cache_req[cb][NrTCDMPortsPerCore-1].pma;
   end
 
-  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_coal_spill
-    for (genvar j = 0; j < HPDCACHE_NREQUESTERS; j++) begin : gen_l0_cache_coal_spill_signals
-      spill_register #(
-        .T      (hpdcache_req_t),
-        .Bypass (1'b0)
-      ) i_spill_reg_cache_req (
-        .clk_i   (clk_i),
-        .rst_ni  (rst_ni),
-        .valid_i (hpd_l0_cache_req_valid_coal[cb][j]),
-        .ready_o (hpd_l0_cache_req_ready_coal[cb][j]),
-        .data_i  (l0_cache_req_coal[cb][j]),
-        .valid_o (hpd_l0_cache_req_valid_coal_spill[cb][j]),
-        .ready_i (hpd_l0_cache_req_ready_coal_spill[cb][j]),
-        .data_o  (l0_cache_req_coal_spill[cb][j])
-      );
+  // Spill registers to tolerate latency, temporary measure
+  // TODO: remove once request-holding is implemented
+  // for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_coal_spill
+  //   for (genvar j = 0; j < HPDCACHE_NREQUESTERS; j++) begin : gen_l0_cache_coal_spill_signals
+  //     spill_register #(
+  //       .T      (hpdcache_req_t),
+  //       .Bypass (1'b0)
+  //     ) i_spill_reg_cache_req (
+  //       .clk_i   (clk_i),
+  //       .rst_ni  (rst_ni),
+  //       .valid_i (hpd_l0_cache_req_valid_coal[cb][j]),
+  //       .ready_o (hpd_l0_cache_req_ready_coal[cb][j]),
+  //       .data_i  (l0_cache_req_coal[cb][j]),
+  //       .valid_o (hpd_l0_cache_req_valid_coal_spill[cb][j]),
+  //       .ready_i (hpd_l0_cache_req_ready_coal_spill[cb][j]),
+  //       .data_o  (l0_cache_req_coal_spill[cb][j])
+  //     );
 
-      spill_register #(
-        .T      (hpdcache_rsp_t),
-        .Bypass (1'b0)
-      ) i_spill_reg_cache_rsp (
-        .clk_i   (clk_i),
-        .rst_ni  (rst_ni),
-        .valid_i (hpd_l0_cache_rsp_valid_coal_spill[cb][j]),
-        .ready_o (/* unused */),
-        .data_i  (l0_cache_rsp_coal_spill[cb][j]),
-        .valid_o (hpd_l0_cache_rsp_valid_coal[cb][j]),
-        .ready_i (hpd_l0_cache_rsp_ready_coal[cb][j]),
-        .data_o  (l0_cache_rsp_coal[cb][j])
-      );
-    end
-  end
+  //     spill_register #(
+  //       .T      (hpdcache_rsp_t),
+  //       .Bypass (1'b0)
+  //     ) i_spill_reg_cache_rsp (
+  //       .clk_i   (clk_i),
+  //       .rst_ni  (rst_ni),
+  //       .valid_i (hpd_l0_cache_rsp_valid_coal_spill[cb][j]),
+  //       .ready_o (/* unused */),
+  //       .data_i  (l0_cache_rsp_coal_spill[cb][j]),
+  //       .valid_o (hpd_l0_cache_rsp_valid_coal[cb][j]),
+  //       .ready_i (hpd_l0_cache_rsp_ready_coal[cb][j]),
+  //       .data_o  (l0_cache_rsp_coal[cb][j])
+  //     );
+  //   end
+  // end
 
   // logic [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read_ready, l0_mem_req_read_valid;
   // hpdcache_mem_req_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_mem_req_read;
@@ -1491,14 +1492,22 @@ module cachepool_tile
       .rst_ni                             (rst_ni),
       .wbuf_flush_i                       (1'b0),
 
-      .core_req_valid_i                   (hpd_l0_cache_req_valid_coal_spill[i]),
-      .core_req_ready_o                   (hpd_l0_cache_req_ready_coal_spill[i]),
-      .core_req_i                         (l0_cache_req_coal_spill[i]),
+      // .core_req_valid_i                   (hpd_l0_cache_req_valid_coal_spill[i]),
+      // .core_req_ready_o                   (hpd_l0_cache_req_ready_coal_spill[i]),
+      // .core_req_i                         (l0_cache_req_coal_spill[i]),
+      // .core_req_abort_i                   ('{default: 1'b0}),
+      // .core_req_tag_i                     (/* unused */),         // might be redundant old: l0_cache_tag_coal[i]
+      // .core_req_pma_i                     (/* unused */),
+      // .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal_spill[i]),
+      // .core_rsp_o                         (l0_cache_rsp_coal_spill[i]),
+      .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
+      .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
+      .core_req_i                         (l0_cache_req_coal[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
       .core_req_tag_i                     (/* unused */),         // might be redundant old: l0_cache_tag_coal[i]
       .core_req_pma_i                     (/* unused */),
-      .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal_spill[i]),
-      .core_rsp_o                         (l0_cache_rsp_coal_spill[i]),
+      .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
+      .core_rsp_o                         (l0_cache_rsp_coal[i]),
 
       .mem_req_read_ready_i               (l0_mem_req_read_ready[i]),
       .mem_req_read_valid_o               (l0_mem_req_read_valid[i]),

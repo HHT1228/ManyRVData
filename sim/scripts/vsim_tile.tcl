@@ -52,6 +52,8 @@ for {set c 0} {$c < 4} {incr c} {
 
 	add wave -noupdate -group tile[$1] -group l0_cache[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_i
 
+	add wave -noupdate -group tile[$1] -group l0_cache[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_ready_o
+
 	add wave -noupdate -group tile[$1] -group l0_cache[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_rsp_valid_o
 
 	add wave -noupdate -group tile[$1] -group l0_cache[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_rsp_o
