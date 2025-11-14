@@ -1001,7 +1001,8 @@ module cachepool_tile
       assign l0_cache_req_coreid[cb][j] = cache_req[j][cb].q.user.core_id;
       assign l0_cache_req_reqid [cb][j] = cache_req[j][cb].q.user.req_id;
       // assign l0_cache_req_is_fpu[cb][j] = cache_req[j][cb].q.user.is_fpu;
-      assign l0_cache_req_is_fpu[cb][j] = !(j == NrTCDMPortsPerCore-1);  // Port 4 is snitch, others spatz
+      // assign l0_cache_req_is_fpu[cb][j] = !(j == NrTCDMPortsPerCore-1);  // Port 4 is snitch, others spatz
+      assign l0_cache_req_is_fpu[cb][j] = cache_req[j][cb].q.user.is_fpu;
       assign l0_cache_req_write [cb][j] = cache_req[j][cb].q.write;
       assign l0_cache_req_data  [cb][j] = cache_req[j][cb].q.data;
       assign l0_cache_req_amo   [cb][j] = cache_req[j][cb].q.amo;
@@ -1026,7 +1027,7 @@ module cachepool_tile
       assign l0_cache_req[cb][j].be = 16'hFFFF;                                         // TODO: remove hardcoding
       assign l0_cache_req[cb][j].size = $clog2(coalescedDataWidth/8);                   // TODO: remove hardcoding
       // assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
-      assign l0_cache_req[cb][j].sid = !(l0_cache_req_is_fpu[cb][j]);  // 0 for spatz, 1 for snitch
+      assign l0_cache_req[cb][j].sid = !(l0_cache_req_is_fpu[cb][j]);  // 0 for spatz, 1 for snitch FIXME
       assign l0_cache_req[cb][j].tid  = {l0_cache_req_is_fpu[cb][j], l0_cache_req_coreid[cb][j], l0_cache_req_write[cb][j], l0_cache_req_reqid[cb][j]};
       // assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
       assign l0_cache_req[cb][j].need_rsp = 1'b1;
@@ -1068,7 +1069,8 @@ module cachepool_tile
       assign l0_cache_req_user[cb][j].core_id = l0_cache_req_coreid[cb][j];
       assign l0_cache_req_user[cb][j].is_amo = (l0_cache_req_amo[cb][j] != AMONone);
       assign l0_cache_req_user[cb][j].req_id  = l0_cache_req_reqid[cb][j];
-      assign l0_cache_req_user[cb][j].is_fpu = (j != NrTCDMPortsPerCore-1);  // channel 4 is snitch, not fpu
+      // assign l0_cache_req_user[cb][j].is_fpu = (j != NrTCDMPortsPerCore-1);  // channel 4 is snitch, not fpu
+      assign l0_cache_req_user[cb][j].is_fpu = l0_cache_req_is_fpu[cb][j];
 
       // Upstream request info for coalescer
       assign l0_cache_req_info[cb][j].user = l0_cache_req_user[cb][j];
@@ -1098,6 +1100,7 @@ module cachepool_tile
     // assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth-1:0];
     // assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth]; // extended bit
     assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-2:ReqIdWidth+1];
+    assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].tid[tidWidth-1]; // extended bit
     assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth-1:0];
     assign l0_cache_rsp_downstream_info[cb].user    = l0_cache_rsp_downstream_user[cb];
     // hpdcache_rsp_t has no field to track AMO or OP
@@ -1182,7 +1185,8 @@ module cachepool_tile
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth-1:0];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth]; // extended bit
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-2:ReqIdWidth+1];
-    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].tid[tidWidth-1];
+    // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].tid[tidWidth-1];
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = 1'b0; // TODO
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].req_id   = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth-1:0];
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_amo   = 1'b0; // amo handled by HPDcache
     assign l0_core_rsp_write[cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth]; // extended bit
@@ -1367,7 +1371,7 @@ module cachepool_tile
     assign l0_l1_req_meta_int[cb].req_id  = l0_l1_req[cb].mem_req_id[ReqIdWidth-1:0] + cb; // make req_id unique across cores
     // assign l0_l1_req_meta_int[cb].core_id = l0_l1_req[cb].mem_req_id[tidWidth-2:ReqIdWidth+1];
     assign l0_l1_req_meta_int[cb].core_id = cb;  // manually tag core_id
-    assign l0_l1_req_meta_int[cb].is_fpu  = l0_l1_req[cb].mem_req_id[tidWidth-1];
+    assign l0_l1_req_meta_int[cb].is_fpu  = l0_l1_req[cb].mem_req_id[tidWidth-1]; // FIXME: doesn't sound rights
     // assign l0_l1_req_write[cb] = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
     // assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
 
