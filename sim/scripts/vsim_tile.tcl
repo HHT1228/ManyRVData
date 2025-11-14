@@ -75,3 +75,5 @@ add wave -noupdate -group tile[$1] -group l0_l1_xbar /tb_cachepool/i_cluster_wra
 
 # Add waves for remaining signals
 add wave -noupdate -group tile[$1] -group Internal /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/*
+add wave -noupdate -group tile[$1] -group Internal /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/l0_cache_rsp_coal
+

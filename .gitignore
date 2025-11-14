@@ -35,3 +35,4 @@ util/lint/tmp
 sim.sh
 scratchpad.txt
 hardware/src/deprecated
+software/assembly

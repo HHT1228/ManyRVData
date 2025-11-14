@@ -257,12 +257,13 @@ module cachepool_tile
   localparam int unsigned HPDCACHE_NREQUESTERS = 2;   // Snitch + Spatz
   localparam int unsigned ReqIdWidth = $clog2(NumSpatzOutstandingLoads[0]);
   localparam int unsigned tidWidth = CoreIDWidth + ReqIdWidth + 2;
+  localparam int unsigned shortWordsPerCacheWord = L1LineWidth / DataWidth;
 
   // TODO: Make these parameters configurable (in config.mk, cachepool_pkg.sv)
   localparam hpdcache_pkg::hpdcache_user_cfg_t HPDcacheUserCfg = '{
       nRequesters: HPDCACHE_NREQUESTERS,
-      paWidth: 32,          // TODO: need test and confirm, is this tag width? (VIPT)
-      wordWidth: 128,       // TODO: extend to 128 for coalesced data, other parameters need to be changed accordingly
+      paWidth: 32,
+      wordWidth: 128,       // HPD safety bypassed to achieve 128b word size, need to be careful
       sets: 16,
       ways: 4,
       clWords: 4,
@@ -643,7 +644,7 @@ module cachepool_tile
   // For L0 cache
   logic       [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_valid;
   logic       [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_ready;
-  tcdm_addr_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_addr_offset;
+  hpdcache_req_offset_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_addr_offset;
   // tcdm_user_t [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_meta;
   logic       [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] [CoreIDWidth-1:0] l0_cache_req_coreid;
   reqid_t     [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_reqid;
@@ -956,6 +957,13 @@ module cachepool_tile
   hpdcache_tag_t l0_cache_tag_coal[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   addr_t l0_cache_req_coal_addr[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic [DataWidth*NrL0CoaleserInputs-1:0] l0_cache_req_coal_wdata[NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  
+  // Control signals of holding address for requests
+  // logic [NumL0CacheCtrl-1:0] load_ff;
+  hpdcache_req_offset_t [NumL0CacheCtrl-1:0] held_snitch_addr_offset;
+  // logic [NumL0CacheCtrl-1:0][1:0] held_word_offset;
+  logic [NumL0CacheCtrl-1:0][DataWidth-1:0] held_bit_offset;
+  // logic [DataWidth-1:0] held_bit_offset_per_core;
 
   // Coalesing infos: only user and writes are processed using info field of coalescer
   tcdm_user_t [NumL0CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_cache_req_user; // upstream
@@ -1152,7 +1160,25 @@ module cachepool_tile
 
     // channel 1 wires to channel 4 (snitch bypass coalescer)
     assign l0_core_rsp_valid[cb][NrTCDMPortsPerCore-1]          = hpd_l0_cache_rsp_valid_coal[cb][1];
-    assign l0_core_rsp_data [cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].rdata[DataWidth-1:0]; // truncate data from 128 to 32 bits
+    // assign held_word_offset[cb] = held_snitch_addr_offset[cb][3:2];
+    assign held_bit_offset [cb] = held_snitch_addr_offset[cb][3:2] * DataWidth;
+    // assign held_bit_offset_per_core = held_bit_offset[cb];
+    // assign l0_core_rsp_data [cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].rdata[DataWidth-1:0]; // truncate data from 128 to 32 bits
+    assign l0_core_rsp_data [cb][NrTCDMPortsPerCore-1]         = l0_cache_rsp_coal[cb][1].rdata[0][held_bit_offset[cb] +: DataWidth]; // select correct word from the long word
+    // always_comb begin
+    //   case (held_word_offset[cb])
+    //     2'b00:
+    //       l0_core_rsp_data [cb][NrTCDMPortsPerCore-1] = l0_cache_rsp_coal[cb][1].rdata[DataWidth-1:0];
+    //     2'b01:
+    //       l0_core_rsp_data [cb][NrTCDMPortsPerCore-1] = l0_cache_rsp_coal[cb][1].rdata[2*DataWidth-1:DataWidth];
+    //     2'b10:
+    //       l0_core_rsp_data [cb][NrTCDMPortsPerCore-1] = l0_cache_rsp_coal[cb][1].rdata[3*DataWidth-1:2*DataWidth];
+    //     2'b11:
+    //       l0_core_rsp_data [cb][NrTCDMPortsPerCore-1] = l0_cache_rsp_coal[cb][1].rdata[4*DataWidth-1:3*DataWidth];
+    //     default:
+    //       l0_core_rsp_data [cb][NrTCDMPortsPerCore-1] = '0;
+    //   endcase
+    // end
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth-1:0];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth]; // extended bit
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-2:ReqIdWidth+1];
@@ -1213,6 +1239,10 @@ module cachepool_tile
     // assign l0_cache_req_coal[cb][1].pma.io = 1'b0;
     // assign l0_cache_req_coal[cb][1].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
     assign l0_cache_req_coal[cb][1].pma = l0_cache_req[cb][NrTCDMPortsPerCore-1].pma;
+
+    // Hold address offset to recover correct shoft word from the long word
+    // Could be problematic for interleaving/OoO access
+    `FFL(held_snitch_addr_offset[cb], l0_cache_req_coal[cb][1].addr_offset, hpd_l0_cache_req_valid_coal[cb][1], '0, clk_i, rst_ni)
   end
 
   // Spill registers to tolerate latency, temporary measure
