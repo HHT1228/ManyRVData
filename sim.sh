@@ -30,6 +30,9 @@ case "$cmd" in
     ls)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-load-store_M16
         ;;
+    ls_single)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-load-store-single_M8
+        ;;
     *)
         echo "Unknown command: $cmd"
         ;;

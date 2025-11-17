@@ -1320,7 +1320,7 @@ module cachepool_tile
   hpdcache_mem_req_t [NumL0CacheCtrl-1:0] l0_l1_req;
   logic              [NumL0CacheCtrl-1:0] l0_l1_req_valid, l0_l1_xbar_req_valid;
   logic              [NumL0CacheCtrl-1:0] arb_out_id;
-  hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0] l0_l1_req_wdata;
+  // hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0] l0_l1_req_wdata;
 
   // Dummy signals that will be connected to L1
   // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_l1_req_valid;
