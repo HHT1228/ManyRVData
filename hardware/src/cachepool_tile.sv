@@ -19,6 +19,9 @@
 `include "tcdm_interface/typedef.svh"
 `include "hpdcache_typedef.svh"
 
+// WB not working properly, do not enable
+// `define TEMP_WB
+
 /// Tile implementation for CachePool
 module cachepool_tile
   import cachepool_pkg::*;
@@ -272,7 +275,7 @@ module cachepool_tile
       reqWords: 1,
       reqTransIdWidth: tidWidth + numWordOffsetBits,
       reqSrcIdWidth: 1, // track the requester port of HPDcache
-      victimSel: hpdcache_pkg::HPDCACHE_VICTIM_RANDOM,
+      victimSel: hpdcache_pkg::HPDCACHE_VICTIM_PLRU,
       dataWaysPerRamWord: 2,
       dataSetsPerRam: 32,
       dataRamByteEnable: 1'b1,
@@ -288,7 +291,7 @@ module cachepool_tile
       refillFifoDepth: 2,
       wbufDirEntries: 4,
       wbufDataEntries: 4,
-      wbufWords: 1,          // Unsure
+      wbufWords: 4,          // Unsure
       wbufTimecntWidth: 3,
       rtabEntries: 2,
       flushEntries: 2,
@@ -296,9 +299,14 @@ module cachepool_tile
       memAddrWidth: L1AddrWidth,
       memIdWidth: tidWidth,
       memDataWidth: L1LineWidth,
+`ifdef TEMP_WB
+      wtEn: 1'b0,
+      wbEn: 1'b1,
+`else
       wtEn: 1'b1,
-      wbEn: 1'b0,              // Disable write-back
-      lowLatency: 1'b1
+      wbEn: 1'b0,
+`endif
+      lowLatency: 1'b0
   };
 
   // localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcache_pkg::hpdcacheBuildConfig(
@@ -536,6 +544,8 @@ module cachepool_tile
   `TCDM_TYPEDEF_RSP_CHAN_T(tcdm_rsp_chan_cacheline_t, cacheline_data_t, tcdm_user_t)
   `TCDM_TYPEDEF_REQ_T(tcdm_req_cacheline_t, tcdm_req_chan_cacheline_t)
   `TCDM_TYPEDEF_RSP_T(tcdm_rsp_cacheline_t, tcdm_rsp_chan_cacheline_t)
+
+  // typedef logic [L1LineWidth/DataWidth-1:0] l1_wstrb_t;
 
   // typedef struct packed {
   //   hpdcache_req_sid_t  sid;
@@ -1049,8 +1059,11 @@ module cachepool_tile
       assign l0_cache_req[cb][j].phys_indexed = 1'b1;
       assign l0_cache_req[cb][j].pma.uncacheable = 1'b0;
       assign l0_cache_req[cb][j].pma.io = 1'b0;
+`ifdef TEMP_WB
+      assign l0_cache_req[cb][j].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WB;
+`else
       assign l0_cache_req[cb][j].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
-
+`endif
       // assign l0_cache_req_info[cb][j].hpd_req = l0_cache_req[cb][j];
       // assign l0_cache_coal_rsp_info[cb][j].hpd_rsp = l0_cache_rsp_coal[cb][j];
       
@@ -1335,18 +1348,23 @@ module cachepool_tile
   logic              [NumL0CacheCtrl-1:0] arb_out_id;
   // hpdcache_mem_req_w_t [NumL0CacheCtrl-1:0] l0_l1_req_wdata;
 
-  // Dummy signals that will be connected to L1
+  // Signals between L0 and L1
   // logic       [NumL1CacheCtrl-1:0][NrTCDMPortsPerCore-1:0] l0_l1_req_valid;
   // logic                 [NumL1CacheCtrl-1:0] l0_l1_req_ready;
   tcdm_addr_t           [NumL1CacheCtrl-1:0] l0_l1_req_addr;
   tcdm_user_t           [NumL1CacheCtrl-1:0] l0_l1_req_meta, l0_l1_req_meta_int;
   logic                 [NumL1CacheCtrl-1:0] l0_l1_req_write;
   cacheline_data_t      [NumL1CacheCtrl-1:0] l0_l1_req_data;
+  cacheline_strb_t      [NumL1CacheCtrl-1:0] l0_l1_req_wstrb;
 
   tcdm_req_cacheline_t  [NumL1CacheCtrl-1:0] l0_l1_req_tcdm, l0_l1_tcdm_xbar_req;
   tcdm_rsp_cacheline_t  [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm, l1_l0_tcdm_xbar_rsp;
   logic                 [NumL1CacheCtrl-1:0] l1_l0_rsp_xbar_ready;
   logic                 [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm_ready;
+
+  tcdm_req_cacheline_t  [NumL1CacheCtrl-1:0] l0_l1_strb_req;
+  tcdm_rsp_cacheline_t  [NumL1CacheCtrl-1:0] l1_l0_strb_rsp;
+  logic                 [NumL1CacheCtrl-1:0] l1_l0_strb_rsp_ready;
 
   /* RR arbiter to select between R/W channel of HPDcache */
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: gen_l0_l1_req_arbiter
@@ -1400,17 +1418,21 @@ module cachepool_tile
     assign l0_l1_req_tcdm[cb].q.addr  = l0_l1_req[cb].mem_req_addr;
     assign l0_l1_req_tcdm[cb].q.write = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
     assign l0_l1_req_tcdm[cb].q.amo   = AMONone;                      // AMO handled by HPDcache, should not pass to L2
-    // assign l0_l1_req_tcdm[cb].q.strb  = 32'hFFFF;                    // TODO: remove hardcoding
-    assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_be : 64'hFFFFFFFFFFFFFFFF;
+    // assign l0_l1_req_tcdm[cb].q.strb  = 32'hFFFF;
+    // assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_be : 64'hFFFFFFFFFFFFFFFF;                    // TODO: remove hardcoding
+    // assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_be : 32'hFFFFFFFF;
     // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
     // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_data : '0;
-    // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data[cb].mem_req_w_data;
     // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_data : '0;
+    assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data[cb].mem_req_w_be;
+    assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data[cb].mem_req_w_data;
 
+    // DANGEROUS LEGACY CODE, DO NOT UNCOMMENT
     // Mask data with BE to remove invalid bytes, prevent X being written into the mem
-    for (genvar i = 0; i < L1LineWidth/8; i++) begin
-      assign l0_l1_req_tcdm[cb].q.data[i*8 +: 8] = l0_mem_req_write_data[cb].mem_req_w_data[i*8 +: 8] & {8{l0_l1_req_tcdm[cb].q.strb[i]}};
-    end
+    // for (genvar i = 0; i < L1LineWidth/8; i++) begin
+    //   assign l0_l1_req_tcdm[cb].q.data[i*8 +: 8] = l0_mem_req_write_data[cb].mem_req_w_data[i*8 +: 8] & {8{l0_l1_req_tcdm[cb].q.strb[i]}};
+    // end
+
     assign l0_l1_req_tcdm[cb].q.user  = l0_l1_req_meta_int[cb];
     assign l0_l1_req_tcdm[cb].q_valid = l0_l1_req_valid[cb];
   end
@@ -1497,21 +1519,55 @@ module cachepool_tile
     .mem_rsp_i        (l1_l0_tcdm_xbar_rsp)
   );
 
+  // Temp workaround for the missing BE/strb handling of insitu-cache
+  // TODO: remove when byte-write of insitu-cache is available
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_l0_l1_strb_handling
+    spatz_strbreq_handler #(
+      .DataWidth      (L1LineWidth),
+      .mem_req_t      (tcdm_req_cacheline_t),
+      .mem_rsp_t      (tcdm_rsp_cacheline_t),
+      .reqrsp_user_t  (tcdm_user_t)
+    ) i_l0_l1_strbreq_handler (
+      .clk_i            (clk_i),
+      .rst_ni           (rst_ni),
+      .strb_req_i       (l0_l1_tcdm_xbar_req[cb]),
+      .strb_rsp_ready_i (l1_l0_rsp_xbar_ready[cb]),
+      .strb_rsp_i       (l1_l0_strb_rsp[cb]),
+      .strb_req_o       (l0_l1_strb_req[cb]),
+      .strb_rsp_ready_o (l1_l0_strb_rsp_ready[cb]),
+      .strb_rsp_o       (l1_l0_tcdm_xbar_rsp[cb])
+    );
+  end
+
   // translate tcdm_xbar signals to/from in-situ cache signals
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_xbar_insitu_translate
-    assign l0_l1_req_addr[cb]       = l0_l1_tcdm_xbar_req[cb].q.addr;
-    assign l0_l1_req_meta[cb]       = l0_l1_tcdm_xbar_req[cb].q.user;
-    assign l0_l1_req_write[cb]      = l0_l1_tcdm_xbar_req[cb].q.write;
-    assign l0_l1_req_data[cb]       = l0_l1_tcdm_xbar_req[cb].q.data;
-    assign l0_l1_xbar_req_valid[cb] = l0_l1_tcdm_xbar_req[cb].q_valid;
+    // assign l0_l1_req_addr[cb]       = l0_l1_tcdm_xbar_req[cb].q.addr;
+    // assign l0_l1_req_meta[cb]       = l0_l1_tcdm_xbar_req[cb].q.user;
+    // assign l0_l1_req_write[cb]      = l0_l1_tcdm_xbar_req[cb].q.write;
+    // assign l0_l1_req_data[cb]       = l0_l1_tcdm_xbar_req[cb].q.data;
+    // assign l0_l1_req_wstrb[cb]      = l0_l1_tcdm_xbar_req[cb].q.strb;
+    // assign l0_l1_xbar_req_valid[cb] = l0_l1_tcdm_xbar_req[cb].q_valid;
+    assign l0_l1_req_addr[cb]       = l0_l1_strb_req[cb].q.addr;
+    assign l0_l1_req_meta[cb]       = l0_l1_strb_req[cb].q.user;
+    assign l0_l1_req_write[cb]      = l0_l1_strb_req[cb].q.write;
+    assign l0_l1_req_data[cb]       = l0_l1_strb_req[cb].q.data;
+    assign l0_l1_req_wstrb[cb]      = l0_l1_strb_req[cb].q.strb;
+    assign l0_l1_xbar_req_valid[cb] = l0_l1_strb_req[cb].q_valid;
 
-    assign l1_l0_tcdm_xbar_rsp[cb].p.data   = cache_rsp_data[cb];
-    assign l1_l0_tcdm_xbar_rsp[cb].p_valid  = cache_rsp_valid[cb];
-    // assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = cache_rsp_ready[cb];
-    // assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = l1_l0_rsp_xbar_ready[cb];
-    assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = cache_req_ready[cb];
-    assign l1_l0_tcdm_xbar_rsp[cb].p.user   = cache_rsp_meta[cb];
-    assign l1_l0_tcdm_xbar_rsp[cb].p.write  = cache_rsp_write[cb];
+    // assign l1_l0_tcdm_xbar_rsp[cb].p.data   = cache_rsp_data[cb];
+    // assign l1_l0_tcdm_xbar_rsp[cb].p_valid  = cache_rsp_valid[cb];
+    // // assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = cache_rsp_ready[cb];
+    // // assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = l1_l0_rsp_xbar_ready[cb];
+    // assign l1_l0_tcdm_xbar_rsp[cb].q_ready  = cache_req_ready[cb];
+    // assign l1_l0_tcdm_xbar_rsp[cb].p.user   = cache_rsp_meta[cb];
+    // assign l1_l0_tcdm_xbar_rsp[cb].p.write  = cache_rsp_write[cb];
+    assign l1_l0_strb_rsp[cb].p.data   = cache_rsp_data[cb];
+    assign l1_l0_strb_rsp[cb].p_valid  = cache_rsp_valid[cb];
+    // assign l1_l0_strb_rsp[cb].q_ready  = cache_rsp_ready[cb];
+    // assign l1_l0_strb_rsp[cb].q_ready  = l1_l0_rsp_xbar_ready[cb];
+    assign l1_l0_strb_rsp[cb].q_ready  = cache_req_ready[cb];
+    assign l1_l0_strb_rsp[cb].p.user   = cache_rsp_meta[cb];
+    assign l1_l0_strb_rsp[cb].p.write  = cache_rsp_write[cb];
   end
 
   // Connecting cache_req (after unmerge before xbar to L0 D$)
@@ -1598,7 +1654,11 @@ module cachepool_tile
       .cfg_prefetch_updt_plru_i           (1'b0),
       .cfg_error_on_cacheable_amo_i       (1'b0),
       .cfg_rtab_single_entry_i            (1'b0),
+`ifdef TEMP_WB
+      .cfg_default_wb_i                   (1'b1)
+`else
       .cfg_default_wb_i                   (1'b0)
+`endif
     );
   end
 
@@ -1646,9 +1706,10 @@ module cachepool_tile
       .core_req_meta_i       (l0_l1_req_meta [cb]            ),
       .core_req_write_i      (l0_l1_req_write[cb]            ),
       .core_req_wdata_i      (l0_l1_req_data [cb]            ),
+      // .core_req_wstrb_i      (l0_l1_req_wstrb[cb]            ),
       // Response
       .core_resp_valid_o     (cache_rsp_valid[cb]            ),
-      .core_resp_ready_i     (l1_l0_rsp_xbar_ready[cb]       ), // old: cache_rsp_ready[cb]
+      .core_resp_ready_i     (l1_l0_strb_rsp_ready[cb]       ), // old: l1_l0_rsp_xbar_ready
       .core_resp_write_o     (cache_rsp_write[cb]            ),
       .core_resp_data_o      (cache_rsp_data [cb]            ),
       .core_resp_meta_o      (cache_rsp_meta [cb]            ),
@@ -2206,36 +2267,59 @@ module cachepool_tile
   // --------------------
   // Debug Assertions
   // --------------------
-  for (genvar i = 0; i < NrCores * NrTCDMPortsPerCore; i++) begin : gen_debug_assertions
-    always @(posedge clk_i) begin
-      assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D0) begin
-        $info("Access to 0x800033D0 detected from port %0d at time %0t", i, $time);
-      end else begin
-        // No action
-      end
-    end
-    always @(posedge clk_i) begin
-      assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D4) begin
-        $info("Access to 0x800033D4 detected from port %0d at time %0t", i, $time);
-      end else begin
-        // No action
-      end
-    end
-    always @(posedge clk_i) begin
-      assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D8) begin
-        $info("Access to 0x800033D8 detected from port %0d at time %0t", i, $time);
-      end else begin
-        // No action
-      end
-    end
-    always @(posedge clk_i) begin
-      assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033DC) begin
-        $info("Access to 0x800033DC detected from port %0d at time %0t", i, $time);
-      end else begin
-        // No action
-      end
-    end
-  end
+  // for (genvar i = 0; i < NrCores * NrTCDMPortsPerCore; i++) begin : gen_debug_assertions
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D0) begin
+    //     $info("Access to 0x800033D0 detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D4) begin
+    //     $info("Access to 0x800033D4 detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D8) begin
+    //     $info("Access to 0x800033D8 detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033DC) begin
+    //     $info("Access to 0x800033DC detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr <= (32'h800033D0 + 16 * 'h4) && tcdm_req[i].q.addr >= (32'h800033D0 - 16 * 'h4)) && tcdm_req[i].q.write) begin
+    //     $info("Write to region of interest detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr == 32'h800033C0) && !tcdm_req[i].q.write) begin
+    //     $info("Read from 0x800033C0 detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr <= (32'h800053CC) && tcdm_req[i].q.addr >= 32'h800053C0)) begin
+    //     $info("Access to 800053C0 word from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+  // end
 
   popcount #(
     .INPUT_WIDTH ( NrTCDMPortsCores )

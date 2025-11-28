@@ -68,6 +68,12 @@ for {set c 0} {$c < 4} {incr c} {
 	add wave -noupdate -group tile[$1] -group l0_l1_arbiters[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_l1_req_arbiter[$c]/i_l0_l1_rr_arb/*
 }
 
+for {set c 0} {$c < 4} {incr c} {
+	onerror {resume}
+
+	add wave -noupdate -group tile[$1] -group l0_l1_strbreq_handler[$c]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_l1_strb_handling[$c]/i_l0_l1_strbreq_handler/*
+}
+
 # for {set c 0} {$c < 5} {incr c} {
 #   add wave -noupdate -group tile[$1] -group cache_xbar -group xbar[$c]	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_cache_xbar[$c]/i_cache_xbar/*
 # }

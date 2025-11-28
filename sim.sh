@@ -9,6 +9,9 @@ cmd="$1"
 shift  # shift so $@ now contains only extra args for the command
 
 case "$cmd" in
+    rebuild)
+        make clean init generate config=cachepool_fpu_128 vsim
+        ;;
     fdotp_single_core)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b-single_M1024
         ;;
