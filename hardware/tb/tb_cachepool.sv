@@ -10,7 +10,7 @@ import "DPI-C" function int get_entry_point();
 
 `define wait_for(signal) \
   do \
-    @(negedge clk); \
+    @(posedge clk); \
   while (!signal);
 
 `include "axi/assign.svh"
@@ -168,7 +168,7 @@ module tb_cachepool;
 
     // Wait for a while
     repeat (10)
-      @(negedge clk);
+      @(posedge clk);
 
     // Load the entry point
     entry_point = get_entry_point();
@@ -176,7 +176,7 @@ module tb_cachepool;
 
     // Wait for a while
     repeat (1000)
-      @(negedge clk);
+      @(posedge clk);
 
     // Store the entry point in the Spatz cluster
     to_cluster_req = '{
@@ -202,13 +202,13 @@ module tb_cachepool;
       },
       default: '0
     };
-    @(negedge clk);
+    @(posedge clk);
     to_cluster_req = '0;
 
 
     // Wake up cores
     debug_req = '1;
-    @(negedge clk);
+    @(posedge clk);
     debug_req = '0;
 
     // Wait for end of computing signal

@@ -1610,7 +1610,7 @@ module cachepool_tile
       .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
       .core_req_i                         (l0_cache_req_coal[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
-      .core_req_tag_i                     (/* unused */),         // might be redundant old: l0_cache_tag_coal[i]
+      .core_req_tag_i                     (/* unused */),
       .core_req_pma_i                     (/* unused */),
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
@@ -1667,7 +1667,7 @@ module cachepool_tile
   //////////////////////////////
 
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_l1_cache_ctrl
-    cachepool_cache_ctrl #(
+    cachepool_l2_wrapper #(
       // Core
       .NumPorts         (NrL1PortsAsL2      ),
       .CoalExtFactor    (L1CoalFactor       ),
@@ -1680,13 +1680,30 @@ module cachepool_tile
       .SetAssociativity (L1AssoPerCtrl      ),
       .BankFactor       (L1BankFactor       ),
       .RefillDataWidth  (RefillDataWidth    ),
+
+      // Additional parameters
+      .NumL1CacheCtrl     (NumL1CacheCtrl),
+      .NumTagBankPerCtrl  (NumTagBankPerCtrl),
+      .NumDataBankPerCtrl (NumDataBankPerCtrl),
+      .SpatzAxiAddrWidth  (SpatzAxiAddrWidth),
+      .TCDMAddrWidth      (TCDMAddrWidth),
+      .L1CacheWayEntry    (L1CacheWayEntry),
+      .L1BankFactor       (L1BankFactor),
+      .L1LineWidth        (L1LineWidth),
       // Type
       .core_meta_t      (tcdm_user_t        ),
       .impl_in_t        (impl_in_t          ),
       .refill_req_t     (cache_refill_req_chan_t),
       .refill_rsp_t     (cache_refill_rsp_chan_t),
-      .burst_req_t      (burst_req_t        )
-    ) i_l1_controller (
+      .burst_req_t      (burst_req_t        ),
+
+      // .cache_refill_req_chan_t  (cache_refill_req_chan_t),
+      // .cache_refill_rsp_chan_t  (cache_refill_rsp_chan_t),
+      .cache_trans_req_t        (cache_trans_req_t      ),
+      .cache_trans_rsp_t        (cache_trans_rsp_t      ),
+      .tag_data_t               (tag_data_t             ),
+      .cacheline_data_t         (cacheline_data_t       )
+    ) i_l2_cache (
       .clk_i                 (clk_i                          ),
       .rst_ni                (rst_ni                         ),
       .impl_i                ('0                             ),
@@ -1713,147 +1730,203 @@ module cachepool_tile
       .core_resp_write_o     (cache_rsp_write[cb]            ),
       .core_resp_data_o      (cache_rsp_data [cb]            ),
       .core_resp_meta_o      (cache_rsp_meta [cb]            ),
-      // TCDM Refill
-      .refill_req_o          (cache_refill_req      [cb]     ),
-      .refill_burst_o        (cache_refill_burst    [cb]     ),
-      .refill_req_valid_o    (cache_refill_req_valid[cb]     ),
-      .refill_req_ready_i    (cache_refill_req_ready[cb]     ),
-      .refill_rsp_i          (cache_refill_rsp      [cb]     ),
-      .refill_rsp_valid_i    (cache_refill_rsp_valid[cb]     ),
-      .refill_rsp_ready_o    (cache_refill_rsp_ready[cb]     ),
-      // Tag Banks
-      .tcdm_tag_bank_req_o   (l1_tag_bank_req  [cb]          ),
-      .tcdm_tag_bank_we_o    (l1_tag_bank_we   [cb]          ),
-      .tcdm_tag_bank_addr_o  (l1_tag_bank_addr [cb]          ),
-      .tcdm_tag_bank_wdata_o (l1_tag_bank_wdata[cb]          ),
-      .tcdm_tag_bank_be_o    (l1_tag_bank_be   [cb]          ),
-      .tcdm_tag_bank_rdata_i (l1_tag_bank_rdata[cb]          ),
-      // Data Banks
-      .tcdm_data_bank_req_o  (l1_data_bank_req  [cb]         ),
-      .tcdm_data_bank_we_o   (l1_data_bank_we   [cb]         ),
-      .tcdm_data_bank_addr_o (l1_data_bank_addr [cb]         ),
-      .tcdm_data_bank_wdata_o(l1_data_bank_wdata[cb]         ),
-      .tcdm_data_bank_be_o   (l1_data_bank_be   [cb]         ),
-      .tcdm_data_bank_rdata_i(l1_data_bank_rdata[cb]         ),
-      .tcdm_data_bank_gnt_i  (l1_data_bank_gnt  [cb]         )
+
+      .cache_refill_req_o    (cache_refill_req_o[cb]           ),
+      .cache_refill_rsp_i    (cache_refill_rsp_i[cb]           ),
+      
+      .bitmask_lo_i          (bitmask_lo                     ),
+      .bitmask_up_i          (bitmask_up                     ),
+      .dynamic_offset_i      (dynamic_offset                 ),
+      .cb_id_i               (cb                             )
     );
 
-    always_comb begin : bank_addr_scramble
-      // TODO: use info and cb to calculate ID correctly
-      cache_refill_req_o[cb].q = '{
-        addr : cache_refill_req[cb].addr,
-        write: cache_refill_req[cb].write,
-        data : cache_refill_req[cb].wdata,
-        strb : cache_refill_req[cb].wstrb,
-        // We always want full size from cache
-        size : $clog2(RefillDataWidth/8),
-        amo  : reqrsp_pkg::AMONone,
-        default : '0
-      };
+    // cachepool_cache_ctrl #(
+    //   // Core
+    //   .NumPorts         (NrL1PortsAsL2      ),
+    //   .CoalExtFactor    (L1CoalFactor       ),
+    //   .AddrWidth        (L1AddrWidth        ),
+    //   .WordWidth        (L1LineWidth        ),    // cacheline unit (512bit), maybe too wide for backend
+    //   .TagWidth         (L1TagDataWidth     ),
+    //   // Cache
+    //   .NumCacheEntry    (L1NumEntryPerCtrl  ),
+    //   .CacheLineWidth   (L1LineWidth        ),
+    //   .SetAssociativity (L1AssoPerCtrl      ),
+    //   .BankFactor       (L1BankFactor       ),
+    //   .RefillDataWidth  (RefillDataWidth    ),
+    //   // Type
+    //   .core_meta_t      (tcdm_user_t        ),
+    //   .impl_in_t        (impl_in_t          ),
+    //   .refill_req_t     (cache_refill_req_chan_t),
+    //   .refill_rsp_t     (cache_refill_rsp_chan_t),
+    //   .burst_req_t      (burst_req_t        )
+    // ) i_l1_controller (
+    //   .clk_i                 (clk_i                          ),
+    //   .rst_ni                (rst_ni                         ),
+    //   .impl_i                ('0                             ),
+    //   // Sync Control
+    //   .cache_sync_valid_i    (l1d_insn_valid                 ),
+    //   .cache_sync_ready_o    (l1d_insn_ready[cb]             ),
+    //   .cache_sync_insn_i     (l1d_insn                       ),
+    //   // SPM Size
+    //   // The calculation of spm region in cache is different
+    //   // than other modules (needs to times 2)
+    //   // Currently assume full cache
+    //   .bank_depth_for_SPM_i  ('0                             ),
+    //   // Request
+    //   .core_req_valid_i      (l0_l1_xbar_req_valid[cb]       ), // old: l0_l1_req_valid[cb]
+    //   .core_req_ready_o      (cache_req_ready[cb]            ),
+    //   .core_req_addr_i       (l0_l1_req_addr [cb]            ),
+    //   .core_req_meta_i       (l0_l1_req_meta [cb]            ),
+    //   .core_req_write_i      (l0_l1_req_write[cb]            ),
+    //   .core_req_wdata_i      (l0_l1_req_data [cb]            ),
+    //   // .core_req_wstrb_i      (l0_l1_req_wstrb[cb]            ),
+    //   // Response
+    //   .core_resp_valid_o     (cache_rsp_valid[cb]            ),
+    //   .core_resp_ready_i     (l1_l0_strb_rsp_ready[cb]       ), // old: l1_l0_rsp_xbar_ready
+    //   .core_resp_write_o     (cache_rsp_write[cb]            ),
+    //   .core_resp_data_o      (cache_rsp_data [cb]            ),
+    //   .core_resp_meta_o      (cache_rsp_meta [cb]            ),
+    //   // TCDM Refill
+    //   .refill_req_o          (cache_refill_req      [cb]     ),
+    //   .refill_burst_o        (cache_refill_burst    [cb]     ),
+    //   .refill_req_valid_o    (cache_refill_req_valid[cb]     ),
+    //   .refill_req_ready_i    (cache_refill_req_ready[cb]     ),
+    //   .refill_rsp_i          (cache_refill_rsp      [cb]     ),
+    //   .refill_rsp_valid_i    (cache_refill_rsp_valid[cb]     ),
+    //   .refill_rsp_ready_o    (cache_refill_rsp_ready[cb]     ),
+    //   // Tag Banks
+    //   .tcdm_tag_bank_req_o   (l1_tag_bank_req  [cb]          ),
+    //   .tcdm_tag_bank_we_o    (l1_tag_bank_we   [cb]          ),
+    //   .tcdm_tag_bank_addr_o  (l1_tag_bank_addr [cb]          ),
+    //   .tcdm_tag_bank_wdata_o (l1_tag_bank_wdata[cb]          ),
+    //   .tcdm_tag_bank_be_o    (l1_tag_bank_be   [cb]          ),
+    //   .tcdm_tag_bank_rdata_i (l1_tag_bank_rdata[cb]          ),
+    //   // Data Banks
+    //   .tcdm_data_bank_req_o  (l1_data_bank_req  [cb]         ),
+    //   .tcdm_data_bank_we_o   (l1_data_bank_we   [cb]         ),
+    //   .tcdm_data_bank_addr_o (l1_data_bank_addr [cb]         ),
+    //   .tcdm_data_bank_wdata_o(l1_data_bank_wdata[cb]         ),
+    //   .tcdm_data_bank_be_o   (l1_data_bank_be   [cb]         ),
+    //   .tcdm_data_bank_rdata_i(l1_data_bank_rdata[cb]         ),
+    //   .tcdm_data_bank_gnt_i  (l1_data_bank_gnt  [cb]         )
+    // );
 
-      // ID 0 reserved for bypass cache
-      cache_refill_req_o[cb].q.user = '{
-        bank_id : cb + 1,
-        info    : cache_refill_req[cb].info,
-        burst   : cache_refill_burst[cb],
-        default : '0
-      };
-      cache_refill_req_o[cb].q_valid = cache_refill_req_valid[cb];
-      cache_refill_req_o[cb].p_ready = cache_refill_rsp_ready[cb];
+    // always_comb begin : bank_addr_scramble
+    //   // TODO: use info and cb to calculate ID correctly
+    //   cache_refill_req_o[cb].q = '{
+    //     addr : cache_refill_req[cb].addr,
+    //     write: cache_refill_req[cb].write,
+    //     data : cache_refill_req[cb].wdata,
+    //     strb : cache_refill_req[cb].wstrb,
+    //     // We always want full size from cache
+    //     size : $clog2(RefillDataWidth/8),
+    //     amo  : reqrsp_pkg::AMONone,
+    //     default : '0
+    //   };
 
-      cache_refill_rsp[cb] = '{
-        data  : cache_refill_rsp_i[cb].p.data,
-        write : cache_refill_rsp_i[cb].p.write,
-        info  : cache_refill_rsp_i[cb].p.user.info,
-        default   :'0
-      };
-      cache_refill_rsp_valid[cb] = cache_refill_rsp_i[cb].p_valid;
-      cache_refill_req_ready[cb] = cache_refill_rsp_i[cb].q_ready;
+    //   // ID 0 reserved for bypass cache
+    //   cache_refill_req_o[cb].q.user = '{
+    //     bank_id : cb + 1,
+    //     info    : cache_refill_req[cb].info,
+    //     burst   : cache_refill_burst[cb],
+    //     default : '0
+    //   };
+    //   cache_refill_req_o[cb].q_valid = cache_refill_req_valid[cb];
+    //   cache_refill_req_o[cb].p_ready = cache_refill_rsp_ready[cb];
+
+    //   cache_refill_rsp[cb] = '{
+    //     data  : cache_refill_rsp_i[cb].p.data,
+    //     write : cache_refill_rsp_i[cb].p.write,
+    //     info  : cache_refill_rsp_i[cb].p.user.info,
+    //     default   :'0
+    //   };
+    //   cache_refill_rsp_valid[cb] = cache_refill_rsp_i[cb].p_valid;
+    //   cache_refill_req_ready[cb] = cache_refill_rsp_i[cb].q_ready;
 
 
-      // Pass the lower bits first
-      cache_refill_req_o[cb].q.addr  =   cache_refill_req[cb].addr & bitmask_lo;
-      // Shift the upper part to its location
-      cache_refill_req_o[cb].q.addr |= ((cache_refill_req[cb].addr & bitmask_up) << NumSelBits);
-      // Add back the removed cache bank ID
-      cache_refill_req_o[cb].q.addr |= (cb << dynamic_offset);
+    //   // Pass the lower bits first
+    //   cache_refill_req_o[cb].q.addr  =   cache_refill_req[cb].addr & bitmask_lo;
+    //   // Shift the upper part to its location
+    //   cache_refill_req_o[cb].q.addr |= ((cache_refill_req[cb].addr & bitmask_up) << NumSelBits);
+    //   // Add back the removed cache bank ID
+    //   cache_refill_req_o[cb].q.addr |= (cb << dynamic_offset);
 
-    end
+    // end
 
-    for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
-      tc_sram_impl #(
-        .NumWords  (L1CacheWayEntry/L1BankFactor),
-        .DataWidth ($bits(tag_data_t)           ),
-        .ByteWidth ($bits(tag_data_t)           ),
-        .NumPorts  (1                           ),
-        .Latency   (1                           ),
-        .SimInit   ("zeros"                     ),
-        .impl_in_t (impl_in_t                   )
-      ) i_meta_bank (
-        .clk_i  (clk_i                   ),
-        .rst_ni (rst_ni                  ),
-        .impl_i ('0                      ),
-        .impl_o (/* unsed */             ),
-        .req_i  (l1_tag_bank_req  [cb][j]),
-        .we_i   (l1_tag_bank_we   [cb][j]),
-        .addr_i (l1_tag_bank_addr [cb][j]),
-        .wdata_i(l1_tag_bank_wdata[cb][j]),
-        .be_i   (l1_tag_bank_be   [cb][j]),
-        .rdata_o(l1_tag_bank_rdata[cb][j])
-      );
-    end
+    // for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
+    //   tc_sram_impl #(
+    //     .NumWords  (L1CacheWayEntry/L1BankFactor),
+    //     .DataWidth ($bits(tag_data_t)           ),
+    //     .ByteWidth ($bits(tag_data_t)           ),
+    //     .NumPorts  (1                           ),
+    //     .Latency   (1                           ),
+    //     .SimInit   ("zeros"                     ),
+    //     .impl_in_t (impl_in_t                   )
+    //   ) i_meta_bank (
+    //     .clk_i  (clk_i                   ),
+    //     .rst_ni (rst_ni                  ),
+    //     .impl_i ('0                      ),
+    //     .impl_o (/* unsed */             ),
+    //     .req_i  (l1_tag_bank_req  [cb][j]),
+    //     .we_i   (l1_tag_bank_we   [cb][j]),
+    //     .addr_i (l1_tag_bank_addr [cb][j]),
+    //     .wdata_i(l1_tag_bank_wdata[cb][j]),
+    //     .be_i   (l1_tag_bank_be   [cb][j]),
+    //     .rdata_o(l1_tag_bank_rdata[cb][j])
+    //   );
+    // end
 
-    // TODO: Should we use a single large bank or multiple narrow ones?
-    for (genvar j = 0; j < NumDataBankPerCtrl; j = j+NumWordPerLine) begin : gen_l1_data_banks
-      tc_sram_impl #(
-        .NumWords   (L1CacheWayEntry/L1BankFactor),
-        .DataWidth  (L1LineWidth),
-        .ByteWidth  (L1LineWidth), // L2 write granularity of cacheline, may require changes later
-        .NumPorts   (1          ),
-        .Latency    (1          ),
-        .SimInit    ("zeros"    )
-      ) i_data_bank (
-        .clk_i  (clk_i                       ),
-        .rst_ni (rst_ni                      ),
-        .impl_i ('0                          ),
-        .impl_o (/* unsed */                 ),
-        .req_i  ( l1_data_bank_req  [cb][j]  ),
-        .we_i   ( l1_data_bank_we   [cb][j]  ),
-        .addr_i ( l1_data_bank_addr [cb][j]  ),
-        .wdata_i( l1_data_bank_wdata[cb][j+:NumWordPerLine]),
-        .be_i   ( l1_data_bank_be   [cb][j+:NumWordPerLine]),
-        .rdata_o( l1_data_bank_rdata[cb][j+:NumWordPerLine])
-      );
-
-      assign l1_data_bank_gnt[cb][j+:NumWordPerLine] = {NumWordPerLine{1'b1}};
-      // assign l1_data_bank_gnt[cb][j+1] = 1'b1;
-      // assign l1_data_bank_gnt[cb][j+2] = 1'b1;
-      // assign l1_data_bank_gnt[cb][j+3] = 1'b1;
-    end
-
-    // for (genvar j = 0; j < NumDataBankPerCtrl; j++) begin : gen_l1_data_banks
+    // // TODO: Should we use a single large bank or multiple narrow ones?
+    // for (genvar j = 0; j < NumDataBankPerCtrl; j = j+NumWordPerLine) begin : gen_l1_data_banks
     //   tc_sram_impl #(
     //     .NumWords   (L1CacheWayEntry/L1BankFactor),
-    //     .DataWidth  (DataWidth),
-    //     .ByteWidth  (DataWidth),
-    //     .NumPorts   (1),
-    //     .Latency    (1),
-    //     .SimInit    ("zeros")
+    //     .DataWidth  (L1LineWidth),
+    //     .ByteWidth  (L1LineWidth), // L2 write granularity of cacheline, may require changes later
+    //     .NumPorts   (1          ),
+    //     .Latency    (1          ),
+    //     .SimInit    ("zeros"    )
     //   ) i_data_bank (
-    //     .clk_i  (clk_i                    ),
-    //     .rst_ni (rst_ni                   ),
-    //     .impl_i ('0                       ),
-    //     .impl_o (/* unsed */              ),
-    //     .req_i  (l1_data_bank_req  [cb][j]),
-    //     .we_i   (l1_data_bank_we   [cb][j]),
-    //     .addr_i (l1_data_bank_addr [cb][j]),
-    //     .wdata_i(l1_data_bank_wdata[cb][j]),
-    //     .be_i   (l1_data_bank_be   [cb][j]),
-    //     .rdata_o(l1_data_bank_rdata[cb][j])
+    //     .clk_i  (clk_i                       ),
+    //     .rst_ni (rst_ni                      ),
+    //     .impl_i ('0                          ),
+    //     .impl_o (/* unsed */                 ),
+    //     .req_i  ( l1_data_bank_req  [cb][j]  ),
+    //     .we_i   ( l1_data_bank_we   [cb][j]  ),
+    //     .addr_i ( l1_data_bank_addr [cb][j]  ),
+    //     .wdata_i( l1_data_bank_wdata[cb][j+:NumWordPerLine]),
+    //     .be_i   ( l1_data_bank_be   [cb][j+:NumWordPerLine]),
+    //     .rdata_o( l1_data_bank_rdata[cb][j+:NumWordPerLine])
     //   );
 
-    //   assign l1_data_bank_gnt[cb][j] = 1'b1;
+    //   assign l1_data_bank_gnt[cb][j+:NumWordPerLine] = {NumWordPerLine{1'b1}};
+    //   // assign l1_data_bank_gnt[cb][j+1] = 1'b1;
+    //   // assign l1_data_bank_gnt[cb][j+2] = 1'b1;
+    //   // assign l1_data_bank_gnt[cb][j+3] = 1'b1;
     // end
+
+    // // for (genvar j = 0; j < NumDataBankPerCtrl; j++) begin : gen_l1_data_banks
+    // //   tc_sram_impl #(
+    // //     .NumWords   (L1CacheWayEntry/L1BankFactor),
+    // //     .DataWidth  (DataWidth),
+    // //     .ByteWidth  (DataWidth),
+    // //     .NumPorts   (1),
+    // //     .Latency    (1),
+    // //     .SimInit    ("zeros")
+    // //   ) i_data_bank (
+    // //     .clk_i  (clk_i                    ),
+    // //     .rst_ni (rst_ni                   ),
+    // //     .impl_i ('0                       ),
+    // //     .impl_o (/* unsed */              ),
+    // //     .req_i  (l1_data_bank_req  [cb][j]),
+    // //     .we_i   (l1_data_bank_we   [cb][j]),
+    // //     .addr_i (l1_data_bank_addr [cb][j]),
+    // //     .wdata_i(l1_data_bank_wdata[cb][j]),
+    // //     .be_i   (l1_data_bank_be   [cb][j]),
+    // //     .rdata_o(l1_data_bank_rdata[cb][j])
+    // //   );
+
+    // //   assign l1_data_bank_gnt[cb][j] = 1'b1;
+    // // end
   end
 
   hive_req_t [NrCores-1:0] hive_req;

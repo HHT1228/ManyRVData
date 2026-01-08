@@ -100,6 +100,7 @@ add_spatz_test_oneParam(fdotp-32b fdotp-32b/main.c 1024)
 add_spatz_test_oneParam(fdotp-32b fdotp-32b/main.c 8192)
 add_spatz_test_oneParam(fdotp-32b fdotp-32b/main.c 32768)
 add_spatz_test_oneParam(fdotp-32b-single fdotp-32b-single/main.c 1024)
+add_spatz_test_oneParam(fdotp-32b-single fdotp-32b-single/main.c 8192)
 
 add_spatz_test_threeParam(gemv-col gemv-col/main.c 128 128 32)
 add_spatz_test_threeParam(gemv-col gemv-col/main.c 256 128 32)

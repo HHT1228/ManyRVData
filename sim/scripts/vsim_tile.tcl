@@ -20,14 +20,19 @@ for {set c 0}  {$c < 4} {incr c} {
 # 		add wave -noupdate -group tile[$1] -group cache[$c] -group amo[$p] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_cache_connect[$c]/gen_cache_amo[$p]/i_cache_amo/*
 #   }
 
-	# add wave -noupdate -group tile[$1] -group cache[$c] -group coalescer  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/i_par_coalescer_for_spatz/gen_extend_window/i_par_coalescer_extend_window/i_par_coalescer/*
-	add wave -noupdate -group tile[$1] -group cache[$c] -group core			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/i_insitu_cache_tcdm_wrapper/i_insitu_cache_core/*
-	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl0	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[0]/i_access_ctrl_for_meta/*
-	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl1	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[1]/i_access_ctrl_for_meta/*
-	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl2	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[2]/i_access_ctrl_for_meta/*
-	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl3	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[3]/i_access_ctrl_for_meta/*
+	# add wave -noupdate -group tile[$1] -group cache[$c] -group coalescer  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_par_coalescer_for_spatz/gen_extend_window/i_par_coalescer_extend_window/i_par_coalescer/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group controller			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group core			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/i_insitu_cache_core/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl0	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[0]/i_access_ctrl_for_meta/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl1	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[1]/i_access_ctrl_for_meta/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl2	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[2]/i_access_ctrl_for_meta/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl3	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[3]/i_access_ctrl_for_meta/*
 	
-	add wave -noupdate -group tile[$1] -group cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l1_controller/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/*
+	
+	# for {set b 0} {$b < 8} {incr b} {
+	# 	add wave -noupdate -group tile[$1] -group cache[$c] -group data_bank[$b]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/gen_l1_data_banks[$b]/i_data_bank/*
+	# }
 }
 
 # Add waves for L0 HPDcache

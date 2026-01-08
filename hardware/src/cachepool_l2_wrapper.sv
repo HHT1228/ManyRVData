@@ -1,0 +1,353 @@
+module cachepool_l2_wrapper #(
+  /*************************
+  * Core Access Parameters *
+  *************************/
+  /// Number of spatz core complex
+  parameter int unsigned NumPorts                                         = 10,
+  /// Coalescer Extned Factor
+  parameter int unsigned CoalExtFactor                                    = 1,
+  /// Meta information payload from spatz/snitch
+  parameter type         core_meta_t                                      = logic[7:0],
+  /// Address width of both narrow request from spatz
+  parameter int unsigned AddrWidth                                        = 32,
+  /// Width of word (granularity of non-blocking write)
+  parameter int unsigned WordWidth                                        = 64,
+  /// Width of Tag Bank data
+  parameter int unsigned TagWidth                                         = 64,
+
+  /**********************
+  * Cache Configuration *
+  **********************/
+  /// Number of Cache entries
+  parameter int unsigned NumCacheEntry                                    = 512,
+  /// Word width of cache line (512b default)
+  parameter int unsigned CacheLineWidth                                   = 512,
+  /// Number of Associatity
+  parameter int unsigned SetAssociativity                                 = 4,
+  /// Number of Pseudo-Dual Banks
+  parameter int unsigned BankFactor                                       = 2,
+
+  // Additional parameters
+  parameter int unsigned NumL1CacheCtrl                                   = 4,
+  parameter int unsigned NumTagBankPerCtrl                                = 4,
+  parameter int unsigned NumDataBankPerCtrl                               = 4,
+  parameter int unsigned SpatzAxiAddrWidth                                = 32,
+  parameter int unsigned TCDMAddrWidth                                    = 32,
+  parameter int unsigned L1CacheWayEntry                                  = 4,
+  parameter int unsigned L1BankFactor                                     = 2,
+  parameter int unsigned L1LineWidth                                      = 512,
+
+  /***************************
+  * ReqRsp Bus Configuration *
+  ***************************/
+  /// ReqRsp data width
+  parameter int unsigned  RefillDataWidth                                 = 128,
+  parameter type          refill_req_t                                    = logic,
+  parameter type          refill_rsp_t                                    = logic,
+  parameter type          burst_req_t                                     = logic,
+
+  /**************************
+  * FIFO SRAM Configuration *
+  **************************/
+  parameter type          impl_in_t                                       = logic,
+
+  /*************************
+  * Additional Types       *
+  *************************/
+  // parameter type          cache_refill_req_chan_t                         = logic,
+  // parameter type          cache_refill_rsp_chan_t                         = logic,
+  parameter type          cache_trans_req_t                               = logic,
+  parameter type          cache_trans_rsp_t                               = logic,
+  parameter type          tag_data_t                                      = logic,
+  parameter type          cacheline_data_t                                = logic,
+
+  /***********************
+  * Dependent Parameters *
+  ***********************/
+  // Dependent parameter, do not override. Burst length of each visit.
+  localparam int unsigned BurstLength                                     = CacheLineWidth/RefillDataWidth,
+  // Dependent parameter, do not override. Depth of cache bank.
+  localparam int unsigned CacheWaysEntry                                  = NumCacheEntry/SetAssociativity,
+  // Dependent parameter, do not override. Number of data bank per way.
+  localparam int unsigned NumDataBankPerWay                               = BankFactor * (CacheLineWidth/WordWidth),
+  // Dependent parameter, do not override. Number of meta bank per way.
+  localparam int unsigned NumTagBankPerWay                                = BankFactor,
+  // Dependent parameter, do not override. Address type.
+  localparam type         addr_t                                          = logic [AddrWidth-1:0],
+  // Dependent parameter, do not override. Address type.
+  localparam type         tcdm_bank_addr_t                                = logic [$clog2(CacheWaysEntry)-$clog2(BankFactor)-1:0],
+  // Dependent parameter, do not override. TCDM Tag type.
+  localparam type         tcdm_tag_data_t                                 = logic [TagWidth-1:0],
+  // Dependent parameter, do not override. word type.
+  localparam type         word_data_t                                     = logic [WordWidth-1:0],
+  localparam type         write_strb_t                                    = logic [CacheLineWidth/8-1:0]
+  )(
+
+
+  /// Clock, positive edge triggered.
+  input  logic                                                            clk_i,
+  /// Reset, active low.
+  input  logic                                                            rst_ni,
+
+  /// Sync Control Signals
+  input  logic                                                            cache_sync_valid_i,
+  output logic                                                            cache_sync_ready_o,
+  /*  00-> flush+invalidation
+      01-> flush only
+      10-> invalidation only
+      11-> all tag initialization*/
+  input  logic [1:0]                                                      cache_sync_insn_i,
+
+  /// Cache Partitioning Signals
+  input  tcdm_bank_addr_t                                                 bank_depth_for_SPM_i,
+
+  /// spatz requests
+  input  logic                                              core_req_valid_i,
+  output logic                                              core_req_ready_o,
+  input  addr_t                                             core_req_addr_i,
+  input  core_meta_t                                        core_req_meta_i,
+  input  logic                                              core_req_write_i,
+  input  word_data_t                                        core_req_wdata_i,
+  // input  write_strb_t                                       core_req_wstrb_i,
+
+  /// spatz responses
+  output logic                                              core_resp_valid_o,
+  input  logic                                              core_resp_ready_i,
+  output logic                                              core_resp_write_o,
+  output word_data_t                                        core_resp_data_o,
+  output core_meta_t                                        core_resp_meta_o,
+
+  /// FIFO SRAM Configuration
+  input   impl_in_t       [1:0]                                           impl_i,
+
+  // cache refill ports
+  output cache_trans_req_t    cache_refill_req_o,
+  input  cache_trans_rsp_t    cache_refill_rsp_i,
+
+  // bitmasks from outside
+  input logic             [SpatzAxiAddrWidth-1:0] bitmask_lo_i,
+  input logic             [SpatzAxiAddrWidth-1:0] bitmask_up_i,
+  input logic             [$clog2(TCDMAddrWidth)-1:0] dynamic_offset_i,
+  
+  input logic[31:0]       cb_id_i
+);
+
+  localparam NumSelBits = $clog2(NumL1CacheCtrl);
+  localparam NumWordPerLine = 1;
+
+  refill_req_t     cache_refill_req;
+  burst_req_t      cache_refill_burst;
+  logic            cache_refill_req_valid, cache_refill_req_ready;
+  refill_rsp_t     cache_refill_rsp;
+  logic            cache_refill_rsp_valid, cache_refill_rsp_ready;
+
+  logic            [NumTagBankPerCtrl-1:0] l1_tag_bank_req;
+  logic            [NumTagBankPerCtrl-1:0] l1_tag_bank_we;
+  tcdm_bank_addr_t [NumTagBankPerCtrl-1:0] l1_tag_bank_addr;
+  tag_data_t       [NumTagBankPerCtrl-1:0] l1_tag_bank_wdata;
+  logic            [NumTagBankPerCtrl-1:0] l1_tag_bank_be;
+  tag_data_t       [NumTagBankPerCtrl-1:0] l1_tag_bank_rdata;
+
+  logic            [NumDataBankPerCtrl-1:0] l1_data_bank_req;
+  logic            [NumDataBankPerCtrl-1:0] l1_data_bank_we;
+  tcdm_bank_addr_t [NumDataBankPerCtrl-1:0] l1_data_bank_addr;
+  // data_t           [NumDataBankPerCtrl-1:0] l1_data_bank_wdata;
+  cacheline_data_t [NumDataBankPerCtrl-1:0] l1_data_bank_wdata;
+  logic            [NumDataBankPerCtrl-1:0] l1_data_bank_be;
+  // data_t           [NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
+  cacheline_data_t [NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
+  logic            [NumDataBankPerCtrl-1:0] l1_data_bank_gnt;
+  
+  cachepool_cache_ctrl #(
+    // Core
+    .NumPorts         (NumPorts      ),
+    .CoalExtFactor    (CoalExtFactor       ),
+    .AddrWidth        (AddrWidth        ),
+    .WordWidth        (WordWidth        ),    // cacheline unit (512bit), maybe too wide for backend
+    .TagWidth         (TagWidth     ),
+    // Cache
+    .NumCacheEntry    (NumCacheEntry  ),
+    .CacheLineWidth   (CacheLineWidth        ),
+    .SetAssociativity (SetAssociativity      ),
+    .BankFactor       (BankFactor       ),
+    .RefillDataWidth  (RefillDataWidth    ),
+    // Type
+    .core_meta_t      (core_meta_t        ),
+    .impl_in_t        (impl_in_t          ),
+    .refill_req_t     (refill_req_t),
+    .refill_rsp_t     (refill_rsp_t),
+    .burst_req_t      (burst_req_t        )
+  ) i_l1_controller (
+    .clk_i                 (clk_i                          ),
+    .rst_ni                (rst_ni                         ),
+    .impl_i                ('0                             ),
+    // Sync Control
+    .cache_sync_valid_i    (cache_sync_valid_i                 ),
+    .cache_sync_ready_o    (cache_sync_ready_o             ),
+    .cache_sync_insn_i     (cache_sync_insn_i                  ),
+    // SPM Size
+    // The calculation of spm region in cache is different
+    // than other modules (needs to times 2)
+    // Currently assume full cache
+    .bank_depth_for_SPM_i  ('0                              ),
+    // Request
+    .core_req_valid_i      (core_req_valid_i            ),
+    .core_req_ready_o      (core_req_ready_o            ),
+    .core_req_addr_i       (core_req_addr_i             ),
+    .core_req_meta_i       (core_req_meta_i             ),
+    .core_req_write_i      (core_req_write_i            ),
+    .core_req_wdata_i      (core_req_wdata_i            ),
+    // .core_req_wstrb_i      (core_req_wstrb_i            ),
+    // Response
+    .core_resp_valid_o     (core_resp_valid_o          ),
+    .core_resp_ready_i     (core_resp_ready_i          ),
+    .core_resp_write_o     (core_resp_write_o          ),
+    .core_resp_data_o      (core_resp_data_o           ),
+    .core_resp_meta_o      (core_resp_meta_o           ),
+    // TCDM Refill
+    .refill_req_o          (cache_refill_req           ),
+    .refill_burst_o        (cache_refill_burst         ),
+    .refill_req_valid_o    (cache_refill_req_valid     ),
+    .refill_req_ready_i    (cache_refill_req_ready     ),
+    .refill_rsp_i          (cache_refill_rsp           ),
+    .refill_rsp_valid_i    (cache_refill_rsp_valid     ),
+    .refill_rsp_ready_o    (cache_refill_rsp_ready     ),
+    // Tag Banks
+    .tcdm_tag_bank_req_o   (l1_tag_bank_req            ),
+    .tcdm_tag_bank_we_o    (l1_tag_bank_we             ),
+    .tcdm_tag_bank_addr_o  (l1_tag_bank_addr           ),
+    .tcdm_tag_bank_wdata_o (l1_tag_bank_wdata          ),
+    .tcdm_tag_bank_be_o    (l1_tag_bank_be             ),
+    .tcdm_tag_bank_rdata_i (l1_tag_bank_rdata          ),
+    // Data Banks
+    .tcdm_data_bank_req_o  (l1_data_bank_req           ),
+    .tcdm_data_bank_we_o   (l1_data_bank_we            ),
+    .tcdm_data_bank_addr_o (l1_data_bank_addr          ),
+    .tcdm_data_bank_wdata_o(l1_data_bank_wdata         ),
+    .tcdm_data_bank_be_o   (l1_data_bank_be            ),
+    .tcdm_data_bank_rdata_i(l1_data_bank_rdata         ),
+    .tcdm_data_bank_gnt_i  (l1_data_bank_gnt           )
+  );
+
+  always_comb begin : bank_addr_scramble
+    // TODO: use info and cb to calculate ID correctly
+    cache_refill_req_o.q = '{
+      addr : cache_refill_req.addr,
+      write: cache_refill_req.write,
+      data : cache_refill_req.wdata,
+      strb : cache_refill_req.wstrb,
+      // We always want full size from cache
+      size : $clog2(RefillDataWidth/8),
+      amo  : reqrsp_pkg::AMONone,
+      default : '0
+    };
+
+    // ID 0 reserved for bypass cache
+    cache_refill_req_o.q.user = '{
+      // bank_id : cb + 1,
+      bank_id : cb_id_i + 1,
+      info    : cache_refill_req.info,
+      burst   : cache_refill_burst,
+      default : '0
+    };
+    cache_refill_req_o.q_valid = cache_refill_req_valid;
+    cache_refill_req_o.p_ready = cache_refill_rsp_ready;
+
+    cache_refill_rsp = '{
+      data  : cache_refill_rsp_i.p.data,
+      write : cache_refill_rsp_i.p.write,
+      info  : cache_refill_rsp_i.p.user.info,
+      default   :'0
+    };
+    cache_refill_rsp_valid = cache_refill_rsp_i.p_valid;
+    cache_refill_req_ready = cache_refill_rsp_i.q_ready;
+
+
+    // Pass the lower bits first
+    // cache_refill_req_o.q.addr  =   cache_refill_req.addr & bitmask_lo;
+    cache_refill_req_o.q.addr  =   cache_refill_req.addr & bitmask_lo_i;
+    // Shift the upper part to its location
+    // cache_refill_req_o.q.addr |= ((cache_refill_req.addr & bitmask_up) << NumSelBits);
+    cache_refill_req_o.q.addr |= ((cache_refill_req.addr & bitmask_up_i) << NumSelBits);
+    // Add back the removed cache bank ID
+    // cache_refill_req_o.q.addr |= (cb << dynamic_offset);
+    cache_refill_req_o.q.addr |= (cb_id_i << dynamic_offset_i);
+
+  end
+
+  for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
+    tc_sram_impl #(
+      .NumWords  (L1CacheWayEntry/L1BankFactor),
+      .DataWidth ($bits(tag_data_t)           ),
+      .ByteWidth ($bits(tag_data_t)           ),
+      .NumPorts  (1                           ),
+      .Latency   (1                           ),
+      .SimInit   ("zeros"                     ),
+      .impl_in_t (impl_in_t                   )
+    ) i_meta_bank (
+      .clk_i  (clk_i                   ),
+      .rst_ni (rst_ni                  ),
+      .impl_i ('0                      ),
+      .impl_o (/* unsed */             ),
+      .req_i  (l1_tag_bank_req  [j]),
+      .we_i   (l1_tag_bank_we   [j]),
+      .addr_i (l1_tag_bank_addr [j]),
+      .wdata_i(l1_tag_bank_wdata[j]),
+      .be_i   (l1_tag_bank_be   [j]),
+      .rdata_o(l1_tag_bank_rdata[j])
+    );
+  end
+
+  // TODO: Should we use a single large bank or multiple narrow ones?
+  for (genvar j = 0; j < NumDataBankPerCtrl; j = j+NumWordPerLine) begin : gen_l1_data_banks
+    tc_sram_impl #(
+      .NumWords   (L1CacheWayEntry/L1BankFactor),
+      .DataWidth  (L1LineWidth),
+      .ByteWidth  (L1LineWidth), // L2 write granularity of cacheline, may require changes later
+      .NumPorts   (1          ),
+      .Latency    (1          ),
+      .SimInit    ("zeros"    )
+    ) i_data_bank (
+      .clk_i  (clk_i                       ),
+      .rst_ni (rst_ni                      ),
+      .impl_i ('0                          ),
+      .impl_o (/* unsed */                 ),
+      .req_i  ( l1_data_bank_req  [j]  ),
+      .we_i   ( l1_data_bank_we   [j]  ),
+      .addr_i ( l1_data_bank_addr [j]  ),
+      .wdata_i( l1_data_bank_wdata[j+:NumWordPerLine]),
+      .be_i   ( l1_data_bank_be   [j+:NumWordPerLine]),
+      .rdata_o( l1_data_bank_rdata[j+:NumWordPerLine])
+    );
+
+    assign l1_data_bank_gnt[j+:NumWordPerLine] = {NumWordPerLine{1'b1}};
+    // assign l1_data_bank_gnt[j+1] = 1'b1;
+    // assign l1_data_bank_gnt[j+2] = 1'b1;
+    // assign l1_data_bank_gnt[j+3] = 1'b1;
+  end
+
+  // for (genvar j = 0; j < NumDataBankPerCtrl; j++) begin : gen_l1_data_banks
+  //   tc_sram_impl #(
+  //     .NumWords   (L1CacheWayEntry/L1BankFactor),
+  //     .DataWidth  (DataWidth),
+  //     .ByteWidth  (DataWidth),
+  //     .NumPorts   (1),
+  //     .Latency    (1),
+  //     .SimInit    ("zeros")
+  //   ) i_data_bank (
+  //     .clk_i  (clk_i                    ),
+  //     .rst_ni (rst_ni                   ),
+  //     .impl_i ('0                       ),
+  //     .impl_o (/* unsed */              ),
+  //     .req_i  (l1_data_bank_req  [j]),
+  //     .we_i   (l1_data_bank_we   [j]),
+  //     .addr_i (l1_data_bank_addr [j]),
+  //     .wdata_i(l1_data_bank_wdata[j]),
+  //     .be_i   (l1_data_bank_be   [j]),
+  //     .rdata_o(l1_data_bank_rdata[j])
+  //   );
+
+  //   assign l1_data_bank_gnt[j] = 1'b1;
+  // end
+endmodule
+

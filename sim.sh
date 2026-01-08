@@ -15,6 +15,9 @@ case "$cmd" in
     fdotp_single_core)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b-single_M1024
         ;;
+    fdotp_single_core_large)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b-single_M8192
+        ;;
     fdotp_small)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b_M1024
         ;;
