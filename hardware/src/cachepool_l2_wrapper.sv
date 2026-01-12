@@ -1,3 +1,5 @@
+// Author: Ho Tin Hung
+
 module cachepool_l2_wrapper #(
   /*************************
   * Core Access Parameters *
@@ -157,6 +159,83 @@ module cachepool_l2_wrapper #(
   // data_t           [NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
   cacheline_data_t [NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
   logic            [NumDataBankPerCtrl-1:0] l1_data_bank_gnt;
+
+  // Tag bank access for directory controller
+  logic            [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_req;
+  logic            [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_we;
+  tcdm_bank_addr_t [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_addr;
+  tag_data_t       [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_wdata;
+  logic            [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_be;
+  tag_data_t       [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_rdata;
+
+  // Tag bank end-signals
+  logic            [NumTagBankPerCtrl-1:0] tag_bank_req;
+  logic            [NumTagBankPerCtrl-1:0] tag_bank_we;
+  tcdm_bank_addr_t [NumTagBankPerCtrl-1:0] tag_bank_addr;
+  tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_wdata;
+  logic            [NumTagBankPerCtrl-1:0] tag_bank_be;
+  tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_rdata;
+  
+  cahcepool_dir_ctrl #(
+    // Core Parameters
+    .AddrWidth           (AddrWidth          ),
+    .WordWidth           (WordWidth          ),
+    .TagWidth            (TagWidth           ),
+    .NumTagBankPerCtrl   (NumTagBankPerCtrl  ),
+    .NumCacheEntry       (NumCacheEntry     ),
+    .SetAssociativity    (SetAssociativity   ),
+    .CacheLineWidth      (CacheLineWidth    ),
+    .NumDataBankPerCtrl  (NumDataBankPerCtrl),
+    // TODO: remove hardcoding, expose to tile-level
+    .NumCores            (4          ),
+    .NumCoherenceStates  (4          ),
+    // Type Parameters
+    .addr_t              (addr_t             ),
+    .word_data_t         (word_data_t        ),
+    .core_meta_t         (core_meta_t        ),
+    .tag_data_t          (tag_data_t         ),
+    .tcdm_bank_addr_t    (tcdm_bank_addr_t   )
+  ) i_l2_directory_ctrl (
+    .clk_i                       (clk_i                          ),
+    .rst_ni                      (rst_ni                         ),
+    // Core Interface
+    .upstream_req_valid_i        (core_req_valid_i               ),
+    .upstream_req_ready_o        (               ),
+    .upstream_req_addr_i         (core_req_addr_i                ),
+    .upstream_req_meta_i         (core_req_meta_i                ),
+    .upstream_req_write_i        (core_req_write_i               ),
+    .upstream_req_wdata_i        (core_req_wdata_i               ),
+
+    .upstream_resp_valid_o       (              ),
+    .upstream_resp_ready_i       (core_resp_ready_i              ),
+    .upstream_resp_write_o       (              ),
+    .upstream_resp_data_o        (              ),
+    .upstream_resp_meta_o        (              ),
+
+    // L2 Cache Interface
+    .downstream_req_valid_o      (),
+    .downstream_req_ready_i      (),
+    .downstream_req_addr_o       (),
+    .downstream_req_meta_o       (),
+    .downstream_req_write_o      (),
+    .downstream_req_wdata_o      (),
+
+    .downstream_resp_valid_i     (),
+    .downstream_resp_ready_o     (),
+    .downstream_resp_write_i     (),
+    .downstream_resp_data_i      (),
+    .downstream_resp_meta_i      (),
+
+    // Tag Bank Interface
+    .tag_bank_req_o              (l1_dir_tag_bank_req                ),
+    .tag_bank_we_o               (l1_dir_tag_bank_we                 ),
+    .tag_bank_addr_o             (l1_dir_tag_bank_addr               ),
+    .tag_bank_wdata_o            (l1_dir_tag_bank_wdata              ),
+    .tag_bank_be_o               (l1_dir_tag_bank_be                 ),
+    .tag_bank_rdata_i            (l1_dir_tag_bank_rdata              ),
+
+    .l1_data_bank_gnt_i          (l1_data_bank_gnt)
+  );
   
   cachepool_cache_ctrl #(
     // Core
@@ -274,6 +353,8 @@ module cachepool_l2_wrapper #(
     cache_refill_req_o.q.addr |= (cb_id_i << dynamic_offset_i);
 
   end
+
+
 
   for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
     tc_sram_impl #(
