@@ -1,5 +1,7 @@
 // Author: Ho Tin Hung
 
+`define CACHE_DIRECT  // bypass dirctory controller
+
 module cachepool_l2_wrapper #(
   /*************************
   * Core Access Parameters *
@@ -36,8 +38,9 @@ module cachepool_l2_wrapper #(
   parameter int unsigned SpatzAxiAddrWidth                                = 32,
   parameter int unsigned TCDMAddrWidth                                    = 32,
   parameter int unsigned L1CacheWayEntry                                  = 4,
-  parameter int unsigned L1BankFactor                                     = 2,
-  parameter int unsigned L1LineWidth                                      = 512,
+  // parameter int unsigned L1BankFactor                                     = 2,
+  // parameter int unsigned L1LineWidth                                      = 512,
+  parameter int unsigned NumMetaBankPerWay                                = 2,
 
   /***************************
   * ReqRsp Bus Configuration *
@@ -186,6 +189,7 @@ module cachepool_l2_wrapper #(
     .SetAssociativity    (SetAssociativity   ),
     .CacheLineWidth      (CacheLineWidth    ),
     .NumDataBankPerCtrl  (NumDataBankPerCtrl),
+    .NumMetaBankPerWay   (NumMetaBankPerWay),
     // TODO: remove hardcoding, expose to tile-level
     .NumCores            (4          ),
     .NumCoherenceStates  (4          ),
@@ -232,7 +236,8 @@ module cachepool_l2_wrapper #(
     .tag_bank_addr_o             (l1_dir_tag_bank_addr               ),
     .tag_bank_wdata_o            (l1_dir_tag_bank_wdata              ),
     .tag_bank_be_o               (l1_dir_tag_bank_be                 ),
-    .tag_bank_rdata_i            (l1_dir_tag_bank_rdata              ),
+    // .tag_bank_rdata_i            (l1_dir_tag_bank_rdata              ),
+    .tag_bank_rdata_i            (tag_bank_rdata                     ),
 
     .l1_data_bank_gnt_i          (l1_data_bank_gnt)
   );
@@ -297,7 +302,8 @@ module cachepool_l2_wrapper #(
     .tcdm_tag_bank_addr_o  (l1_tag_bank_addr           ),
     .tcdm_tag_bank_wdata_o (l1_tag_bank_wdata          ),
     .tcdm_tag_bank_be_o    (l1_tag_bank_be             ),
-    .tcdm_tag_bank_rdata_i (l1_tag_bank_rdata          ),
+    // .tcdm_tag_bank_rdata_i (l1_tag_bank_rdata          ),
+    .tcdm_tag_bank_rdata_i (tag_bank_rdata             ),
     // Data Banks
     .tcdm_data_bank_req_o  (l1_data_bank_req           ),
     .tcdm_data_bank_we_o   (l1_data_bank_we            ),
@@ -307,6 +313,41 @@ module cachepool_l2_wrapper #(
     .tcdm_data_bank_rdata_i(l1_data_bank_rdata         ),
     .tcdm_data_bank_gnt_i  (l1_data_bank_gnt           )
   );
+
+`ifdef CACHE_DIRECT
+  assign tag_bank_req   = l1_tag_bank_req;
+  assign tag_bank_we    = l1_tag_bank_we;
+  assign tag_bank_addr  = l1_tag_bank_addr;
+  assign tag_bank_wdata = l1_tag_bank_wdata;
+  assign tag_bank_be    = l1_tag_bank_be;
+`else
+  cache_dir_tag_arb #(
+    .NumTagBankPerCtrl   (NumTagBankPerCtrl ),
+    .tcdm_bank_addr_t    (tcdm_bank_addr_t  ),
+    .tag_data_t          (tag_data_t        )
+  ) i_tag_bank_req_arb (
+    .clk_i                  (clk_i),
+    .rst_ni                 (rst_ni),
+
+    .cache_tag_bank_req_i   (l1_tag_bank_req),
+    .cache_tag_bank_we_i    (l1_tag_bank_we),
+    .cache_tag_bank_addr_i  (l1_tag_bank_addr),
+    .cache_tag_bank_wdata_i (l1_tag_bank_wdata),
+    .cache_tag_bank_be_i    (l1_tag_bank_be),
+    
+    .dir_tag_bank_req_i     (l1_dir_tag_bank_req),
+    .dir_tag_bank_we_i      (l1_dir_tag_bank_we),
+    .dir_tag_bank_addr_i    (l1_dir_tag_bank_addr),
+    .dir_tag_bank_wdata_i   (l1_dir_tag_bank_wdata),
+    .dir_tag_bank_be_i      (l1_dir_tag_bank_be),
+
+    .tag_bank_req_o         (tag_bank_req),
+    .tag_bank_we_o          (tag_bank_we),
+    .tag_bank_addr_o        (tag_bank_addr),
+    .tag_bank_wdata_o       (tag_bank_wdata),
+    .tag_bank_be_o          (tag_bank_be)
+  );
+`endif
 
   always_comb begin : bank_addr_scramble
     // TODO: use info and cb to calculate ID correctly
@@ -354,11 +395,11 @@ module cachepool_l2_wrapper #(
 
   end
 
-
+  // TODO: arbitration logic between dir ctrl and cache ctrl for tag bank access
 
   for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
     tc_sram_impl #(
-      .NumWords  (L1CacheWayEntry/L1BankFactor),
+      .NumWords  (L1CacheWayEntry/BankFactor),
       .DataWidth ($bits(tag_data_t)           ),
       .ByteWidth ($bits(tag_data_t)           ),
       .NumPorts  (1                           ),
@@ -370,21 +411,27 @@ module cachepool_l2_wrapper #(
       .rst_ni (rst_ni                  ),
       .impl_i ('0                      ),
       .impl_o (/* unsed */             ),
-      .req_i  (l1_tag_bank_req  [j]),
-      .we_i   (l1_tag_bank_we   [j]),
-      .addr_i (l1_tag_bank_addr [j]),
-      .wdata_i(l1_tag_bank_wdata[j]),
-      .be_i   (l1_tag_bank_be   [j]),
-      .rdata_o(l1_tag_bank_rdata[j])
+      // .req_i  (l1_tag_bank_req  [j]),
+      // .we_i   (l1_tag_bank_we   [j]),
+      // .addr_i (l1_tag_bank_addr [j]),
+      // .wdata_i(l1_tag_bank_wdata[j]),
+      // .be_i   (l1_tag_bank_be   [j]),
+      // .rdata_o(l1_tag_bank_rdata[j])
+      .req_i  (tag_bank_req  [j]),
+      .we_i   (tag_bank_we   [j]),
+      .addr_i (tag_bank_addr [j]),
+      .wdata_i(tag_bank_wdata[j]),
+      .be_i   (tag_bank_be   [j]),
+      .rdata_o(tag_bank_rdata[j])
     );
   end
 
   // TODO: Should we use a single large bank or multiple narrow ones?
   for (genvar j = 0; j < NumDataBankPerCtrl; j = j+NumWordPerLine) begin : gen_l1_data_banks
     tc_sram_impl #(
-      .NumWords   (L1CacheWayEntry/L1BankFactor),
-      .DataWidth  (L1LineWidth),
-      .ByteWidth  (L1LineWidth), // L2 write granularity of cacheline, may require changes later
+      .NumWords   (L1CacheWayEntry/BankFactor),
+      .DataWidth  (CacheLineWidth), // L2 write granularity of cacheline, may require changes later
+      .ByteWidth  (CacheLineWidth), // L2 write granularity of cacheline, may require changes later
       .NumPorts   (1          ),
       .Latency    (1          ),
       .SimInit    ("zeros"    )
@@ -409,7 +456,7 @@ module cachepool_l2_wrapper #(
 
   // for (genvar j = 0; j < NumDataBankPerCtrl; j++) begin : gen_l1_data_banks
   //   tc_sram_impl #(
-  //     .NumWords   (L1CacheWayEntry/L1BankFactor),
+  //     .NumWords   (L1CacheWayEntry/BankFactor),
   //     .DataWidth  (DataWidth),
   //     .ByteWidth  (DataWidth),
   //     .NumPorts   (1),

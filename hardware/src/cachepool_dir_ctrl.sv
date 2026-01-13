@@ -10,6 +10,8 @@ module cahcepool_dir_ctrl #(
   parameter int unsigned SetAssociativity = 4,
   parameter int unsigned CacheLineWidth = 512,
   parameter int unsigned NumDataBankPerCtrl = 2,
+  parameter int unsigned NumMetaBankPerWay = 2,
+  parameter int unsigned BankFactor = 2,
 
   // Coherence tag extension related parameters
   parameter int unsigned NumCores = 4,
@@ -57,14 +59,23 @@ module cahcepool_dir_ctrl #(
   input  core_meta_t                                        downstream_resp_meta_i,
 
   // Meta bank (tag) access
-  output logic            [NumTagBankPerCtrl-1:0]           tag_bank_req_o,
-  output logic            [NumTagBankPerCtrl-1:0]           tag_bank_we_o,
-  output tcdm_bank_addr_t [NumTagBankPerCtrl-1:0]           tag_bank_addr_o,
-  output tag_data_t       [NumTagBankPerCtrl-1:0]           tag_bank_wdata_o,
-  output logic            [NumTagBankPerCtrl-1:0]           tag_bank_be_o,
-  input  tag_data_t       [NumTagBankPerCtrl-1:0]           tag_bank_rdata_i,
+  // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_req_o,
+  // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_we_o,
+  // output tcdm_bank_addr_t [NumTagBankPerCtrl-1:0]           tag_bank_addr_o,
+  // output tag_data_t       [NumTagBankPerCtrl-1:0]           tag_bank_wdata_o,
+  // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_be_o,
+  // input  tag_data_t       [NumTagBankPerCtrl-1:0]           tag_bank_rdata_i,
 
-  input  logic            [NumDataBankPerCtrl-1:0]          l1_data_bank_gnt_i
+  // input  logic            [NumDataBankPerCtrl-1:0]          l1_data_bank_gnt_i
+
+  output logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_req_o,
+  output logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_we_o,
+  output tcdm_bank_addr_t [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_addr_o,
+  output tag_data_t       [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_wdata_o,
+  output logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_be_o,
+  input  tag_data_t       [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_rdata_i,
+
+  input  logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           l1_data_bank_gnt_i
 );
 
   /**
@@ -76,9 +87,11 @@ module cahcepool_dir_ctrl #(
   * Type definitions
   */
   // Coherence metadata as exntension to L2 tags
+  typedef logic [$clog2(NumCoherenceStates)-1:0] line_state_t;
+  typedef logic [NumCores-1:0]                   sharer_list_t;
   typedef struct packed {
-    logic [$clog2(NumCoherenceStates)-1:0] line_state;
-    logic [NumCores-1:0]                   sharers;
+    line_state_t      line_state;
+    sharer_list_t     sharers;
   } coherence_meta_t;
 
   /**
@@ -87,23 +100,17 @@ module cahcepool_dir_ctrl #(
   // logic            tag_bank_req_r, tag_bank_req_w;
   // tcdm_bank_addr_t tag_bank_addr_r, tag_bank_addr_w;
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
-  tcdm_bank_addr_t tag_bank_addr;
-  tag_data_t [NumTagBankPerCtrl-1:0] tag_bank_rdata;
+  tcdm_bank_addr_t                    tag_bank_addr;
+  // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
+  tag_data_t [SetAssociativity-1:0]   tag_bank_rdata;
+  coherence_meta_t                    line_coherence_meta;
+  line_state_t                        curr_line_state;
+  sharer_list_t                       curr_sharer_list;
 
-  // read meta bank on valid request
-  // always_comb begin
-  //   if (upstream_req_valid_i) begin
-  //     tag_bank_addr_o = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
-  //     tag_bank_req_o = '1;
-      
-  //   end else begin
-  //     tag_bank_addr_o = '0;
-  //     tag_bank_req_o = '0;
-  //   end
-  // end
-  assign tag_bank_addr = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8) + 1];
+  assign tag_bank_addr = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
 
-  for (genvar i = 0; i < NumTagBankPerCtrl; i++) begin: gen_tag_bank_access
+  // TODO: 4-way instead of 8
+  for (genvar i = 0; i < SetAssociativity; i++) begin: gen_tag_bank_access
     tcdm_bank_addr_t tag_bank_addr_int;
     logic tag_bank_read_valid_int;
     logic tag_bank_read_ready_int;
@@ -141,8 +148,8 @@ module cahcepool_dir_ctrl #(
 
     pseudo_dual_port_tcdm_wrapper #(
       .DEPTH              (CacheBankDepth),
-      // .NumPseudoDualBanks (NumPseudoDualBanks),
-      .NumPseudoDualBanks (1),
+      .NumPseudoDualBanks (BankFactor),
+      // .NumPseudoDualBanks (1),
       .NumWordsPerLine    (1),
       .WordWidth          (TagWidth)
     ) i_tag_bank_access (
@@ -165,7 +172,15 @@ module cahcepool_dir_ctrl #(
       .tcdm_bank_be_o     (tag_bank_be_o[i]),
       .tcdm_bank_rdata_i  (tag_bank_rdata_i[i])
     );
-    
   end
+
+  // FIXME: which port to use? [0] is clearly wrong
+  // TODO: need to track which port is used to access tag bank (odd/even/both, 2-bit flag)
+  assign line_coherence_meta = tag_bank_rdata[0][TagWidth-1 -: $bits(coherence_meta_t)];
+  assign curr_line_state     = line_coherence_meta.line_state;
+  assign curr_sharer_list    = line_coherence_meta.sharers;
+
+  // Coherence FSM
+
 
 endmodule

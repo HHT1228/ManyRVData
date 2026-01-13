@@ -27,13 +27,29 @@ for {set c 0}  {$c < 4} {incr c} {
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl1	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[1]/i_access_ctrl_for_meta/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl2	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[2]/i_access_ctrl_for_meta/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl3	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[3]/i_access_ctrl_for_meta/*
+
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_0	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[0]/i_cache_meta_bank/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_1	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[1]/i_cache_meta_bank/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_2	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[2]/i_cache_meta_bank/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_3	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[3]/i_cache_meta_bank/*
 	
 	add wave -noupdate -group tile[$1] -group cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/*
 
-	add wave -noupdate -group tile[$1] -group cache[$c] -group Wrapper   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group l2_wrapper   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/*
 
-	add wave -noupdate -group tile[$1] -group cache[$c] -group Directory   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/*
-	
+	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_ctrl   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/*
+
+	for {set d 0} {$d < 4} {incr d} {		
+		add wave -noupdate -group tile[$1] -group cache[$c] -group tag_access[$d] -group tag_access_ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/gen_tag_bank_access[$d]/i_access_ctrl_tag_bank/*
+		
+		add wave -noupdate -group tile[$1] -group cache[$c] -group tag_access[$d] -group tag_access	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/gen_tag_bank_access[$d]/i_tag_bank_access/*
+	}
+
+	# for {set e 0} {$e < 4} {incr e} {
+	# 	add wave -noupdate -group tile[$1] -group cache[$c] -group insitu_tag_acces[$e]	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[3]/i_access_ctrl_for_meta/*
+	# }
+
+
 	# for {set b 0} {$b < 8} {incr b} {
 	# 	add wave -noupdate -group tile[$1] -group cache[$c] -group data_bank[$b]   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/gen_l1_data_banks[$b]/i_data_bank/*
 	# }

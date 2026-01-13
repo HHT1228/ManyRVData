@@ -189,6 +189,8 @@ package cachepool_pkg;
   // Number of cache sets each cache way has
   localparam int unsigned L1NumSet            = L1CacheWayEntry / L1BankFactor;
 
+  localparam int unsigned L1NumMetaBankPerWay = 2;  // TODO: remove hardcoding
+
   localparam int unsigned CoreIDWidth         = cf_math_pkg::idx_width(NumCores);
   localparam int unsigned BankIDWidth         = cf_math_pkg::idx_width(NumL1CacheCtrl);
 

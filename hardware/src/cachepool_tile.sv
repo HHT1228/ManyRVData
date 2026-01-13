@@ -1688,8 +1688,9 @@ module cachepool_tile
       .SpatzAxiAddrWidth  (SpatzAxiAddrWidth),
       .TCDMAddrWidth      (TCDMAddrWidth),
       .L1CacheWayEntry    (L1CacheWayEntry),
-      .L1BankFactor       (L1BankFactor),
-      .L1LineWidth        (L1LineWidth),
+      // .L1BankFactor       (L1BankFactor),
+      // .L1LineWidth        (L1LineWidth),
+      .NumMetaBankPerWay  (L1NumMetaBankPerWay),        // TODO: remove hardcoding
       // Type
       .core_meta_t      (tcdm_user_t        ),
       .impl_in_t        (impl_in_t          ),

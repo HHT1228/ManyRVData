@@ -32,6 +32,7 @@ sources:
   - hardware/src/spatz_cache_amo.sv
   - hardware/src/asymmetric_fifo.sv
   - hardware/src/cachepool_dir_ctrl.sv
+  - hardware/src/cache_dir_tag_arb.sv
   # Level 1
   - hardware/src/cachepool_pkg.sv
   - hardware/src/cachepool_cc.sv
