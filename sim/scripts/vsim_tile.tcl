@@ -32,6 +32,8 @@ for {set c 0}  {$c < 4} {incr c} {
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_1	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[1]/i_cache_meta_bank/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_2	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[2]/i_cache_meta_bank/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_3	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[3]/i_cache_meta_bank/*
+
+	add wave -noupdate -group tile[$1] -group cache[$c] -group insitu_wrapper	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/*
 	
 	add wave -noupdate -group tile[$1] -group cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/*
 
