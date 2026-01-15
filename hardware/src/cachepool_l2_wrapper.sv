@@ -65,6 +65,11 @@ module cachepool_l2_wrapper #(
   parameter type          cache_trans_rsp_t                               = logic,
   parameter type          tag_data_t                                      = logic,
   parameter type          cacheline_data_t                                = logic,
+  parameter type          reqid_t                                         = logic,
+  parameter type          fwd_msg_type_t                                  = logic,
+  parameter type          cache_dir_fwd_t                                 = logic,
+  parameter type          dir_cache_fwd_t                                 = logic,
+  parameter type          l0_line_state_t                                 = logic,
 
   /***********************
   * Dependent Parameters *
@@ -198,7 +203,12 @@ module cachepool_l2_wrapper #(
     .word_data_t         (word_data_t        ),
     .core_meta_t         (core_meta_t        ),
     .tag_data_t          (tag_data_t         ),
-    .tcdm_bank_addr_t    (tcdm_bank_addr_t   )
+    .tcdm_bank_addr_t    (tcdm_bank_addr_t   ),
+    .reqid_t                  (reqid_t                ),
+    .fwd_msg_type_t           (fwd_msg_type_t         ),
+    .cache_dir_fwd_t          (cache_dir_fwd_t        ),
+    // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
+    .l0_line_state_t          (l0_line_state_t        )
   ) i_l2_directory_ctrl (
     .clk_i                       (clk_i                          ),
     .rst_ni                      (rst_ni                         ),
@@ -209,6 +219,7 @@ module cachepool_l2_wrapper #(
     .upstream_req_meta_i         (core_req_meta_i                ),
     .upstream_req_write_i        (core_req_write_i               ),
     .upstream_req_wdata_i        (core_req_wdata_i               ),
+    .upstream_req_is_evict_i     (1'b0                           ),
 
     .upstream_resp_valid_o       (              ),
     .upstream_resp_ready_i       (core_resp_ready_i              ),
@@ -229,6 +240,10 @@ module cachepool_l2_wrapper #(
     .downstream_resp_write_i     (),
     .downstream_resp_data_i      (),
     .downstream_resp_meta_i      (),
+
+    .fwd_rx_i                    (),
+    .fwd_rx_valid_i              (),
+    .fwd_tx_o                    (),
 
     // Tag Bank Interface
     .tag_bank_req_o              (l1_dir_tag_bank_req                ),
