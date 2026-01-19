@@ -1,5 +1,7 @@
 // Author: Ho Tin Hung
 
+`include "common_cells/registers.svh"
+
 module cahcepool_dir_ctrl #(
   
   parameter int unsigned AddrWidth  = 32,
@@ -68,6 +70,7 @@ module cahcepool_dir_ctrl #(
   input   cache_dir_fwd_t                                   fwd_rx_i,
   input   logic                                             fwd_rx_valid_i,
   output  cache_dir_fwd_t                                   fwd_tx_o,
+  output  logic                                             fwd_tx_valid_o,
 
   // Meta bank (tag) access
   // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_req_o,
@@ -103,11 +106,6 @@ module cahcepool_dir_ctrl #(
   // typedef logic [$clog2(NumCoherenceStates)-1:0] dir_line_state_t;
   typedef logic [NumCores-1:0]                   sharer_list_t;
   typedef logic [NumActualTagBits-1:0]           cache_tag_t;
-
-  typedef struct packed {
-    dir_line_state_t      line_state;
-    sharer_list_t         sharers;
-  } coherence_meta_t;
   
   typedef enum logic [1:0] {
     EVEN = 2'b00,
@@ -123,27 +121,87 @@ module cahcepool_dir_ctrl #(
     DIR_LINE_ESA          = 3'b100    // substate
   } dir_line_state_t;
 
+  typedef struct packed {
+    dir_line_state_t      line_state;
+    sharer_list_t         sharers;
+  } coherence_meta_t;
   /**
   * Internal signals
   */
   // logic            tag_bank_req_r, tag_bank_req_w;
   // tcdm_bank_addr_t tag_bank_addr_r, tag_bank_addr_w;
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
-  tcdm_bank_addr_t                    tag_bank_addr;
+  // TODO: ready cannot be raised when busy
+  logic                               busy, busy_q, busy_d; // Does not accept new req when busy
+
+  tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
   // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
   tag_data_t [SetAssociativity-1:0]   tag_bank_rdata, tag_bank_wdata;
   logic                               tag_bank_write_req;
 
   tag_data_t                          curr_line_meta;
+  // logic      [SetAssociativity-1:0]   way_hit;
   // logic                               curr_line_meta_valid;
   coherence_meta_t                    line_coherence_meta;
   dir_line_state_t                    curr_line_state;
   sharer_list_t                       curr_sharer_list;
-  pseudo_port_t                       tag_bank_port_accessed;
+  pseudo_port_t                       tag_bank_port_accessed_d, tag_bank_port_accessed_q;
+
+  fwd_msg_type_t                      fwd_msg_type;
+
+  core_meta_t                         upstream_req_meta_q;
+  logic                               upstream_req_valid_q, upstream_req_is_evict_q, upstream_req_write_q;
+  // logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
+
+  addr_t                              upstream_req_addr_q;
+
+  `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
+  `FF(upstream_req_valid_q, upstream_req_valid_i, 1'b0, clk_i, rst_ni)
+  `FF(upstream_req_is_evict_q, upstream_req_is_evict_i, 1'b0, clk_i, rst_ni)
+  `FF(upstream_req_write_q, upstream_req_write_i, 1'b0, clk_i, rst_ni)
   
-  // TODO: how to write to same addr?
-  // TODO: way selection on write
+  `FF(upstream_req_addr_q, upstream_req_addr_i, '0, clk_i, rst_ni)
+
+  // When upstream_req_valid_i AND not busy: give ready hdshk and process new addr
+  // assign tag_bank_addr = busy ? tag_bank_addr : upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+
+  // assign busy = (upstream_req_valid_i || downstream_req_valid_o || fwd_tx_valid_o || fwd_rx_valid_i || tag_bank_we_o) ? !busy : busy;
+  // always_comb begin
+  //   if (upstream_req_valid_i || fwd_rx_valid_i) begin
+  //     busy_d = 1'b1;
+  //   end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_we_o) begin
+  //     busy_d = 1'b0;
+  //   end
+  // end
+
+  // TODO: coomment out for debug
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     busy <= 1'b0;
+  //   end else if (upstream_req_valid_i || fwd_rx_valid_i) begin
+  //     busy <= 1'b1;
+  //   end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_we_o) begin
+  //     busy <= 1'b0;
+  //   end
+  // end
+  assign busy = 1'b0; // TODO: remove later
+
+  assign upstream_req_ready_o = !busy;
+
+  // Hold tag addr for write to tag bank
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      tag_bank_addr_q <= '0;
+    end else if (!busy) begin
+      tag_bank_addr_q <= tag_bank_addr;
+    end else begin
+      tag_bank_addr_q <= tag_bank_addr_d;
+    end
+  end
+
+  assign tag_bank_addr_d = tag_bank_addr_q;
   assign tag_bank_addr = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+
 
   // TODO: connect write signals
   for (genvar i = 0; i < SetAssociativity; i++) begin: gen_tag_bank_access
@@ -161,12 +219,13 @@ module cahcepool_dir_ctrl #(
       .rst_ni                      (rst_ni),
 
       .upstream_read_addr_i        (tag_bank_addr),
-      .upstream_read_valid_i       (upstream_req_valid_i),
+      .upstream_read_valid_i       (upstream_req_valid_i && !busy),
       .upstream_read_ready_o       (),
       .upstream_read_data_o        (tag_bank_rdata[i]),
 
-      .upstream_write_addr_i       (tag_bank_addr),
-      .upstream_write_req_i        (tag_bank_write_req),
+      .upstream_write_addr_i       (tag_bank_addr_q),
+      // .upstream_write_req_i        (tag_bank_write_req),
+      .upstream_write_req_i        ('0),
       .upstream_write_data_i       (tag_bank_wdata[i]),
 
       .downstream_read_addr_o      (tag_bank_addr_int),
@@ -212,45 +271,110 @@ module cahcepool_dir_ctrl #(
 
 
   // track which port is used to access tag bank
+  // TODO: maybe not needed as the access ctrl handles already
   always_comb begin
     if(tag_bank_req_o[0] == 2'b01) begin
-      tag_bank_port_accessed = EVEN;
+      tag_bank_port_accessed_d = EVEN;
     end else if(tag_bank_req_o[0] == 2'b10) begin
-      tag_bank_port_accessed = ODD;
+      tag_bank_port_accessed_d = ODD;
     end else if(tag_bank_req_o[0] == 2'b11) begin
-      tag_bank_port_accessed = BOTH;
+      tag_bank_port_accessed_d = BOTH;
     end else begin
-      tag_bank_port_accessed = BOTH; // Default value
+      tag_bank_port_accessed_d = BOTH; // Default value
     end
   end
 
-  for (genvar i = 0; i < SetAssociativity; i++) begin: gen_way_selection
-    cache_tag_t curr_cachelien_tag;
-    // tag_data_t  curr_cacheline_meta;
-    // assign curr_cachelien_tag = tag_bank_rdata[i][NumLRUBits +: NumActualTagBits];
-    if (tag_bank_port_accessed == EVEN) begin
-      curr_cachelien_tag = tag_bank_rdata[i][0][NumLRUBits +: NumActualTagBits];
-      if (curr_cachelien_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits]) begin
-        curr_line_meta = tag_bank_rdata[i][0];
-      end else begin
-        curr_line_meta = '0;
-      end
-    end else begin
-      curr_cachelien_tag = tag_bank_rdata[i][1][NumLRUBits +: NumActualTagBits];
-      if (curr_cachelien_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits]) begin
-        curr_line_meta = tag_bank_rdata[i][1];
-      end else begin
-        curr_line_meta = '0;
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     tag_bank_port_accessed_q <= BOTH;
+  //   end else begin
+  //     tag_bank_port_accessed_q <= tag_bank_port_accessed_d;
+  //   end
+  // end
+
+  `FF(tag_bank_port_accessed_q, tag_bank_port_accessed_d, BOTH, clk_i, rst_ni)
+
+  // for (genvar i = 0; i < SetAssociativity; i++) begin: gen_way_selection
+  //   cache_tag_t curr_cacheline_tag;
+  //   // tag_data_t  curr_cacheline_meta;
+  //   // assign curr_cacheline_tag = tag_bank_rdata[i][NumLRUBits +: NumActualTagBits];
+  //   always_comb begin
+  //     if (tag_bank_port_accessed == EVEN) begin
+  //       curr_cacheline_tag = tag_bank_rdata[i][0][NumLRUBits +: NumActualTagBits];
+  //       if (curr_cacheline_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits]) begin
+  //         // curr_line_meta = tag_bank_rdata[i][0];
+  //         way_hit[i] = 1'b1;
+  //         // break;
+  //       end else begin
+  //         way_hit[i] = 1'b0;
+  //         // curr_line_meta = '0;
+  //         // continue;
+  //       end
+  //     end else begin
+  //       curr_cacheline_tag = tag_bank_rdata[i][1][NumLRUBits +: NumActualTagBits];
+  //       if (curr_cacheline_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits]) begin
+  //         // curr_line_meta = tag_bank_rdata[i][1];
+  //         // break;
+  //         way_hit[i] = 1'b1;
+  //       end else begin
+  //         // curr_line_meta = '0;
+  //         // continue;
+  //         way_hit[i] = 1'b0;
+  //       end
+  //     end
+  //   end
+  // end
+
+  // way-selection
+  tag_data_t curr_line_meta_reg;
+  logic      curr_line_hit;
+  logic [$clog2(SetAssociativity)-1:0] way_id;
+
+  always_comb begin
+    curr_line_meta_reg = '0;      // default: no match -> zero meta
+    curr_line_hit      = 1'b0;
+    way_id             = '0;
+
+    // scan ways once (single always_comb)
+    for (int i = 0; i < SetAssociativity; i++) begin
+      // tag_data_t local_meta;
+      cache_tag_t local_tag;
+
+      // pick the port data according to tag_bank_port_accessed
+      // unique case (tag_bank_port_accessed_q)
+      //   EVEN: local_meta = tag_bank_rdata[i][0];
+      //   ODD:  local_meta = tag_bank_rdata[i][1];
+      //   BOTH: begin
+      //     // If BOTH, prefer port 0 (or you can decide other policy)
+      //     local_meta = tag_bank_rdata[i][0];
+      //   end
+      //   default: local_meta = tag_bank_rdata[i][0];
+      // endcase
+
+      // extract tag bits from the meta (same slicing you used before)
+      local_tag = tag_bank_rdata[i][NumLRUBits +: NumActualTagBits];
+
+      // If not already found a hit, compare and latch
+      // if (!curr_line_hit && (local_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits])) begin
+      if (!curr_line_hit && (local_tag == upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits])) begin
+        curr_line_meta_reg = tag_bank_rdata[i];
+        curr_line_hit      = 1'b1;
+        way_id             = i;
       end
     end
   end
 
-  assign line_coherence_meta = curr_line_meta[0][TagWidth-1 -: $bits(coherence_meta_t)];
+  // drive the external name that other logic expects
+  assign curr_line_meta = curr_line_meta_reg;
+
+  assign line_coherence_meta = curr_line_meta[TagWidth-1 -: $bits(coherence_meta_t)];
   assign curr_line_state     = line_coherence_meta.line_state;
   assign curr_sharer_list    = line_coherence_meta.sharers;
 
-  // TODO: integrate with your request/response interface
-  // Operation classes (columns in your table)
+  assign fwd_msg_type = fwd_rx_i.fwd_msg_type;
+
+  // TODO: integrate with request/response interface
+  // Operation classes
   typedef enum logic [3:0] {
     OP_NONE               = 4'd0,
     OP_READ               = 4'd1, // GetS from requester
@@ -263,18 +387,17 @@ module cahcepool_dir_ctrl #(
     OP_EVICT_E_NONOWNER   = 4'd8  // PutE from non-owner (illegal but Ack)
   } dir_op_t;
 
-  // TODO: decode these signals from your request/response interface
-  // ---- Inputs this FSM needs (provide these from your request/resp decode) ----
-  dir_op_t                       op;          // TODO: decode from *_{req,resp}_* signals
-  logic [$clog2(NumCores)-1:0]   req_sid;      // requester core id (for READ/WRITE)
-  reqid_t                        req_tid;     // request transaction id
+  // ---- Inputs this FSM needs
+  dir_op_t                       op;
+  logic [$clog2(NumCores)-1:0]   req_sid;       // requester core id (for READ/WRITE)
+  reqid_t                        req_tid;       // request transaction id
   // logic [$clog2(NumCores)-1:0]   evict_id;    // evictor id (for Put*/Evict*)
 
-  // ---- Per-line state we already extracted from the tag word ----
+  // ---- Per-line state
   dir_line_state_t  state_q, state_d;
   sharer_list_t     sharers_q, sharers_d;
 
-  // ---- Actions (one-cycle pulses) to hook to your engines later ----
+  // ---- Actions (one-cycle pulses)
   typedef struct packed {
     logic send_excl_data;      // GrantE + data to requester
     logic send_sh_data;        // GrantS + data to requester
@@ -294,14 +417,16 @@ module cahcepool_dir_ctrl #(
   logic [$clog2(NumCores)-1:0] pending_req_q, pending_req_d;
 
   // Decode upstream request into directory op
-  // assign req_sid = upstream_req_meta_i.core_id;
-  // assign req_tid = upstream_req_meta_i.req_id;
   always_comb begin : req_op_decode
-    req_sid = upstream_req_meta_i.core_id;
-    req_tid = upstream_req_meta_i.req_id;
+    // req_sid = upstream_req_meta_i.core_id;
+    // req_tid = upstream_req_meta_i.req_id;
+    req_sid = upstream_req_meta_q.core_id;
+    req_tid = upstream_req_meta_q.req_id;
 
-    if(upstream_req_valid_i) begin
-      if (upstream_req_is_evict_i) begin
+    // if(upstream_req_valid_i) begin
+    //   if (upstream_req_is_evict_i) begin
+    if(upstream_req_valid_q) begin
+      if (upstream_req_is_evict_q) begin
         case (curr_line_state)
           DIR_LINE_INVALID: begin
             op = OP_EVICT_S; // evictor is non-owner
@@ -327,16 +452,19 @@ module cahcepool_dir_ctrl #(
             op = OP_NONE;
           end
         endcase
-      end else if (upstream_req_write_i) begin
+      // end else if (upstream_req_write_i) begin
+      end else if (upstream_req_write_q) begin
         op      = OP_WRITE;
-      end else if (!upstream_req_write_i) begin
+      // end else if (!upstream_req_write_i) begin
+      end else if (!upstream_req_write_q) begin
         op      = OP_READ;
       end else begin
         op      = OP_NONE;    // default
       end
     end else if (fwd_rx_valid_i) begin
-      case (fwd_rx_i.fwd_msg_type)
-        GET_ACK: begin
+      case (fwd_msg_type)
+        // GET_ACK: begin // SV not compiling, says it's a variable
+        2'b11: begin
           op = OP_GETACK; // GetAck from owner
         end
         default: begin
@@ -348,18 +476,46 @@ module cahcepool_dir_ctrl #(
     end
   end
 
-  // TODO: handle further operations using action
-  // TODO: update tag bank info
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     op_q <= OP_NONE;
+  //   end else begin
+  //     op_q <= op_d;
+  //   end
+  // end
 
+  // assign op = op_q;
+
+  // TODO: handle further operations using action
+  // Compose operations based on actions decided by FSM
+  always_comb begin : actions
+    if(act.send_excl_data || act.send_sh_data) begin
+      // forward request to L2 cache controller
+    end else if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
+      // fwd_tx_o: HPD invalidation and extended tag
+    end else if(act.send_probe_owner) begin
+      // fwd_tx_o: HPD interface extension required
+    end else if(act.send_evict_ack) begin
+      // fwd_tx_o: HPD interface extension required
+    end else if(act.mem_write) begin
+      // update L2 state? (TODO: not sure)
+    end else if(act.update_l2_data) begin
+      // forward reqeust to L2 cache controller
+    end else if(act.update_sharers || act.update_state) begin 
+      // write to tag bank
+    end else begin
+      // default values
+    end
+  end
   
   /**
   * Coherence FSM
   */
   // Seed current state/meta from tag read
-  always_comb begin
-    state_q   = curr_line_state;
-    sharers_q = curr_sharer_list;
-  end
+  // always_comb begin
+  //   state_q   = curr_line_state;
+  //   sharers_q = curr_sharer_list;
+  // end
 
   // Next-state logic of main FSM
   always_comb begin
@@ -380,7 +536,7 @@ module cahcepool_dir_ctrl #(
             sharers_d          = set_bit(sharers_d, req_sid);
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_EXCLUSIVE;
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           OP_WRITE: begin
             // Accept WT @L2; requester becomes owner (M)
@@ -389,7 +545,7 @@ module cahcepool_dir_ctrl #(
             sharers_d          = set_bit(sharers_d, req_sid);
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_MODIFIED;
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           // Any eviction against I: just ack
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_E_NONOWNER: begin
@@ -415,7 +571,7 @@ module cahcepool_dir_ctrl #(
             sharers_d               = set_bit(sharers_d, req_sid);
             act.update_sharers      = 1'b1;
             state_d                 = DIR_LINE_MODIFIED;
-            update_state            = 1'b1;
+            act.update_state            = 1'b1;
           end
           // Evictions remove bit; S->I if last sharer leaves
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_M_OWNER: begin
@@ -424,7 +580,7 @@ module cahcepool_dir_ctrl #(
             act.update_sharers = 1'b1;
             act.send_evict_ack = 1'b1;
             state_d            = (sharers_d == '0) ? DIR_LINE_INVALID : DIR_LINE_SHARED;
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           default: ;
         endcase
@@ -438,7 +594,7 @@ module cahcepool_dir_ctrl #(
             act.send_probe_owner = 1'b1;
             pending_req_d        = req_sid;
             state_d              = DIR_LINE_ESA;
-            update_state         = 1'b1;
+            act.update_state         = 1'b1;
           end
           OP_WRITE: begin
             // Writer arrives: invalidate current owner; serialize WT; new owner=req
@@ -448,7 +604,8 @@ module cahcepool_dir_ctrl #(
             sharers_d             = set_bit(sharers_d, req_sid);
             act.update_sharers    = 1'b1;
             state_d               = DIR_LINE_MODIFIED;
-            update_state          = 1'b1;
+            act.update_state          = 1'b1;
+          end
           OP_GETACK: begin
             // No outstanding probe → ignore
           end
@@ -461,14 +618,14 @@ module cahcepool_dir_ctrl #(
             sharers_d          = '0;
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           OP_EVICT_E_OWNER: begin
             act.send_evict_ack = 1'b1;
             sharers_d          = '0;       // clear owner
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           default: ;
         endcase
@@ -486,7 +643,7 @@ module cahcepool_dir_ctrl #(
             sharers_d          = set_bit(sharers_q, pending_req_q);
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_SHARED; // TODO: S or E if only one sharer left
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           // Evictions while waiting: Ack them; still respond to pending read once GETACK arrives
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
@@ -512,7 +669,7 @@ module cahcepool_dir_ctrl #(
             act.send_probe_owner = 1'b1;
             pending_req_d        = req_sid;
             state_d              = DIR_LINE_ESA;
-            update_state         = 1'b1;
+            act.update_state         = 1'b1;
           end
           OP_WRITE: begin
             // Another writer: invalidate current owner; serialize WT; new owner=req
@@ -532,7 +689,7 @@ module cahcepool_dir_ctrl #(
             sharers_d          = '0;
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           OP_EVICT_E_OWNER: begin
             // “Owner evicts E” is illegal in M but we just clear & Ack
@@ -540,7 +697,7 @@ module cahcepool_dir_ctrl #(
             sharers_d          = '0;
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;
-            update_state       = 1'b1;
+            act.update_state       = 1'b1;
           end
           default: ;
         endcase
@@ -556,6 +713,10 @@ module cahcepool_dir_ctrl #(
       state_q       <= DIR_LINE_INVALID;
       sharers_q     <= '0;
       pending_req_q <= '0;
+    end else if (upstream_req_valid_i & upstream_req_ready_o) begin
+      state_q       <= curr_line_state;
+      sharers_q     <= curr_sharer_list;
+      pending_req_q <= pending_req_d;
     end else begin
       state_q       <= state_d;
       sharers_q     <= sharers_d;
@@ -569,7 +730,7 @@ module cahcepool_dir_ctrl #(
   assign next_coherence_meta.sharers    = sharers_q; // or sharers_d
 
   assign tag_bank_write_req = act.update_sharers || act.update_state;
-  // TODO: continue from here
+  // TODO: Complete write to tag bank signals
 
   // To manipulate the sharer bit-vector
   function automatic sharer_list_t set_bit(sharer_list_t sharers, int unsigned sid);
