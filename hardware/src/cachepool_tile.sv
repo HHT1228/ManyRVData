@@ -25,6 +25,7 @@
 /// Tile implementation for CachePool
 module cachepool_tile
   import cachepool_pkg::*;
+  import coherence_pkg::*;
   import spatz_pkg::*;
   import fpnew_pkg::fpu_implementation_t;
   import snitch_pma_pkg::snitch_pma_t;
@@ -1671,19 +1672,19 @@ module cachepool_tile
   // TODO: move to pkg
 
   // TODO: need to consider transient states
-  typedef enum logic [1:0] {
-    CACHE_INVALID   = 2'b00,
-    CACHE_SHARED    = 2'b01,
-    CACHE_EXCLUSIVE = 2'b10,
-    CACHE_MODIFIED  = 2'b11
-  } l0_line_state_t;
+  // typedef enum logic [1:0] {
+  //   CACHE_INVALID   = 2'b00,
+  //   CACHE_SHARED    = 2'b01,
+  //   CACHE_EXCLUSIVE = 2'b10,
+  //   CACHE_MODIFIED  = 2'b11
+  // } l0_line_state_t;
 
-  typedef enum logic [1:0] {
-    INV       = 2'b00,
-    GET       = 2'b01,
-    INV_ACK   = 2'b10,
-    GET_ACK   = 2'b11
-  } fwd_msg_type_t;
+  // typedef enum logic [1:0] {
+  //   INV       = 2'b00,
+  //   GET       = 2'b01,
+  //   INV_ACK   = 2'b10,
+  //   GET_ACK   = 2'b11
+  // } fwd_msg_type_t;
 
   typedef struct packed {
     tcdm_addr_t     addr;         // TODO: might be unnecessary to use full addr; only tag?
@@ -1738,10 +1739,10 @@ module cachepool_tile
       .tag_data_t               (tag_data_t             ),
       .cacheline_data_t         (cacheline_data_t       ),
       .reqid_t                  (reqid_t                ),
-      .fwd_msg_type_t           (fwd_msg_type_t         ),
-      .cache_dir_fwd_t          (cache_dir_fwd_t        ),
+      // .fwd_msg_type_t           (fwd_msg_type_t         ),
+      .cache_dir_fwd_t          (cache_dir_fwd_t        )
       // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
-      .l0_line_state_t          (l0_line_state_t        )
+      // .l0_line_state_t          (l0_line_state_t        )
     ) i_l2_cache (
       .clk_i                 (clk_i                          ),
       .rst_ni                (rst_ni                         ),

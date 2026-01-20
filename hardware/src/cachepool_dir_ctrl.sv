@@ -2,7 +2,9 @@
 
 `include "common_cells/registers.svh"
 
-module cahcepool_dir_ctrl #(
+module cahcepool_dir_ctrl 
+  import coherence_pkg::*; 
+  #(
   
   parameter int unsigned AddrWidth  = 32,
   parameter int unsigned WordWidth  = 64,
@@ -27,10 +29,10 @@ module cahcepool_dir_ctrl #(
   // parameter type cache_tag_t      = logic,
   parameter type tcdm_bank_addr_t = logic,
   parameter type reqid_t          = logic,
-  parameter type fwd_msg_type_t   = logic,
-  parameter type cache_dir_fwd_t  = logic,
+  // parameter type fwd_msg_type_t   = logic,
+  parameter type cache_dir_fwd_t  = logic
   // parameter type dir_cache_fwd_t  = logic,
-  parameter type l0_line_state_t  = logic
+  // parameter type l0_line_state_t  = logic
 
 ) (
   input logic clk_i,
@@ -142,10 +144,11 @@ module cahcepool_dir_ctrl #(
   tag_data_t                          curr_line_meta;
   // logic      [SetAssociativity-1:0]   way_hit;
   // logic                               curr_line_meta_valid;
-  coherence_meta_t                    line_coherence_meta;
+  coherence_meta_t                    line_coherence_meta, next_coherence_meta;
   dir_line_state_t                    curr_line_state;
+  l0_line_state_t                     next_line_state;
   sharer_list_t                       curr_sharer_list;
-  pseudo_port_t                       tag_bank_port_accessed_d, tag_bank_port_accessed_q;
+  pseudo_port_t                       tag_bank_port_accessed_q, tag_bank_port_accessed_d;
 
   fwd_msg_type_t                      fwd_msg_type;
 
@@ -155,6 +158,7 @@ module cahcepool_dir_ctrl #(
 
   addr_t                              upstream_req_addr_q;
 
+  // TODO: meta may not need to be latched
   `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
   `FF(upstream_req_valid_q, upstream_req_valid_i, 1'b0, clk_i, rst_ni)
   `FF(upstream_req_is_evict_q, upstream_req_is_evict_i, 1'b0, clk_i, rst_ni)
@@ -208,6 +212,7 @@ module cahcepool_dir_ctrl #(
     tcdm_bank_addr_t tag_bank_addr_int, tag_bank_waddr_int;
     logic tag_bank_read_valid_int;
     logic tag_bank_read_ready_int;
+    logic tag_bank_write_req_int;
     tag_data_t tag_bank_rdata_int, tag_bank_wdata_int;
 
     insitu_cache_bank_access_controller #(
@@ -224,8 +229,8 @@ module cahcepool_dir_ctrl #(
       .upstream_read_data_o        (tag_bank_rdata[i]),
 
       .upstream_write_addr_i       (tag_bank_addr_q),
-      // .upstream_write_req_i        (tag_bank_write_req),
-      .upstream_write_req_i        ('0),
+      .upstream_write_req_i        (tag_bank_write_req),
+      // .upstream_write_req_i        ('0),
       .upstream_write_data_i       (tag_bank_wdata[i]),
 
       .downstream_read_addr_o      (tag_bank_addr_int),
@@ -234,7 +239,7 @@ module cahcepool_dir_ctrl #(
       .downstream_read_data_i      (tag_bank_rdata_int),
 
       .downstream_write_addr_o     (tag_bank_waddr_int),
-      .downstream_write_req_o      (),
+      .downstream_write_req_o      (tag_bank_write_req_int),
       .downstream_write_data_o     (tag_bank_wdata_int),
 
       .bank_gnt_i                  (&(l1_data_bank_gnt_i[i]))
@@ -257,7 +262,7 @@ module cahcepool_dir_ctrl #(
       .read_data_o        (tag_bank_rdata_int),
 
       .write_addr_i       (tag_bank_waddr_int),
-      .write_req_i        (),
+      .write_req_i        (tag_bank_write_req_int),
       .write_data_i       (tag_bank_wdata_int),
 
       .tcdm_bank_req_o    (tag_bank_req_o[i]),
@@ -328,12 +333,13 @@ module cahcepool_dir_ctrl #(
   // way-selection
   tag_data_t curr_line_meta_reg;
   logic      curr_line_hit;
-  logic [$clog2(SetAssociativity)-1:0] way_id;
+  logic [$clog2(SetAssociativity)-1:0] way_id, way_id_q;
 
   always_comb begin
     curr_line_meta_reg = '0;      // default: no match -> zero meta
     curr_line_hit      = 1'b0;
     way_id             = '0;
+    // way_id             = 2'b01; // test
 
     // scan ways once (single always_comb)
     for (int i = 0; i < SetAssociativity; i++) begin
@@ -363,6 +369,8 @@ module cahcepool_dir_ctrl #(
       end
     end
   end
+
+  // `FF(way_id_q, way_id, '0, clk_i, rst_ni)
 
   // drive the external name that other logic expects
   assign curr_line_meta = curr_line_meta_reg;
@@ -416,7 +424,9 @@ module cahcepool_dir_ctrl #(
   // ---- Remember the pending reader when we’re in ESA (E-substate) ----
   logic [$clog2(NumCores)-1:0] pending_req_q, pending_req_d;
 
-  // Decode upstream request into directory op
+  /***************************
+  * Request operation decoding
+  ***************************/
   always_comb begin : req_op_decode
     // req_sid = upstream_req_meta_i.core_id;
     // req_tid = upstream_req_meta_i.req_id;
@@ -463,8 +473,8 @@ module cahcepool_dir_ctrl #(
       end
     end else if (fwd_rx_valid_i) begin
       case (fwd_msg_type)
-        // GET_ACK: begin // SV not compiling, says it's a variable
-        2'b11: begin
+        GET_ACK: begin
+        // 2'b11: begin
           op = OP_GETACK; // GetAck from owner
         end
         default: begin
@@ -485,32 +495,101 @@ module cahcepool_dir_ctrl #(
   // end
 
   // assign op = op_q;
+  
+  /***************************
+  * Action handling
+  ***************************/
+  always_comb begin : act_req_to_l2_ctrl
+    if(act.send_excl_data || act.send_sh_data) begin  // read req to L2
+      downstream_req_valid_o    = 1'b1;
+      downstream_req_addr_o     = upstream_req_addr_q;
+      downstream_req_meta_o     = upstream_req_meta_q;
+      downstream_req_write_o    = '0;
+      downstream_req_wdata_o    = upstream_req_wdata_i;
+    end else if (act.update_l2_data) begin            // write req to L2
+      downstream_req_valid_o    = 1'b1;
+      downstream_req_addr_o     = upstream_req_addr_q;
+      downstream_req_meta_o     = upstream_req_meta_q;
+      downstream_req_write_o    = 1'b1;
+      downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
+    end else begin
+      downstream_req_valid_o    = 1'b0;
+      downstream_req_addr_o     = '0;
+      downstream_req_meta_o     = '0;
+      downstream_req_write_o    = 1'b0;
+      downstream_req_wdata_o    = '0;
+    end 
+  end
 
-  // TODO: handle further operations using action
-  // Compose operations based on actions decided by FSM
-  always_comb begin : actions
-    if(act.send_excl_data || act.send_sh_data) begin
-      // forward request to L2 cache controller
-    end else if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
+  always_comb begin
+    case (next_coherence_meta.line_state)
+      DIR_LINE_INVALID: begin
+        next_line_state = CACHE_INVALID;
+      end
+      DIR_LINE_SHARED: begin
+        next_line_state = CACHE_SHARED;
+      end
+      DIR_LINE_EXCLUSIVE: begin
+        next_line_state = CACHE_EXCLUSIVE;
+      end
+      DIR_LINE_MODIFIED: begin
+        next_line_state = CACHE_MODIFIED;
+      end      
+      default: begin
+        next_line_state = CACHE_INVALID;
+      end
+    endcase
+  end
+
+  always_comb begin : act_fwd_tx
+    fwd_tx_o.addr           = upstream_req_addr_q;
+    // fwd_tx_o.line_state     = next_coherence_meta.line_state;
+    fwd_tx_o.line_state     = next_line_state;
+    if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
       // fwd_tx_o: HPD invalidation and extended tag
+      fwd_tx_o.fwd_msg_type = INV;
+      fwd_tx_valid_o        = 1'b1;
     end else if(act.send_probe_owner) begin
       // fwd_tx_o: HPD interface extension required
-    end else if(act.send_evict_ack) begin
-      // fwd_tx_o: HPD interface extension required
-    end else if(act.mem_write) begin
-      // update L2 state? (TODO: not sure)
-    end else if(act.update_l2_data) begin
-      // forward reqeust to L2 cache controller
-    end else if(act.update_sharers || act.update_state) begin 
-      // write to tag bank
+      fwd_tx_o.fwd_msg_type = GET;
+      fwd_tx_valid_o        = 1'b1;
     end else begin
-      // default values
+      fwd_tx_o.fwd_msg_type = INV;
+      fwd_tx_valid_o        = 1'b0;
     end
   end
+
+  // TODO: connect to L1 when interface extended
+  // always_comb begin : act_evict_ack
+  //   if(act.send_evict_ack) begin
+      
+  //   end else begin
+
+  //   end
+  // end
+
+  // TODO: not sure if needed, L2 can handle eviction whenever it likes
+  // always_comb begin : act_mem_write
+  //   if(act.mem_write) begin
+      
+  //   end else begin
+
+  //   end
+  // end
   
-  /**
+  always_comb begin : act_write_to_tag_bank
+    if(act.update_sharers || act.update_state) begin
+      tag_bank_write_req = 1'b1;
+      tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
+    end else begin
+      tag_bank_write_req = 1'b0;
+      tag_bank_wdata = '0;
+    end
+  end
+
+  /***************************
   * Coherence FSM
-  */
+  ***************************/
   // Seed current state/meta from tag read
   // always_comb begin
   //   state_q   = curr_line_state;
@@ -725,12 +804,8 @@ module cahcepool_dir_ctrl #(
   end
 
   // Optionally compose the new meta to write back to the tag word when act.update_sharers is set
-  coherence_meta_t next_coherence_meta;
-  assign next_coherence_meta.line_state = state_q;   // or state_d if you write in same cycle
-  assign next_coherence_meta.sharers    = sharers_q; // or sharers_d
-
-  assign tag_bank_write_req = act.update_sharers || act.update_state;
-  // TODO: Complete write to tag bank signals
+  assign next_coherence_meta.line_state = state_d;   // or state_d if you write in same cycle
+  assign next_coherence_meta.sharers    = sharers_d; // or sharers_d
 
   // To manipulate the sharer bit-vector
   function automatic sharer_list_t set_bit(sharer_list_t sharers, int unsigned sid);

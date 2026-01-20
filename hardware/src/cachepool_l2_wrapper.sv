@@ -2,7 +2,9 @@
 
 `define CACHE_DIRECT  // bypass dirctory controller
 
-module cachepool_l2_wrapper #(
+module cachepool_l2_wrapper
+  import coherence_pkg::*; 
+  #(
   /*************************
   * Core Access Parameters *
   *************************/
@@ -66,10 +68,10 @@ module cachepool_l2_wrapper #(
   parameter type          tag_data_t                                      = logic,
   parameter type          cacheline_data_t                                = logic,
   parameter type          reqid_t                                         = logic,
-  parameter type          fwd_msg_type_t                                  = logic,
+  // parameter type          fwd_msg_type_t                                  = logic,
   parameter type          cache_dir_fwd_t                                 = logic,
   parameter type          dir_cache_fwd_t                                 = logic,
-  parameter type          l0_line_state_t                                 = logic,
+  // parameter type          l0_line_state_t                                 = logic,
 
   /***********************
   * Dependent Parameters *
@@ -205,10 +207,10 @@ module cachepool_l2_wrapper #(
     .tag_data_t          (tag_data_t         ),
     .tcdm_bank_addr_t    (tcdm_bank_addr_t   ),
     .reqid_t                  (reqid_t                ),
-    .fwd_msg_type_t           (fwd_msg_type_t         ),
-    .cache_dir_fwd_t          (cache_dir_fwd_t        ),
+    // .fwd_msg_type_t           (fwd_msg_type_t         ),
+    .cache_dir_fwd_t          (cache_dir_fwd_t        )
     // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
-    .l0_line_state_t          (l0_line_state_t        )
+    // .l0_line_state_t          (l0_line_state_t        )
   ) i_l2_directory_ctrl (
     .clk_i                       (clk_i                          ),
     .rst_ni                      (rst_ni                         ),

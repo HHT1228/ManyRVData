@@ -31,6 +31,7 @@ sources:
   - hardware/src/tcdm_id_remapper.sv
   - hardware/src/spatz_cache_amo.sv
   - hardware/src/asymmetric_fifo.sv
+  - hardware/src/coherence_pkg.sv
   - hardware/src/cachepool_dir_ctrl.sv
   - hardware/src/cache_dir_tag_arb.sv
   # Level 1
