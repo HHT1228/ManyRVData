@@ -424,6 +424,20 @@ module cahcepool_dir_ctrl
   // ---- Remember the pending reader when we’re in ESA (E-substate) ----
   logic [$clog2(NumCores)-1:0] pending_req_q, pending_req_d;
 
+
+  /***************************
+  * Cache response bypassing
+  ***************************/
+  // Cache response signals does not go through directory logic
+  always_comb begin : rsp_bypass
+    upstream_resp_valid_o = downstream_resp_valid_i;
+    upstream_resp_write_o = downstream_resp_write_i;
+    upstream_resp_data_o  = downstream_resp_data_i;
+    upstream_resp_meta_o  = downstream_resp_meta_i;
+
+    downstream_resp_ready_o = upstream_resp_ready_i;
+  end
+
   /***************************
   * Request operation decoding
   ***************************/

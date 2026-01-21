@@ -185,6 +185,19 @@ module cachepool_l2_wrapper
   tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_wdata;
   logic            [NumTagBankPerCtrl-1:0] tag_bank_be;
   tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_rdata;
+
+  logic            l2_dir_resp_valid;
+  logic            l2_dir_resp_ready;
+  logic            l2_dir_resp_write;
+  word_data_t      l2_dir_resp_data;
+  core_meta_t      l2_dir_resp_meta;
+
+  logic            dir_l2_req_valid;
+  logic            dir_l2_req_ready;
+  addr_t           dir_l2_req_addr;
+  core_meta_t      dir_l2_req_meta;
+  logic            dir_l2_req_write;
+  word_data_t      dir_l2_req_wdata;
   
   cahcepool_dir_ctrl #(
     // Core Parameters
@@ -223,29 +236,30 @@ module cachepool_l2_wrapper
     .upstream_req_wdata_i        (core_req_wdata_i               ),
     .upstream_req_is_evict_i     (1'b0                           ),
 
-    .upstream_resp_valid_o       (              ),
+    .upstream_resp_valid_o       (core_resp_valid_o              ),
     .upstream_resp_ready_i       (core_resp_ready_i              ),
-    .upstream_resp_write_o       (              ),
-    .upstream_resp_data_o        (              ),
-    .upstream_resp_meta_o        (              ),
+    .upstream_resp_write_o       (core_resp_write_o              ),
+    .upstream_resp_data_o        (core_resp_data_o               ),
+    .upstream_resp_meta_o        (core_resp_meta_o               ),
 
     // L2 Cache Interface
-    .downstream_req_valid_o      (),
-    .downstream_req_ready_i      (),
-    .downstream_req_addr_o       (),
-    .downstream_req_meta_o       (),
-    .downstream_req_write_o      (),
-    .downstream_req_wdata_o      (),
+    .downstream_req_valid_o      (dir_l2_req_valid),
+    .downstream_req_ready_i      (dir_l2_req_ready),
+    .downstream_req_addr_o       (dir_l2_req_addr),
+    .downstream_req_meta_o       (dir_l2_req_meta),
+    .downstream_req_write_o      (dir_l2_req_write),
+    .downstream_req_wdata_o      (dir_l2_req_wdata),
 
-    .downstream_resp_valid_i     (),
-    .downstream_resp_ready_o     (),
-    .downstream_resp_write_i     (),
-    .downstream_resp_data_i      (),
-    .downstream_resp_meta_i      (),
+    .downstream_resp_valid_i     (l2_dir_resp_valid),
+    .downstream_resp_ready_o     (l2_dir_resp_ready),
+    .downstream_resp_write_i     (l2_dir_resp_write),
+    .downstream_resp_data_i      (l2_dir_resp_data),
+    .downstream_resp_meta_i      (l2_dir_resp_meta),
 
     .fwd_rx_i                    (),
     .fwd_rx_valid_i              (),
     .fwd_tx_o                    (),
+    .fwd_tx_valid_o              (),
 
     // Tag Bank Interface
     .tag_bank_req_o              (l1_dir_tag_bank_req                ),
@@ -293,18 +307,24 @@ module cachepool_l2_wrapper
     .bank_depth_for_SPM_i  ('0                              ),
     // Request
     .core_req_valid_i      (core_req_valid_i            ),
-    .core_req_ready_o      (core_req_ready_o            ),
+    // .core_req_ready_o      (core_req_ready_o            ),
+    .core_req_ready_o      (dir_l2_req_ready             ),
     .core_req_addr_i       (core_req_addr_i             ),
     .core_req_meta_i       (core_req_meta_i             ),
     .core_req_write_i      (core_req_write_i            ),
     .core_req_wdata_i      (core_req_wdata_i            ),
     // .core_req_wstrb_i      (core_req_wstrb_i            ),
     // Response
-    .core_resp_valid_o     (core_resp_valid_o          ),
-    .core_resp_ready_i     (core_resp_ready_i          ),
-    .core_resp_write_o     (core_resp_write_o          ),
-    .core_resp_data_o      (core_resp_data_o           ),
-    .core_resp_meta_o      (core_resp_meta_o           ),
+    // .core_resp_valid_o     (core_resp_valid_o          ),
+    // .core_resp_ready_i     (core_resp_ready_i          ),
+    // .core_resp_write_o     (core_resp_write_o          ),
+    // .core_resp_data_o      (core_resp_data_o           ),
+    // .core_resp_meta_o      (core_resp_meta_o           ),
+    .core_resp_valid_o     (l2_dir_resp_valid),
+    .core_resp_ready_i     (l2_dir_resp_ready),
+    .core_resp_write_o     (l2_dir_resp_write),
+    .core_resp_data_o      (l2_dir_resp_data),
+    .core_resp_meta_o      (l2_dir_resp_meta),
     // TCDM Refill
     .refill_req_o          (cache_refill_req           ),
     .refill_burst_o        (cache_refill_burst         ),
@@ -337,6 +357,8 @@ module cachepool_l2_wrapper
   assign tag_bank_addr  = l1_tag_bank_addr;
   assign tag_bank_wdata = l1_tag_bank_wdata;
   assign tag_bank_be    = l1_tag_bank_be;
+
+  assign core_req_ready_o = dir_l2_req_ready;
 `else
   cache_dir_tag_arb #(
     .NumTagBankPerCtrl   (NumTagBankPerCtrl ),
