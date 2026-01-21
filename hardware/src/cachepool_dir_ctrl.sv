@@ -134,7 +134,7 @@ module cahcepool_dir_ctrl
   // tcdm_bank_addr_t tag_bank_addr_r, tag_bank_addr_w;
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
   // TODO: ready cannot be raised when busy
-  logic                               busy, busy_q, busy_d; // Does not accept new req when busy
+  logic                               busy; // Does not accept new req when busy
 
   tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
   // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
@@ -178,17 +178,17 @@ module cahcepool_dir_ctrl
   //   end
   // end
 
-  // TODO: coomment out for debug
-  // always_ff @(posedge clk_i or negedge rst_ni) begin
-  //   if (!rst_ni) begin
-  //     busy <= 1'b0;
-  //   end else if (upstream_req_valid_i || fwd_rx_valid_i) begin
-  //     busy <= 1'b1;
-  //   end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_we_o) begin
-  //     busy <= 1'b0;
-  //   end
-  // end
-  assign busy = 1'b0; // TODO: remove later
+  // Directory controller is busy when processing a request
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      busy <= 1'b0;
+    end else if (upstream_req_valid_i || fwd_rx_valid_i) begin
+      busy <= 1'b1;
+    end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
+      busy <= 1'b0;
+    end
+  end
+  // assign busy = 1'b0;
 
   assign upstream_req_ready_o = !busy;
 

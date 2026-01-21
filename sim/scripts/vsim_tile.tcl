@@ -39,6 +39,8 @@ for {set c 0}  {$c < 4} {incr c} {
 
 	add wave -noupdate -group tile[$1] -group cache[$c] -group l2_wrapper   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/*
 
+	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_tag_arb   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_tag_bank_req_arb/*
+
 	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_ctrl   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/*
 
 	for {set d 0} {$d < 4} {incr d} {		

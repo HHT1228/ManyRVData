@@ -229,7 +229,11 @@ module cachepool_l2_wrapper
     .rst_ni                      (rst_ni                         ),
     // Core Interface
     .upstream_req_valid_i        (core_req_valid_i               ),
+`ifdef CACHE_DIRECT
     .upstream_req_ready_o        (               ),
+`else
+    .upstream_req_ready_o        (core_req_ready_o               ),
+`endif
     .upstream_req_addr_i         (core_req_addr_i                ),
     .upstream_req_meta_i         (core_req_meta_i                ),
     .upstream_req_write_i        (core_req_write_i               ),
@@ -306,6 +310,7 @@ module cachepool_l2_wrapper
     // Currently assume full cache
     .bank_depth_for_SPM_i  ('0                              ),
     // Request
+`ifdef CACHE_DIRECT
     .core_req_valid_i      (core_req_valid_i            ),
     // .core_req_ready_o      (core_req_ready_o            ),
     .core_req_ready_o      (dir_l2_req_ready             ),
@@ -313,6 +318,14 @@ module cachepool_l2_wrapper
     .core_req_meta_i       (core_req_meta_i             ),
     .core_req_write_i      (core_req_write_i            ),
     .core_req_wdata_i      (core_req_wdata_i            ),
+`else
+    .core_req_valid_i      (dir_l2_req_valid             ),
+    .core_req_ready_o      (dir_l2_req_ready             ),
+    .core_req_addr_i       (dir_l2_req_addr              ),
+    .core_req_meta_i       (dir_l2_req_meta              ),
+    .core_req_write_i      (dir_l2_req_write             ),
+    .core_req_wdata_i      (dir_l2_req_wdata             ),
+`endif
     // .core_req_wstrb_i      (core_req_wstrb_i            ),
     // Response
     // .core_resp_valid_o     (core_resp_valid_o          ),

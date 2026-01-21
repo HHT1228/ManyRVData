@@ -27,6 +27,7 @@ module cache_dir_tag_arb #(
   output tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_wdata_o,
   output logic            [NumTagBankPerCtrl-1:0] tag_bank_be_o
 );
+  // FIXME: pending latching may need a FIFO
 
   // Pending storage for a cache request when dir has priority
   logic             [NumTagBankPerCtrl-1:0] pending_valid_q;
@@ -48,8 +49,8 @@ module cache_dir_tag_arb #(
         pending_be_q[i]    <= '0;
       end else begin
         if (dir_tag_bank_req_i[i]) begin
-          // Dir has priority; latch cache request if present and nothing pending
-          if (cache_tag_bank_req_i[i] && !pending_valid_q[i]) begin
+          // Dir has priority; latch cache request if present
+          if (cache_tag_bank_req_i[i]) begin
             pending_valid_q[i] <= 1'b1;
             pending_we_q[i]    <= cache_tag_bank_we_i[i];
             pending_addr_q[i]  <= cache_tag_bank_addr_i[i];
