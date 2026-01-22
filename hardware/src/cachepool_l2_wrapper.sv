@@ -186,6 +186,8 @@ module cachepool_l2_wrapper
   logic            [NumTagBankPerCtrl-1:0] tag_bank_be;
   tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_rdata;
 
+  logic            [NumTagBankPerCtrl-1:0] is_cache_meta;
+
   logic            l2_dir_resp_valid;
   logic            l2_dir_resp_ready;
   logic            l2_dir_resp_write;
@@ -372,6 +374,7 @@ module cachepool_l2_wrapper
   assign tag_bank_be    = l1_tag_bank_be;
 
   assign core_req_ready_o = dir_l2_req_ready;
+  assign is_cache_meta    = {NumTagBankPerCtrl{1'b1}};
 `else
   cache_dir_tag_arb #(
     .NumTagBankPerCtrl   (NumTagBankPerCtrl ),
@@ -386,6 +389,7 @@ module cachepool_l2_wrapper
     .cache_tag_bank_addr_i  (l1_tag_bank_addr),
     .cache_tag_bank_wdata_i (l1_tag_bank_wdata),
     .cache_tag_bank_be_i    (l1_tag_bank_be),
+    // .cache_tag_bank_be_i    ({2'b01, 2'b01, 2'b01, 2'b01}), // cache ctrl modify only lower word (29-bit)
     
     .dir_tag_bank_req_i     (l1_dir_tag_bank_req),
     .dir_tag_bank_we_i      (l1_dir_tag_bank_we),
@@ -397,7 +401,9 @@ module cachepool_l2_wrapper
     .tag_bank_we_o          (tag_bank_we),
     .tag_bank_addr_o        (tag_bank_addr),
     .tag_bank_wdata_o       (tag_bank_wdata),
-    .tag_bank_be_o          (tag_bank_be)
+    .tag_bank_be_o          (tag_bank_be),
+
+    .is_cache_meta_o        (is_cache_meta)
   );
 `endif
 
@@ -450,30 +456,53 @@ module cachepool_l2_wrapper
   // TODO: arbitration logic between dir ctrl and cache ctrl for tag bank access
 
   for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
-    tc_sram_impl #(
+    // tc_sram_impl #(
+    //   .NumWords  (L1CacheWayEntry/BankFactor),
+    //   .DataWidth ($bits(tag_data_t)           ),
+    //   .ByteWidth ($bits(tag_data_t)           ),
+    //   .NumPorts  (1                           ),
+    //   .Latency   (1                           ),
+    //   .SimInit   ("zeros"                     ),
+    //   .impl_in_t (impl_in_t                   )
+    // ) i_meta_bank (
+    //   .clk_i  (clk_i                   ),
+    //   .rst_ni (rst_ni                  ),
+    //   .impl_i ('0                      ),
+    //   .impl_o (/* unsed */             ),
+    //   // .req_i  (l1_tag_bank_req  [j]),
+    //   // .we_i   (l1_tag_bank_we   [j]),
+    //   // .addr_i (l1_tag_bank_addr [j]),
+    //   // .wdata_i(l1_tag_bank_wdata[j]),
+    //   // .be_i   (l1_tag_bank_be   [j]),
+    //   // .rdata_o(l1_tag_bank_rdata[j])
+    //   .req_i  (tag_bank_req  [j]),
+    //   .we_i   (tag_bank_we   [j]),
+    //   .addr_i (tag_bank_addr [j]),
+    //   .wdata_i(tag_bank_wdata[j]),
+    //   .be_i   (tag_bank_be   [j]),
+    //   .rdata_o(tag_bank_rdata[j])
+    // );
+
+    tc_sram_meta_impl #(
       .NumWords  (L1CacheWayEntry/BankFactor),
       .DataWidth ($bits(tag_data_t)           ),
       .ByteWidth ($bits(tag_data_t)           ),
       .NumPorts  (1                           ),
       .Latency   (1                           ),
       .SimInit   ("zeros"                     ),
-      .impl_in_t (impl_in_t                   )
+      .impl_in_t (impl_in_t                   ),
+      .NumBitsCacheMeta (29)                          // TODO: remove hardcoding
     ) i_meta_bank (
       .clk_i  (clk_i                   ),
       .rst_ni (rst_ni                  ),
       .impl_i ('0                      ),
       .impl_o (/* unsed */             ),
-      // .req_i  (l1_tag_bank_req  [j]),
-      // .we_i   (l1_tag_bank_we   [j]),
-      // .addr_i (l1_tag_bank_addr [j]),
-      // .wdata_i(l1_tag_bank_wdata[j]),
-      // .be_i   (l1_tag_bank_be   [j]),
-      // .rdata_o(l1_tag_bank_rdata[j])
       .req_i  (tag_bank_req  [j]),
       .we_i   (tag_bank_we   [j]),
       .addr_i (tag_bank_addr [j]),
       .wdata_i(tag_bank_wdata[j]),
       .be_i   (tag_bank_be   [j]),
+      .is_cache_meta_i (is_cache_meta[j]),
       .rdata_o(tag_bank_rdata[j])
     );
   end

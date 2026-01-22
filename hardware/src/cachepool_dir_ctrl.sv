@@ -97,9 +97,9 @@ module cahcepool_dir_ctrl
   /**
   * Local parameters
   */
-  localparam int unsigned CacheBankDepth = NumCacheEntry/SetAssociativity;
-  localparam int unsigned NumLRUBits     = $clog2(SetAssociativity);
-  localparam int unsigned NumActualTagBits     = AddrWidth - $clog2(CacheLineWidth/8) - $clog2(CacheBankDepth);
+  localparam int unsigned CacheBankDepth    = NumCacheEntry/SetAssociativity;
+  localparam int unsigned NumLRUBits        = $clog2(SetAssociativity);
+  localparam int unsigned NumActualTagBits  = AddrWidth - $clog2(CacheLineWidth/8) - $clog2(CacheBankDepth);
 
   /**
   * Type definitions
