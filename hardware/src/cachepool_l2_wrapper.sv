@@ -1,6 +1,6 @@
 // Author: Ho Tin Hung
 
-`define CACHE_DIRECT  // bypass dirctory controller
+`define CACHE_DIRECT  // bypass directory controller
 
 module cachepool_l2_wrapper
   import coherence_pkg::*; 
@@ -170,6 +170,9 @@ module cachepool_l2_wrapper
   cacheline_data_t [NumDataBankPerCtrl-1:0] l1_data_bank_rdata;
   logic            [NumDataBankPerCtrl-1:0] l1_data_bank_gnt;
 
+  logic            [NumTagBankPerCtrl-1:0] l1_cache_tag_bank_gnt;
+  logic            [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_gnt;
+
   // Tag bank access for directory controller
   logic            [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_req;
   logic            [NumTagBankPerCtrl-1:0] l1_dir_tag_bank_we;
@@ -276,7 +279,8 @@ module cachepool_l2_wrapper
     // .tag_bank_rdata_i            (l1_dir_tag_bank_rdata              ),
     .tag_bank_rdata_i            (tag_bank_rdata                     ),
 
-    .l1_data_bank_gnt_i          (l1_data_bank_gnt)
+    .l1_data_bank_gnt_i          (l1_data_bank_gnt),
+    .dir_tag_bank_gnt_i          (l1_dir_tag_bank_gnt)
   );
   
   cachepool_cache_ctrl #(
@@ -363,7 +367,8 @@ module cachepool_l2_wrapper
     .tcdm_data_bank_wdata_o(l1_data_bank_wdata         ),
     .tcdm_data_bank_be_o   (l1_data_bank_be            ),
     .tcdm_data_bank_rdata_i(l1_data_bank_rdata         ),
-    .tcdm_data_bank_gnt_i  (l1_data_bank_gnt           )
+    .tcdm_data_bank_gnt_i  (l1_data_bank_gnt           ),
+    .tcdm_meta_bank_gnt_i  (l1_cache_tag_bank_gnt      )
   );
 
 `ifdef CACHE_DIRECT
@@ -403,7 +408,10 @@ module cachepool_l2_wrapper
     .tag_bank_wdata_o       (tag_bank_wdata),
     .tag_bank_be_o          (tag_bank_be),
 
-    .is_cache_meta_o        (is_cache_meta)
+    // .is_cache_meta_o        (is_cache_meta)
+    .cache_tag_bank_gnt_o   (l1_cache_tag_bank_gnt),
+    .dir_tag_bank_gnt_o     (l1_dir_tag_bank_gnt)
+
   );
 `endif
 

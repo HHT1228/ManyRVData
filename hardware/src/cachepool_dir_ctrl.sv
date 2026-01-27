@@ -91,7 +91,9 @@ module cahcepool_dir_ctrl
   output logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_be_o,
   input  tag_data_t       [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           tag_bank_rdata_i,
 
-  input  logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           l1_data_bank_gnt_i
+  input  logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           l1_data_bank_gnt_i,
+  // input  logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           cache_tag_bank_gnt_i,  
+  input  logic            [SetAssociativity-1:0][NumMetaBankPerWay-1:0]           dir_tag_bank_gnt_i
 );
 
   /**
@@ -154,17 +156,69 @@ module cahcepool_dir_ctrl
 
   core_meta_t                         upstream_req_meta_q;
   logic                               upstream_req_valid_q, upstream_req_is_evict_q, upstream_req_write_q;
+  core_meta_t                         upstream_req_meta_d;
+  logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
   // logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
 
-  addr_t                              upstream_req_addr_q;
+  addr_t                              upstream_req_addr_q, upstream_req_addr_d;
 
-  // TODO: meta may not need to be latched
-  `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
-  `FF(upstream_req_valid_q, upstream_req_valid_i, 1'b0, clk_i, rst_ni)
-  `FF(upstream_req_is_evict_q, upstream_req_is_evict_i, 1'b0, clk_i, rst_ni)
-  `FF(upstream_req_write_q, upstream_req_write_i, 1'b0, clk_i, rst_ni)
+  logic                               tag_bank_gnt, tag_bank_gnt_q;
+
   
-  `FF(upstream_req_addr_q, upstream_req_addr_i, '0, clk_i, rst_ni)
+  // TODO: meta may not need to be latched
+  // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
+  // `FF(upstream_req_valid_q, upstream_req_valid_i, 1'b0, clk_i, rst_ni)
+  // `FF(upstream_req_is_evict_q, upstream_req_is_evict_i, 1'b0, clk_i, rst_ni)
+  // `FF(upstream_req_write_q, upstream_req_write_i, 1'b0, clk_i, rst_ni)
+  
+  // `FF(upstream_req_addr_q, upstream_req_addr_i, '0, clk_i, rst_ni)
+
+  assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
+  `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if(!rst_ni) begin
+      upstream_req_meta_q    <= '0;
+      upstream_req_valid_q   <= 1'b0;
+      upstream_req_is_evict_q<= 1'b0;
+      upstream_req_write_q   <= 1'b0;
+      upstream_req_addr_q    <= '0;
+    end else if (upstream_req_valid_i & upstream_req_ready_o) begin
+      // Update on new request
+      upstream_req_meta_q    <= upstream_req_meta_i;
+      upstream_req_valid_q   <= upstream_req_valid_i;
+      upstream_req_is_evict_q<= upstream_req_is_evict_i;
+      upstream_req_write_q   <= upstream_req_write_i;
+      upstream_req_addr_q    <= upstream_req_addr_i;
+    end else if (tag_bank_gnt) begin
+      // Clear on next cycle after granted
+      upstream_req_meta_q    <= '0;
+      upstream_req_valid_q   <= 1'b0;
+      upstream_req_is_evict_q<= 1'b0;
+      upstream_req_write_q   <= 1'b0;
+      upstream_req_addr_q    <= '0;
+      // upstream_req_meta_q    <= upstream_req_meta_d;
+      // upstream_req_valid_q   <= upstream_req_valid_d;
+      // upstream_req_is_evict_q<= upstream_req_is_evict_d;
+      // upstream_req_write_q   <= upstream_req_write_d;
+      // upstream_req_addr_q    <= upstream_req_addr_d;
+    end else begin
+      // otherwise hold current value
+      upstream_req_meta_q    <= upstream_req_meta_d;
+      upstream_req_valid_q   <= upstream_req_valid_d;
+      upstream_req_is_evict_q<= upstream_req_is_evict_d;
+      upstream_req_write_q   <= upstream_req_write_d;
+      upstream_req_addr_q    <= upstream_req_addr_d;
+    end
+  end
+
+  always_comb begin
+    upstream_req_meta_d     = upstream_req_meta_q;
+    upstream_req_valid_d    = upstream_req_valid_q;
+    upstream_req_is_evict_d = upstream_req_is_evict_q;
+    upstream_req_write_d    = upstream_req_write_q;
+    upstream_req_addr_d     = upstream_req_addr_q;
+  end
 
   // When upstream_req_valid_i AND not busy: give ready hdshk and process new addr
   // assign tag_bank_addr = busy ? tag_bank_addr : upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
@@ -242,7 +296,7 @@ module cahcepool_dir_ctrl
       .downstream_write_req_o      (tag_bank_write_req_int),
       .downstream_write_data_o     (tag_bank_wdata_int),
 
-      .bank_gnt_i                  (&(l1_data_bank_gnt_i[i]))
+      .bank_gnt_i                  (&(l1_data_bank_gnt_i[i]))   // TODO
 
     );
 
@@ -362,7 +416,9 @@ module cahcepool_dir_ctrl
 
       // If not already found a hit, compare and latch
       // if (!curr_line_hit && (local_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits])) begin
-      if (!curr_line_hit && (local_tag == upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits])) begin
+      if (!curr_line_hit &&
+          (local_tag == upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits]) &&
+          (upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits] != '0)) begin
         curr_line_meta_reg = tag_bank_rdata[i];
         curr_line_hit      = 1'b1;
         way_id             = i;
@@ -449,7 +505,7 @@ module cahcepool_dir_ctrl
 
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
-    if(upstream_req_valid_q) begin
+    if(upstream_req_valid_q && busy) begin
       if (upstream_req_is_evict_q) begin
         case (curr_line_state)
           DIR_LINE_INVALID: begin
@@ -806,13 +862,17 @@ module cahcepool_dir_ctrl
       state_q       <= DIR_LINE_INVALID;
       sharers_q     <= '0;
       pending_req_q <= '0;
-    end else if (upstream_req_valid_i & upstream_req_ready_o) begin
+    // end else if (upstream_req_valid_i & upstream_req_ready_o) begin
+    // end else if (curr_line_hit) begin            // FIXME: one cycle delay, wrong
+    end else if (tag_bank_gnt) begin
       state_q       <= curr_line_state;
       sharers_q     <= curr_sharer_list;
       pending_req_q <= pending_req_d;
     end else begin
-      state_q       <= state_d;
-      sharers_q     <= sharers_d;
+      // state_q       <= state_d;
+      // sharers_q     <= sharers_d;
+      state_q       <= DIR_LINE_INVALID;
+      sharers_q     <= '0;
       pending_req_q <= pending_req_d;
     end
   end
