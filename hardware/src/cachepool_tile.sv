@@ -1367,6 +1367,8 @@ module cachepool_tile
   tcdm_rsp_cacheline_t  [NumL1CacheCtrl-1:0] l1_l0_strb_rsp;
   logic                 [NumL1CacheCtrl-1:0] l1_l0_strb_rsp_ready;
 
+  logic                 [NumL1CacheCtrl-1:0] l0_l1_fake_read;
+
   /* RR arbiter to select between R/W channel of HPDcache */
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: gen_l0_l1_req_arbiter
     // Combine R/W channel requests
@@ -1523,7 +1525,8 @@ module cachepool_tile
   // Temp workaround for the missing BE/strb handling of insitu-cache
   // TODO: remove when byte-write of insitu-cache is available
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_l0_l1_strb_handling
-    spatz_strbreq_handler #(
+    // spatz_strbreq_handler #(
+    cachepool_strbreq_handler #(
       .DataWidth      (L1LineWidth),
       .mem_req_t      (tcdm_req_cacheline_t),
       .mem_rsp_t      (tcdm_rsp_cacheline_t),
@@ -1536,7 +1539,8 @@ module cachepool_tile
       .strb_rsp_i       (l1_l0_strb_rsp[cb]),
       .strb_req_o       (l0_l1_strb_req[cb]),
       .strb_rsp_ready_o (l1_l0_strb_rsp_ready[cb]),
-      .strb_rsp_o       (l1_l0_tcdm_xbar_rsp[cb])
+      .strb_rsp_o       (l1_l0_tcdm_xbar_rsp[cb]),
+      .read_for_strb_o  (l0_l1_fake_read[cb])
     );
   end
 
@@ -1763,6 +1767,7 @@ module cachepool_tile
       .core_req_meta_i       (l0_l1_req_meta [cb]            ),
       .core_req_write_i      (l0_l1_req_write[cb]            ),
       .core_req_wdata_i      (l0_l1_req_data [cb]            ),
+      .core_req_fake_read_i  (l0_l1_fake_read[cb]            ),
       // .core_req_wstrb_i      (l0_l1_req_wstrb[cb]            ),
       // Response
       .core_resp_valid_o     (cache_rsp_valid[cb]            ),

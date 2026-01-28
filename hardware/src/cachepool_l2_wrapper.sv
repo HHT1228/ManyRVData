@@ -1,6 +1,6 @@
 // Author: Ho Tin Hung
 
-`define CACHE_DIRECT  // bypass directory controller
+// `define CACHE_DIRECT  // bypass directory controller
 
 module cachepool_l2_wrapper
   import coherence_pkg::*; 
@@ -120,6 +120,7 @@ module cachepool_l2_wrapper
   input  core_meta_t                                        core_req_meta_i,
   input  logic                                              core_req_write_i,
   input  word_data_t                                        core_req_wdata_i,
+  input  logic                                              core_req_fake_read_i,
   // input  write_strb_t                                       core_req_wstrb_i,
 
   /// spatz responses
@@ -244,6 +245,7 @@ module cachepool_l2_wrapper
     .upstream_req_write_i        (core_req_write_i               ),
     .upstream_req_wdata_i        (core_req_wdata_i               ),
     .upstream_req_is_evict_i     (1'b0                           ),
+    .upstream_req_fake_read_i    (core_req_fake_read_i           ),
 
     .upstream_resp_valid_o       (core_resp_valid_o              ),
     .upstream_resp_ready_i       (core_resp_ready_i              ),
@@ -367,7 +369,8 @@ module cachepool_l2_wrapper
     .tcdm_data_bank_wdata_o(l1_data_bank_wdata         ),
     .tcdm_data_bank_be_o   (l1_data_bank_be            ),
     .tcdm_data_bank_rdata_i(l1_data_bank_rdata         ),
-    .tcdm_data_bank_gnt_i  (l1_data_bank_gnt           ),
+    // .tcdm_data_bank_gnt_i  (l1_data_bank_gnt           ),
+    .tcdm_data_bank_gnt_i  (l1_cache_tag_bank_gnt      ),     // TODO: test
     .tcdm_meta_bank_gnt_i  (l1_cache_tag_bank_gnt      )
   );
 

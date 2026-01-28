@@ -1,5 +1,6 @@
 // Author: Ho Tin Hung
 
+`include "common_cells/registers.svh"
 module cache_dir_tag_arb #(
   parameter int unsigned NumTagBankPerCtrl = 2,
 
@@ -58,6 +59,7 @@ module cache_dir_tag_arb #(
   // logic               [NumTagBankPerCtrl-1:0] req_valid;
   logic               [NumTagBankPerCtrl-1:0] cache_req_gnt, dir_req_gnt;
   // logic               [NumTagBankPerCtrl/2-1:0] cache_req_gnt, dir_req_gnt;
+  logic               [NumTagBankPerCtrl-1:0] cache_tag_bank_gnt_q;
 
   for(genvar i = 0; i < NumTagBankPerCtrl; i++) begin
     assign cache_req_pack[i].req    = cache_tag_bank_req_i[i];
@@ -101,6 +103,9 @@ module cache_dir_tag_arb #(
     assign cache_tag_bank_gnt_o[i] = cache_req_gnt[i];
     assign dir_tag_bank_gnt_o[i]   = dir_req_gnt[i];
   end
+
+  // `FF(cache_tag_bank_gnt_q, cache_req_gnt, '0, clk_i, rst_ni)
+  // assign cache_tag_bank_gnt_o = cache_tag_bank_gnt_q;
 
   // assign dir_tag_bank_gnt_o = |(req_gnt[1]);
 

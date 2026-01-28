@@ -46,6 +46,7 @@ module cahcepool_dir_ctrl
   input  logic                                              upstream_req_write_i,
   input  word_data_t                                        upstream_req_wdata_i,
   input  logic                                              upstream_req_is_evict_i,
+  input  logic                                              upstream_req_fake_read_i,
 
   // Response to L1
   output logic                                              upstream_resp_valid_o,
@@ -163,6 +164,7 @@ module cahcepool_dir_ctrl
   addr_t                              upstream_req_addr_q, upstream_req_addr_d;
 
   logic                               tag_bank_gnt, tag_bank_gnt_q;
+  logic                               upstream_req_fake_read_q, upstream_req_fake_read_d;
 
   
   // TODO: meta may not need to be latched
@@ -183,13 +185,15 @@ module cahcepool_dir_ctrl
       upstream_req_is_evict_q<= 1'b0;
       upstream_req_write_q   <= 1'b0;
       upstream_req_addr_q    <= '0;
-    end else if (upstream_req_valid_i & upstream_req_ready_o) begin
+      upstream_req_fake_read_q <= 1'b0;
+    end else if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
       // Update on new request
       upstream_req_meta_q    <= upstream_req_meta_i;
       upstream_req_valid_q   <= upstream_req_valid_i;
       upstream_req_is_evict_q<= upstream_req_is_evict_i;
       upstream_req_write_q   <= upstream_req_write_i;
       upstream_req_addr_q    <= upstream_req_addr_i;
+      upstream_req_fake_read_q <= upstream_req_fake_read_i;
     end else if (tag_bank_gnt) begin
       // Clear on next cycle after granted
       upstream_req_meta_q    <= '0;
@@ -197,6 +201,7 @@ module cahcepool_dir_ctrl
       upstream_req_is_evict_q<= 1'b0;
       upstream_req_write_q   <= 1'b0;
       upstream_req_addr_q    <= '0;
+      upstream_req_fake_read_q <= 1'b0;
       // upstream_req_meta_q    <= upstream_req_meta_d;
       // upstream_req_valid_q   <= upstream_req_valid_d;
       // upstream_req_is_evict_q<= upstream_req_is_evict_d;
@@ -209,6 +214,7 @@ module cahcepool_dir_ctrl
       upstream_req_is_evict_q<= upstream_req_is_evict_d;
       upstream_req_write_q   <= upstream_req_write_d;
       upstream_req_addr_q    <= upstream_req_addr_d;
+      upstream_req_fake_read_q <= upstream_req_fake_read_d;
     end
   end
 
@@ -218,6 +224,7 @@ module cahcepool_dir_ctrl
     upstream_req_is_evict_d = upstream_req_is_evict_q;
     upstream_req_write_d    = upstream_req_write_q;
     upstream_req_addr_d     = upstream_req_addr_q;
+    upstream_req_fake_read_d = upstream_req_fake_read_q;
   end
 
   // When upstream_req_valid_i AND not busy: give ready hdshk and process new addr
@@ -236,7 +243,7 @@ module cahcepool_dir_ctrl
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       busy <= 1'b0;
-    end else if (upstream_req_valid_i || fwd_rx_valid_i) begin
+    end else if ((upstream_req_valid_i || fwd_rx_valid_i) && !upstream_req_fake_read_i) begin
       busy <= 1'b1;
     end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
       busy <= 1'b0;
@@ -278,7 +285,7 @@ module cahcepool_dir_ctrl
       .rst_ni                      (rst_ni),
 
       .upstream_read_addr_i        (tag_bank_addr),
-      .upstream_read_valid_i       (upstream_req_valid_i && !busy),
+      .upstream_read_valid_i       (upstream_req_valid_i && !busy && !upstream_req_fake_read_i),
       .upstream_read_ready_o       (),
       .upstream_read_data_o        (tag_bank_rdata[i]),
 
@@ -296,7 +303,8 @@ module cahcepool_dir_ctrl
       .downstream_write_req_o      (tag_bank_write_req_int),
       .downstream_write_data_o     (tag_bank_wdata_int),
 
-      .bank_gnt_i                  (&(l1_data_bank_gnt_i[i]))   // TODO
+      // .bank_gnt_i                  (&(l1_data_bank_gnt_i[i]))
+      .bank_gnt_i                  ('1)   // FIXME: this blocks outgoing requests
 
     );
 
@@ -505,7 +513,7 @@ module cahcepool_dir_ctrl
 
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
-    if(upstream_req_valid_q && busy) begin
+    if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
       if (upstream_req_is_evict_q) begin
         case (curr_line_state)
           DIR_LINE_INVALID: begin
@@ -582,6 +590,13 @@ module cahcepool_dir_ctrl
       downstream_req_meta_o     = upstream_req_meta_q;
       downstream_req_write_o    = 1'b1;
       downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
+    end else if (upstream_req_fake_read_i) begin
+      // Fake read fall-thru without triggering coherence engine
+      downstream_req_valid_o    = upstream_req_valid_i;
+      downstream_req_addr_o     = upstream_req_addr_i;
+      downstream_req_meta_o     = upstream_req_meta_i;
+      downstream_req_write_o    = upstream_req_write_i;
+      downstream_req_wdata_o    = upstream_req_wdata_i;
     end else begin
       downstream_req_valid_o    = 1'b0;
       downstream_req_addr_o     = '0;
