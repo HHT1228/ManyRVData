@@ -137,7 +137,7 @@ module cahcepool_dir_ctrl
   // tcdm_bank_addr_t tag_bank_addr_r, tag_bank_addr_w;
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
   // TODO: ready cannot be raised when busy
-  logic                               busy; // Does not accept new req when busy
+  logic                               busy, busy_q, busy_d; // Does not accept new req when busy
 
   tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
   // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
@@ -162,6 +162,13 @@ module cahcepool_dir_ctrl
   // logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
 
   addr_t                              upstream_req_addr_q, upstream_req_addr_d;
+
+  logic                               downstream_req_valid_q, downstream_req_valid_d;
+  // logic                                              downstream_req_ready_,
+  addr_t                              downstream_req_addr_q, downstream_req_addr_d;
+  core_meta_t                         downstream_req_meta_q, downstream_req_meta_d;
+  logic                               downstream_req_write_q, downstream_req_write_d;
+  word_data_t                         downstream_req_wdata_q, downstream_req_wdata_d;
 
   logic                               tag_bank_gnt, tag_bank_gnt_q;
   logic                               upstream_req_fake_read_q, upstream_req_fake_read_d;
@@ -194,14 +201,14 @@ module cahcepool_dir_ctrl
       upstream_req_write_q   <= upstream_req_write_i;
       upstream_req_addr_q    <= upstream_req_addr_i;
       upstream_req_fake_read_q <= upstream_req_fake_read_i;
-    end else if (tag_bank_gnt) begin
-      // Clear on next cycle after granted
-      upstream_req_meta_q    <= '0;
-      upstream_req_valid_q   <= 1'b0;
-      upstream_req_is_evict_q<= 1'b0;
-      upstream_req_write_q   <= 1'b0;
-      upstream_req_addr_q    <= '0;
-      upstream_req_fake_read_q <= 1'b0;
+    // end else if (tag_bank_gnt) begin
+    //   // Clear on next cycle after granted
+    //   upstream_req_meta_q    <= '0;
+    //   upstream_req_valid_q   <= 1'b0;
+    //   upstream_req_is_evict_q<= 1'b0;
+    //   upstream_req_write_q   <= 1'b0;
+    //   upstream_req_addr_q    <= '0;
+    //   upstream_req_fake_read_q <= 1'b0;
       // upstream_req_meta_q    <= upstream_req_meta_d;
       // upstream_req_valid_q   <= upstream_req_valid_d;
       // upstream_req_is_evict_q<= upstream_req_is_evict_d;
@@ -240,16 +247,35 @@ module cahcepool_dir_ctrl
   // end
 
   // Directory controller is busy when processing a request
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      busy <= 1'b0;
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     busy <= 1'b0;
+  //   end else if ((upstream_req_valid_i || fwd_rx_valid_i) && !upstream_req_fake_read_i) begin
+  //     busy <= 1'b1;
+  //   end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
+  //     busy <= 1'b0;
+  //   end
+  // end
+
+  always_comb begin
+    if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
+      busy_d = 1'b0;
     end else if ((upstream_req_valid_i || fwd_rx_valid_i) && !upstream_req_fake_read_i) begin
-      busy <= 1'b1;
-    end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
-      busy <= 1'b0;
+      busy_d = 1'b1;
+    end else begin
+      busy_d = busy_q;
     end
   end
-  // assign busy = 1'b0;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      busy_q <= 1'b0;
+    end else begin
+      busy_q <= busy_d;
+    end
+  end
+
+  assign busy = busy_q;
 
   assign upstream_req_ready_o = !busy;
 
@@ -577,34 +603,107 @@ module cahcepool_dir_ctrl
   /***************************
   * Action handling
   ***************************/
+  // FIXME: CONTINUE HERE, fix handshake, hold valid until ready comes in
+  // TODO: Might need FF, withdraw valid next cycle after handshake completed
   always_comb begin : act_req_to_l2_ctrl
     if(act.send_excl_data || act.send_sh_data) begin  // read req to L2
-      downstream_req_valid_o    = 1'b1;
-      downstream_req_addr_o     = upstream_req_addr_q;
-      downstream_req_meta_o     = upstream_req_meta_q;
-      downstream_req_write_o    = '0;
-      downstream_req_wdata_o    = upstream_req_wdata_i;
+      // downstream_req_valid_o    = 1'b1;
+      // downstream_req_valid_o    = upstream_req_valid_q || downstream_req_ready_i;
+      // downstream_req_addr_o     = upstream_req_addr_q;
+      // downstream_req_meta_o     = upstream_req_meta_q;
+      // // downstream_req_write_o    = '0;
+      // downstream_req_write_o    = upstream_req_write_q;
+      // downstream_req_wdata_o    = upstream_req_wdata_i;
+
+      downstream_req_valid_d    = upstream_req_valid_q;
+      // downstream_req_valid_d    = 1'b1;
+      downstream_req_addr_d     = upstream_req_addr_q;
+      downstream_req_meta_d     = upstream_req_meta_q;
+      downstream_req_write_d    = upstream_req_write_q;
+      // downstream_req_write_d    = '0;
+      downstream_req_wdata_d    = upstream_req_wdata_i;
     end else if (act.update_l2_data) begin            // write req to L2
-      downstream_req_valid_o    = 1'b1;
-      downstream_req_addr_o     = upstream_req_addr_q;
-      downstream_req_meta_o     = upstream_req_meta_q;
-      downstream_req_write_o    = 1'b1;
-      downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
-    end else if (upstream_req_fake_read_i) begin
-      // Fake read fall-thru without triggering coherence engine
-      downstream_req_valid_o    = upstream_req_valid_i;
-      downstream_req_addr_o     = upstream_req_addr_i;
-      downstream_req_meta_o     = upstream_req_meta_i;
-      downstream_req_write_o    = upstream_req_write_i;
-      downstream_req_wdata_o    = upstream_req_wdata_i;
+      // downstream_req_valid_o    = 1'b1;
+      // downstream_req_valid_o    = upstream_req_valid_q || downstream_req_ready_i;
+      // downstream_req_addr_o     = upstream_req_addr_q;
+      // downstream_req_meta_o     = upstream_req_meta_q;
+      // // downstream_req_write_o    = 1'b1;
+      // downstream_req_write_o    = upstream_req_write_q;
+      // downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
+      
+      downstream_req_valid_d    = upstream_req_valid_q;
+      // downstream_req_valid_d    = 1'b1;
+      downstream_req_addr_d     = upstream_req_addr_q;
+      downstream_req_meta_d     = upstream_req_meta_q;
+      downstream_req_write_d    = upstream_req_write_q;
+      // downstream_req_write_d    = 1'b1;
+      downstream_req_wdata_d    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
+
+    // end else if (upstream_req_fake_read_i) begin
+    //   // Fake read fall-thru without triggering coherence engine
+    //   downstream_req_valid_o    = upstream_req_valid_i;
+    //   downstream_req_addr_o     = upstream_req_addr_i;
+    //   downstream_req_meta_o     = upstream_req_meta_i;
+    //   downstream_req_write_o    = upstream_req_write_i;
+    //   downstream_req_wdata_o    = upstream_req_wdata_i;
+      
+    // end else if (!downstream_req_ready_i) begin
+    //   // Hold request until downstream ready
+    //   downstream_req_valid_o    = upstream_req_valid_q;
+    //   downstream_req_addr_o     = upstream_req_addr_q;
+    //   downstream_req_meta_o     = upstream_req_meta_q;
+    //   downstream_req_write_o    = upstream_req_write_q;
+    //   downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
     end else begin
-      downstream_req_valid_o    = 1'b0;
-      downstream_req_addr_o     = '0;
-      downstream_req_meta_o     = '0;
-      downstream_req_write_o    = 1'b0;
-      downstream_req_wdata_o    = '0;
+      // downstream_req_valid_o    = 1'b0;
+      // downstream_req_addr_o     = '0;
+      // downstream_req_meta_o     = '0;
+      // downstream_req_write_o    = 1'b0;
+      // downstream_req_wdata_o    = '0;
+
+      // downstream_req_valid_d    = 1'b0;
+      // downstream_req_addr_d     = '0;
+      // downstream_req_meta_d     = '0;
+      // downstream_req_write_d    = 1'b0;
+      // downstream_req_wdata_d    = '0;
+
+      downstream_req_valid_d    = downstream_req_valid_q;
+      downstream_req_addr_d     = downstream_req_addr_q;
+      downstream_req_meta_d     = downstream_req_meta_q;
+      downstream_req_write_d    = downstream_req_write_q;
+      downstream_req_wdata_d    = downstream_req_wdata_q;
     end 
   end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      downstream_req_valid_q <= 1'b0;
+      downstream_req_addr_q  <= '0;
+      downstream_req_meta_q  <= '0;
+      downstream_req_write_q <= 1'b0;
+      downstream_req_wdata_q <= '0;
+    end else if (downstream_req_ready_i) begin
+      // Deassert after handshake
+      downstream_req_valid_q <= 1'b0;
+      downstream_req_addr_q  <= '0;
+      downstream_req_meta_q  <= '0;
+      downstream_req_write_q <= 1'b0;
+      downstream_req_wdata_q <= '0;
+    end else begin
+      // Otherwise hold
+      downstream_req_valid_q <= downstream_req_valid_d;
+      downstream_req_addr_q  <= downstream_req_addr_d;
+      downstream_req_meta_q  <= downstream_req_meta_d;
+      downstream_req_write_q <= downstream_req_write_d;
+      downstream_req_wdata_q <= downstream_req_wdata_d;
+    end
+  end
+
+  assign downstream_req_valid_o = upstream_req_fake_read_i ? upstream_req_valid_i : downstream_req_valid_d;
+  assign downstream_req_addr_o  = upstream_req_fake_read_i ? upstream_req_addr_i : downstream_req_addr_d;
+  assign downstream_req_meta_o  = upstream_req_fake_read_i ? upstream_req_meta_i : downstream_req_meta_d;
+  assign downstream_req_write_o = upstream_req_fake_read_i ? upstream_req_write_i : downstream_req_write_d;
+  assign downstream_req_wdata_o = upstream_req_fake_read_i ? upstream_req_wdata_i : downstream_req_wdata_d;
 
   always_comb begin
     case (next_coherence_meta.line_state)

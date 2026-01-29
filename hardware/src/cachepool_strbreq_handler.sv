@@ -76,6 +76,8 @@ module cachepool_strbreq_handler #(
 		strb_rsp_ready_o 	= strb_rsp_ready_i;
 		strb_rsp_o			= strb_rsp_i;
 
+		read_for_strb_o		= 1'b0;
+
 		unique case (strbreq_state_q)
 			// FsmInit:	This state monitors detect the valid partial-write request and start processing.
 			FsmInitAndRead: begin
@@ -90,7 +92,7 @@ module cachepool_strbreq_handler #(
 						strb_req_o.q.write 	= 1'b0;
 						strb_req_o.q.strb 	= '1;
 
-            read_for_strb_o    = 1'b1;    // Indicate this read is for strb handling
+            			read_for_strb_o    = 1'b1;    // Indicate this read is for strb handling
 
 						/// State switching
 						// If the downstream module is ready to accept the request, switch to `FsmWrite` state
@@ -113,7 +115,7 @@ module cachepool_strbreq_handler #(
 				strb_req_o.q.write 	= 1'b0;
 				strb_req_o.q.strb 	= '1;
 
-        read_for_strb_o     = 1'b1;
+        		read_for_strb_o     = 1'b1;
 
 				/// State switching
 				// If the downstream module is ready to accept the request, switch to `FsmWrite` state
@@ -128,7 +130,7 @@ module cachepool_strbreq_handler #(
 				// Don't output any valid request
 				strb_req_o.q_valid 	= 1'b0;
         
-        read_for_strb_o     = 1'b0;
+        		read_for_strb_o     = 1'b0;
 
 				/// Wait for inserted read response
 				// If the user info of a valid response matches input request, send after-strb write request
@@ -163,7 +165,7 @@ module cachepool_strbreq_handler #(
 				strb_req_o.q.write 	= 1'b1;
 				strb_req_o.q.strb 	= '1;
 
-        read_for_strb_o     = 1'b0;
+        		read_for_strb_o     = 1'b0;
 
 				/// State switching
 				// If the downstream module is ready to accept the request, switch to `FsmWrite` state
