@@ -548,6 +548,14 @@ module cachepool_tile
 
   // typedef logic [L1LineWidth/DataWidth-1:0] l1_wstrb_t;
 
+  // Coherence typedefs
+  typedef struct packed {
+    tcdm_addr_t     addr;         // TODO: might be unnecessary to use full addr; only tag?
+    // logic           is_ack;    // no need, covered by fwd_msg_type
+    fwd_msg_type_t  fwd_msg_type;
+    l0_line_state_t line_state;
+  } cache_dir_fwd_t;
+
   // typedef struct packed {
   //   hpdcache_req_sid_t  sid;
   //   hpdcache_req_tid_t  tid;
@@ -994,6 +1002,12 @@ module cachepool_tile
   logic       [NumL0CacheCtrl-1:0] l0_cache_req_downstream_write; // downstream
   tcdm_user_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_user;  // downstream
   tcdm_meta_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info;  // downstream
+
+  // Coherence signals
+  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_l1_fwd;
+  logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid;
+  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd;
+  logic           [NumL1CacheCtrl-1:0] l1_l0_fwd_valid;
 
   // response from coalescer to CC
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
@@ -1597,7 +1611,8 @@ module cachepool_tile
       .hpdcache_mem_req_t   (hpdcache_mem_req_t),
       .hpdcache_mem_req_w_t (hpdcache_mem_req_w_t),
       .hpdcache_mem_resp_r_t(hpdcache_mem_resp_r_t),
-      .hpdcache_mem_resp_w_t(hpdcache_mem_resp_w_t)
+      .hpdcache_mem_resp_w_t(hpdcache_mem_resp_w_t),
+      .cache_dir_fwd_t      (cache_dir_fwd_t)
     ) i_l0_cache (
       .clk_i                              (clk_i),
       .rst_ni                             (rst_ni),
@@ -1619,6 +1634,11 @@ module cachepool_tile
       .core_req_pma_i                     (/* unused */),
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
+
+      .fwd_rx_i                           (l1_l0_fwd[i]),
+      .fwd_rx_valid_i                     (l1_l0_fwd_valid[i]),
+      .fwd_tx_o                           (l0_l1_fwd[i]),
+      .fwd_tx_valid_o                     (l0_l1_fwd_valid[i]),
 
       .mem_req_read_ready_i               (l0_mem_req_read_ready[i]),
       .mem_req_read_valid_o               (l0_mem_req_read_valid[i]),
@@ -1690,12 +1710,7 @@ module cachepool_tile
   //   GET_ACK   = 2'b11
   // } fwd_msg_type_t;
 
-  typedef struct packed {
-    tcdm_addr_t     addr;         // TODO: might be unnecessary to use full addr; only tag?
-    // logic           is_ack;    // no need, covered by fwd_msg_type
-    fwd_msg_type_t  fwd_msg_type;
-    l0_line_state_t line_state;
-  } cache_dir_fwd_t;
+
 
   // typedef struct packed {
   //   tcdm_addr_t     addr;
@@ -1775,6 +1790,12 @@ module cachepool_tile
       .core_resp_write_o     (cache_rsp_write[cb]            ),
       .core_resp_data_o      (cache_rsp_data [cb]            ),
       .core_resp_meta_o      (cache_rsp_meta [cb]            ),
+
+      // FWD Message
+      .fwd_rx_i              (l0_l1_fwd[cb]),
+      .fwd_rx_valid_i        (l0_l1_fwd_valid[cb]),
+      .fwd_tx_o              (l1_l0_fwd[cb]),
+      .fwd_tx_valid_o        (l1_l0_fwd_valid[cb]),
 
       .cache_refill_req_o    (cache_refill_req_o[cb]           ),
       .cache_refill_rsp_i    (cache_refill_rsp_i[cb]           ),

@@ -4,6 +4,7 @@
 
 module cahcepool_dir_ctrl 
   import coherence_pkg::*; 
+  import hpdcache_pkg::*;
   #(
   
   parameter int unsigned AddrWidth  = 32,
@@ -48,7 +49,7 @@ module cahcepool_dir_ctrl
   input  logic                                              upstream_req_is_evict_i,
   input  logic                                              upstream_req_fake_read_i,
 
-  // Response to L1
+  // Cache response to L1
   output logic                                              upstream_resp_valid_o,
   input  logic                                              upstream_resp_ready_i,
   output logic                                              upstream_resp_write_o,
@@ -70,10 +71,14 @@ module cahcepool_dir_ctrl
   input  word_data_t                                        downstream_resp_data_i,
   input  core_meta_t                                        downstream_resp_meta_i,
 
+  // FWD message interface
   input   cache_dir_fwd_t                                   fwd_rx_i,
   input   logic                                             fwd_rx_valid_i,
   output  cache_dir_fwd_t                                   fwd_tx_o,
   output  logic                                             fwd_tx_valid_o,
+
+  // Coherence response to L1
+
 
   // Meta bank (tag) access
   // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_req_o,
@@ -183,7 +188,7 @@ module cahcepool_dir_ctrl
   // `FF(upstream_req_addr_q, upstream_req_addr_i, '0, clk_i, rst_ni)
 
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
-  `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
+  // `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if(!rst_ni) begin

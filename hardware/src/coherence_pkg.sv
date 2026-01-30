@@ -10,11 +10,11 @@ package coherence_pkg;
   } l0_line_state_t;
 
   // Typedefs for cache coherence
-  typedef enum logic [1:0] {
-    INV       = 2'b00,
-    GET       = 2'b01,
-    INV_ACK   = 2'b10,
-    GET_ACK   = 2'b11
-  } fwd_msg_type_t;
+  // typedef enum logic [1:0] {
+  //   INV       = 2'b00,
+  //   GET       = 2'b01,
+  //   INV_ACK   = 2'b10,
+  //   GET_ACK   = 2'b11
+  // } fwd_msg_type_t;
 
 endpackage : coherence_pkg

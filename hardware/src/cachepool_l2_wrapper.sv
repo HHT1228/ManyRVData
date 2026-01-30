@@ -1,6 +1,6 @@
 // Author: Ho Tin Hung
 
-// `define CACHE_DIRECT  // bypass directory controller
+`define CACHE_DIRECT  // bypass directory controller
 
 module cachepool_l2_wrapper
   import coherence_pkg::*; 
@@ -130,6 +130,12 @@ module cachepool_l2_wrapper
   output word_data_t                                        core_resp_data_o,
   output core_meta_t                                        core_resp_meta_o,
 
+  // FWD message for directory controller
+  input  cache_dir_fwd_t                                          fwd_rx_i,
+  input  logic                                                    fwd_rx_valid_i,
+  output cache_dir_fwd_t                                          fwd_tx_o,
+  output logic                                                    fwd_tx_valid_o,
+
   /// FIFO SRAM Configuration
   input   impl_in_t       [1:0]                                           impl_i,
 
@@ -204,6 +210,8 @@ module cachepool_l2_wrapper
   core_meta_t      dir_l2_req_meta;
   logic            dir_l2_req_write;
   word_data_t      dir_l2_req_wdata;
+
+  // cache_dir_fwd_t  fwd_rx_i
   
   cahcepool_dir_ctrl #(
     // Core Parameters
@@ -267,10 +275,10 @@ module cachepool_l2_wrapper
     .downstream_resp_data_i      (l2_dir_resp_data),
     .downstream_resp_meta_i      (l2_dir_resp_meta),
 
-    .fwd_rx_i                    (),
-    .fwd_rx_valid_i              (),
-    .fwd_tx_o                    (),
-    .fwd_tx_valid_o              (),
+    .fwd_rx_i                    (fwd_rx_i),
+    .fwd_rx_valid_i              (fwd_rx_valid_i),
+    .fwd_tx_o                    (fwd_tx_o),
+    .fwd_tx_valid_o              (fwd_tx_valid_o),
 
     // Tag Bank Interface
     .tag_bank_req_o              (l1_dir_tag_bank_req                ),
