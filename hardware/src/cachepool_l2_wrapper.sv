@@ -1,6 +1,6 @@
 // Author: Ho Tin Hung
 
-`define CACHE_DIRECT  // bypass directory controller
+// `define CACHE_DIRECT  // bypass directory controller
 
 module cachepool_l2_wrapper
   import coherence_pkg::*; 
@@ -72,6 +72,7 @@ module cachepool_l2_wrapper
   parameter type          cache_dir_fwd_t                                 = logic,
   parameter type          dir_cache_fwd_t                                 = logic,
   // parameter type          l0_line_state_t                                 = logic,
+  parameter type          coherence_rsp_t                                 = logic,
 
   /***********************
   * Dependent Parameters *
@@ -135,6 +136,10 @@ module cachepool_l2_wrapper
   input  logic                                                    fwd_rx_valid_i,
   output cache_dir_fwd_t                                          fwd_tx_o,
   output logic                                                    fwd_tx_valid_o,
+
+  // Coherence response to L1 cache controller
+  output coherence_rsp_t                                     coherence_rsp_o,
+  output logic                                               coherence_rsp_valid_o,
 
   /// FIFO SRAM Configuration
   input   impl_in_t       [1:0]                                           impl_i,
@@ -235,9 +240,10 @@ module cachepool_l2_wrapper
     .tcdm_bank_addr_t    (tcdm_bank_addr_t   ),
     .reqid_t                  (reqid_t                ),
     // .fwd_msg_type_t           (fwd_msg_type_t         ),
-    .cache_dir_fwd_t          (cache_dir_fwd_t        )
+    .cache_dir_fwd_t          (cache_dir_fwd_t        ),
     // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
     // .l0_line_state_t          (l0_line_state_t        )
+    .coherence_rsp_t          (coherence_rsp_t        )
   ) i_l2_directory_ctrl (
     .clk_i                       (clk_i                          ),
     .rst_ni                      (rst_ni                         ),
@@ -279,6 +285,9 @@ module cachepool_l2_wrapper
     .fwd_rx_valid_i              (fwd_rx_valid_i),
     .fwd_tx_o                    (fwd_tx_o),
     .fwd_tx_valid_o              (fwd_tx_valid_o),
+
+    .coherence_rsp_o             (coherence_rsp_o),
+    .coherence_rsp_valid_o       (coherence_rsp_valid_o),
 
     // Tag Bank Interface
     .tag_bank_req_o              (l1_dir_tag_bank_req                ),

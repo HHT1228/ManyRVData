@@ -31,9 +31,11 @@ module cahcepool_dir_ctrl
   parameter type tcdm_bank_addr_t = logic,
   parameter type reqid_t          = logic,
   // parameter type fwd_msg_type_t   = logic,
-  parameter type cache_dir_fwd_t  = logic
+  parameter type cache_dir_fwd_t  = logic,
   // parameter type dir_cache_fwd_t  = logic,
   // parameter type l0_line_state_t  = logic
+  parameter type coherence_rsp_t  = logic,
+  parameter type inv_ack_cnt_t    = logic [$clog2(NumCores)-1:0]
 
 ) (
   input logic clk_i,
@@ -78,7 +80,8 @@ module cahcepool_dir_ctrl
   output  logic                                             fwd_tx_valid_o,
 
   // Coherence response to L1
-
+  output coherence_rsp_t                                    coherence_rsp_o,
+  output logic                                              coherence_rsp_valid_o,
 
   // Meta bank (tag) access
   // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_req_o,
@@ -177,6 +180,8 @@ module cahcepool_dir_ctrl
 
   logic                               tag_bank_gnt, tag_bank_gnt_q;
   logic                               upstream_req_fake_read_q, upstream_req_fake_read_d;
+
+  inv_ack_cnt_t                       inv_ack_count;
 
   
   // TODO: meta may not need to be latched
@@ -508,6 +513,7 @@ module cahcepool_dir_ctrl
     logic send_inv_to_owner;   // invalidate/downgrade current owner
     logic send_probe_owner;    // ask owner for latest data (Read in E/M)
     logic send_evict_ack;      // EvictAck to evictor
+    logic send_inv_ack_cnt;    // send expected invalidation ack count to L1
     logic mem_write;           // push dirty to memory (owner PutM)
     logic update_l2_data;      // accept/serialize WT data at L2
     logic update_sharers;      // commit sharers_d to tag/meta RAM
@@ -749,13 +755,26 @@ module cahcepool_dir_ctrl
   end
 
   // TODO: connect to L1 when interface extended
-  // always_comb begin : act_evict_ack
-  //   if(act.send_evict_ack) begin
-      
-  //   end else begin
-
-  //   end
-  // end
+  always_comb begin : act_coherence_rsp
+    if(act.send_evict_ack) begin
+      coherence_rsp_o.core_id     = req_sid;
+      coherence_rsp_o.req_id      = req_tid;
+      coherence_rsp_o.addr        = upstream_req_addr_q;
+      coherence_rsp_o.is_inv_ack  = 1'b1;
+      coherence_rsp_o.inv_ack_cnt = '0; // no data
+      coherence_rsp_valid_o       = 1'b1;
+    end else if (act.send_inv_ack_cnt) begin
+      coherence_rsp_o.core_id     = req_sid;
+      coherence_rsp_o.req_id      = req_tid;
+      coherence_rsp_o.addr        = upstream_req_addr_q;
+      coherence_rsp_o.is_inv_ack  = 1'b1;
+      coherence_rsp_o.inv_ack_cnt = inv_ack_count;
+      coherence_rsp_valid_o       = 1'b1;
+    end else begin
+      coherence_rsp_o       = '0;
+      coherence_rsp_valid_o = 1'b0;
+    end
+  end
 
   // TODO: not sure if needed, L2 can handle eviction whenever it likes
   // always_comb begin : act_mem_write
@@ -835,11 +854,12 @@ module cahcepool_dir_ctrl
             // Upgrade: invalidate all sharers, serialize WT, owner=req
             act.send_inv_to_sharers = 1'b1;
             act.update_l2_data      = 1'b1;
+            inv_ack_count           = count_set_bits(sharers_q);
             sharers_d               = '0;
             sharers_d               = set_bit(sharers_d, req_sid);
             act.update_sharers      = 1'b1;
             state_d                 = DIR_LINE_MODIFIED;
-            act.update_state            = 1'b1;
+            act.update_state        = 1'b1;
           end
           // Evictions remove bit; S->I if last sharer leaves
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_M_OWNER: begin
@@ -1006,6 +1026,16 @@ module cahcepool_dir_ctrl
   endfunction
   function automatic sharer_list_t clr_bit(sharer_list_t sharers, int unsigned sid);
     return (sharers & ~(sharer_list_t'(1) << sid));
+  endfunction
+  function automatic inv_ack_cnt_t count_set_bits(sharer_list_t sharers);
+    inv_ack_cnt_t count;
+    count = '0;
+    for (int i = 0; i < NumCores; i++) begin
+      if (sharers[i]) begin
+        count = count + 1;
+      end
+    end
+    return count;
   endfunction
 
 

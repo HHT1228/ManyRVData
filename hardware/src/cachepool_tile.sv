@@ -556,6 +556,16 @@ module cachepool_tile
     l0_line_state_t line_state;
   } cache_dir_fwd_t;
 
+  typedef logic [$clog2(NrCores)-1:0] inv_ack_cnt_t;
+
+  typedef struct packed {
+    tcdm_addr_t             addr;
+    logic [CoreIDWidth-1:0] core_id;
+    reqid_t                 req_id;
+    logic                   is_inv_ack;   // 1: inv ack; 0: evict ack
+    inv_ack_cnt_t           inv_ack_cnt;  // number of inv acks expected
+  } coherence_rsp_t;
+
   // typedef struct packed {
   //   hpdcache_req_sid_t  sid;
   //   hpdcache_req_tid_t  tid;
@@ -1759,9 +1769,10 @@ module cachepool_tile
       .cacheline_data_t         (cacheline_data_t       ),
       .reqid_t                  (reqid_t                ),
       // .fwd_msg_type_t           (fwd_msg_type_t         ),
-      .cache_dir_fwd_t          (cache_dir_fwd_t        )
+      .cache_dir_fwd_t          (cache_dir_fwd_t        ),
       // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
       // .l0_line_state_t          (l0_line_state_t        )
+      .coherence_rsp_t          (coherence_rsp_t        )
     ) i_l2_cache (
       .clk_i                 (clk_i                          ),
       .rst_ni                (rst_ni                         ),
@@ -1796,6 +1807,9 @@ module cachepool_tile
       .fwd_rx_valid_i        (l0_l1_fwd_valid[cb]),
       .fwd_tx_o              (l1_l0_fwd[cb]),
       .fwd_tx_valid_o        (l1_l0_fwd_valid[cb]),
+
+      .coherence_rsp_o             (/*TODO*/),
+      .coherence_rsp_valid_o       (/*TODO*/),
 
       .cache_refill_req_o    (cache_refill_req_o[cb]           ),
       .cache_refill_rsp_i    (cache_refill_rsp_i[cb]           ),
