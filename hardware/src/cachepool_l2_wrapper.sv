@@ -140,10 +140,12 @@ module cachepool_l2_wrapper
   output logic                                                    fwd_rx_ready_o,
   output cache_dir_fwd_t                                          fwd_tx_o,
   output logic                                                    fwd_tx_valid_o,
+  input  logic                                                    fwd_tx_ready_i,
 
   // Coherence response to L1 cache controller
   output coherence_rsp_t                                     coherence_rsp_o,
   output logic                                               coherence_rsp_valid_o,
+  input  logic                                               coherence_rsp_ready_i,
 
   /// FIFO SRAM Configuration
   input   impl_in_t       [1:0]                                           impl_i,
@@ -293,9 +295,11 @@ module cachepool_l2_wrapper
     .fwd_rx_ready_o              (fwd_rx_ready_o),
     .fwd_tx_o                    (fwd_tx_o),
     .fwd_tx_valid_o              (fwd_tx_valid_o),
+    .fwd_tx_ready_i              (fwd_tx_ready_i),
 
     .coherence_rsp_o             (coherence_rsp_o),
     .coherence_rsp_valid_o       (coherence_rsp_valid_o),
+    .coherence_rsp_ready_i       (coherence_rsp_ready_i),
 
     // Tag Bank Interface
     .tag_bank_req_o              (l1_dir_tag_bank_req                ),

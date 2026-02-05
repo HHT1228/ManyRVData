@@ -83,11 +83,13 @@ module cahcepool_dir_ctrl
 
   output  cache_dir_fwd_t                                   fwd_tx_o,
   output  logic                                             fwd_tx_valid_o,
+  input   logic                                             fwd_tx_ready_i,
   // TODO: ready
 
   // Coherence response to L1
   output coherence_rsp_t                                    coherence_rsp_o,
   output logic                                              coherence_rsp_valid_o,
+  input  logic                                              coherence_rsp_ready_i,
   // TODO: ready
 
   // Meta bank (tag) access
@@ -188,6 +190,12 @@ module cahcepool_dir_ctrl
 
   logic                               tag_bank_gnt, tag_bank_gnt_q;
   logic                               upstream_req_fake_read_q, upstream_req_fake_read_d;
+
+  cache_dir_fwd_t                     fwd_tx_q, fwd_tx_d;
+  logic                               fwd_tx_valid_q, fwd_tx_valid_d;
+
+  coherence_rsp_t                     coherence_rsp_q, coherence_rsp_d;
+  logic                               coherence_rsp_valid_q, coherence_rsp_valid_d;
 
   inv_ack_cnt_t                       inv_ack_count;
   logic                               op_decoded;
@@ -793,43 +801,122 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     endcase
   end
 
+  // always_comb begin : act_fwd_tx
+  //   fwd_tx_o.addr           = upstream_req_addr_q;
+  //   // fwd_tx_o.line_state     = next_coherence_meta.line_state;
+  //   fwd_tx_o.line_state     = next_line_state;
+  //   if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
+  //     // fwd_tx_o: HPD invalidation and extended tag
+  //     fwd_tx_o.fwd_msg_type = INV;
+  //     fwd_tx_valid_o        = 1'b1;
+  //   end else if(act.send_probe_owner) begin
+  //     // fwd_tx_o: HPD interface extension required
+  //     fwd_tx_o.fwd_msg_type = GET;
+  //     fwd_tx_valid_o        = 1'b1;
+  //   end else begin
+  //     fwd_tx_o.fwd_msg_type = INV;
+  //     fwd_tx_valid_o        = 1'b0;
+  //   end
+  // end
+
   always_comb begin : act_fwd_tx
-    fwd_tx_o.addr           = upstream_req_addr_q;
-    // fwd_tx_o.line_state     = next_coherence_meta.line_state;
-    fwd_tx_o.line_state     = next_line_state;
+    fwd_tx_d        = fwd_tx_q;
+    fwd_tx_valid_d  = fwd_tx_valid_q;
+
     if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
-      // fwd_tx_o: HPD invalidation and extended tag
-      fwd_tx_o.fwd_msg_type = INV;
-      fwd_tx_valid_o        = 1'b1;
+      fwd_tx_d.addr           = upstream_req_addr_d;
+      fwd_tx_d.line_state     = next_line_state;
+      fwd_tx_d.fwd_msg_type = INV;
+      fwd_tx_valid_d        = 1'b1;
     end else if(act.send_probe_owner) begin
-      // fwd_tx_o: HPD interface extension required
-      fwd_tx_o.fwd_msg_type = GET;
-      fwd_tx_valid_o        = 1'b1;
+      fwd_tx_d.addr           = upstream_req_addr_d;
+      fwd_tx_d.line_state     = next_line_state;
+      fwd_tx_d.fwd_msg_type = GET;
+      fwd_tx_valid_d        = 1'b1;
+    end
+    // else begin
+    //   fwd_tx_d.fwd_msg_type = INV;
+    //   fwd_tx_valid_d        = 1'b0;
+    // end
+  end
+
+  assign fwd_tx_o        = fwd_tx_d;
+  assign fwd_tx_valid_o  = fwd_tx_valid_d;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin : act_fwd_tx_ff
+    if (!rst_ni) begin
+      fwd_tx_q        <= '0;
+      fwd_tx_valid_q  <= 1'b0;
+    end else if (fwd_tx_valid_o && fwd_tx_ready_i) begin
+      // Clear after handshake
+      fwd_tx_q        <= '0;
+      fwd_tx_valid_q  <= 1'b0;
     end else begin
-      fwd_tx_o.fwd_msg_type = INV;
-      fwd_tx_valid_o        = 1'b0;
+      fwd_tx_q        <= fwd_tx_d;
+      fwd_tx_valid_q  <= fwd_tx_valid_d;
     end
   end
 
-  // TODO: connect to L1 when interface extended
+  // always_comb begin : act_coherence_rsp
+  //   if(act.send_evict_ack) begin
+  //     coherence_rsp_o.core_id     = req_sid;
+  //     coherence_rsp_o.req_id      = req_tid;
+  //     coherence_rsp_o.addr        = upstream_req_addr_q;
+  //     coherence_rsp_o.is_inv_ack_cnt  = 1'b0;
+  //     coherence_rsp_o.inv_ack_cnt = '0; // no data
+  //     coherence_rsp_valid_o       = 1'b1;
+  //   end else if (act.send_inv_ack_cnt) begin
+  //     coherence_rsp_o.core_id     = req_sid;
+  //     coherence_rsp_o.req_id      = req_tid;
+  //     coherence_rsp_o.addr        = upstream_req_addr_q;
+  //     coherence_rsp_o.is_inv_ack_cnt  = 1'b1;
+  //     coherence_rsp_o.inv_ack_cnt = inv_ack_count;
+  //     coherence_rsp_valid_o       = 1'b1;
+  //   end else begin
+  //     coherence_rsp_o       = '0;
+  //     coherence_rsp_valid_o = 1'b0;
+  //   end
+  // end
+
   always_comb begin : act_coherence_rsp
+    coherence_rsp_d       = coherence_rsp_q;
+    coherence_rsp_valid_d = coherence_rsp_valid_q;
+
     if(act.send_evict_ack) begin
-      coherence_rsp_o.core_id     = req_sid;
-      coherence_rsp_o.req_id      = req_tid;
-      coherence_rsp_o.addr        = upstream_req_addr_q;
-      coherence_rsp_o.is_inv_ack_cnt  = 1'b1;
-      coherence_rsp_o.inv_ack_cnt = '0; // no data
-      coherence_rsp_valid_o       = 1'b1;
+      coherence_rsp_d.core_id         = req_sid;
+      coherence_rsp_d.req_id          = req_tid;
+      coherence_rsp_d.addr            = upstream_req_addr_d;
+      coherence_rsp_d.is_inv_ack_cnt  = 1'b0;
+      coherence_rsp_d.inv_ack_cnt     = '0; // no data
+      coherence_rsp_valid_d           = 1'b1;
     end else if (act.send_inv_ack_cnt) begin
-      coherence_rsp_o.core_id     = req_sid;
-      coherence_rsp_o.req_id      = req_tid;
-      coherence_rsp_o.addr        = upstream_req_addr_q;
-      coherence_rsp_o.is_inv_ack_cnt  = 1'b1;
-      coherence_rsp_o.inv_ack_cnt = inv_ack_count;
-      coherence_rsp_valid_o       = 1'b1;
+      coherence_rsp_d.core_id         = req_sid;
+      coherence_rsp_d.req_id          = req_tid;
+      coherence_rsp_d.addr            = upstream_req_addr_d;
+      coherence_rsp_d.is_inv_ack_cnt  = 1'b1;
+      coherence_rsp_d.inv_ack_cnt     = inv_ack_count;
+      coherence_rsp_valid_d           = 1'b1;
+    end 
+    // else begin
+    //   coherence_rsp_d       = '0;
+    //   coherence_rsp_valid_d = 1'b0;
+    // end
+  end
+
+  assign coherence_rsp_o       = coherence_rsp_d;
+  assign coherence_rsp_valid_o = coherence_rsp_valid_d;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin : act_coherence_rsp_ff
+    if (!rst_ni) begin
+      coherence_rsp_q       <= '0;
+      coherence_rsp_valid_q <= 1'b0;
+    end else if (coherence_rsp_valid_o && coherence_rsp_ready_i) begin
+      // Clear after handshake
+      coherence_rsp_q       <= '0;
+      coherence_rsp_valid_q <= 1'b0;
     end else begin
-      coherence_rsp_o       = '0;
-      coherence_rsp_valid_o = 1'b0;
+      coherence_rsp_q       <= coherence_rsp_d;
+      coherence_rsp_valid_q <= coherence_rsp_valid_d;
     end
   end
 

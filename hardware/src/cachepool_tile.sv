@@ -1063,7 +1063,7 @@ module cachepool_tile
   logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid, l0_l1_fwd_ready;
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd;
   logic           [NumL1CacheCtrl-1:0] l1_l0_fwd_valid;
-  logic           [NumL1CacheCtrl-1:0] l0_l1_evict_ready;  
+  logic           [NumL1CacheCtrl-1:0] l0_l1_evict_ready;
 
   // response from coalescer to CC
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
@@ -1697,10 +1697,13 @@ module cachepool_tile
 
       .fwd_rx_i                           (l1_l0_fwd[i]),
       .fwd_rx_valid_i                     (l1_l0_fwd_valid[i]),
+      .fwd_rx_ready_o                     (/* TODO */),
       .fwd_tx_o                           (l0_l1_fwd[i]),
       .fwd_tx_valid_o                     (l0_l1_fwd_valid[i]),
+      .fwd_tx_ready_i                     (/* TODO */),
       .coherence_rsp_i                    (/* TODO */),
       .coherence_rsp_valid_i              (1'b0),
+      .coherence_rsp_ready_o              (/* TODO */),
       .coherence_evict_o                  (/* TODO */),
       // .coherence_req_o                    (/*  */),
       // .coherence_req_valid_o              (/*  */),
@@ -1861,14 +1864,17 @@ module cachepool_tile
       .core_resp_meta_o      (cache_rsp_meta [cb]            ),
 
       // FWD Message
+      // FIXME: need interconnect (coherence network), no directo connection
       .fwd_rx_i              (l0_l1_fwd[cb]),
       .fwd_rx_valid_i        (l0_l1_fwd_valid[cb]),
       .fwd_rx_ready_o        (l0_l1_fwd_ready[cb]),
       .fwd_tx_o              (l1_l0_fwd[cb]),
       .fwd_tx_valid_o        (l1_l0_fwd_valid[cb]),
+      .fwd_tx_ready_i        (/*TODO*/),
 
       .coherence_rsp_o             (/*TODO*/),
       .coherence_rsp_valid_o       (/*TODO*/),
+      .coherence_rsp_ready_i       (/*TODO*/),
 
       .cache_refill_req_o    (cache_refill_req_o[cb]           ),
       .cache_refill_rsp_i    (cache_refill_rsp_i[cb]           ),
