@@ -550,21 +550,66 @@ module cachepool_tile
 
   // Coherence typedefs
   typedef struct packed {
-    tcdm_addr_t     addr;         // TODO: might be unnecessary to use full addr; only tag?
+    tcdm_addr_t     addr;
     // logic           is_ack;    // no need, covered by fwd_msg_type
     fwd_msg_type_t  fwd_msg_type;
-    l0_line_state_t line_state;
+    hpd_coherence_state_t line_state;
   } cache_dir_fwd_t;
 
+  // TODO: coherence req/rsp translation and interconnect
   typedef logic [$clog2(NrCores)-1:0] inv_ack_cnt_t;
 
   typedef struct packed {
     tcdm_addr_t             addr;
     logic [CoreIDWidth-1:0] core_id;
     reqid_t                 req_id;
-    logic                   is_inv_ack;   // 1: inv ack; 0: evict ack
+    logic                   is_inv_ack_cnt;   // 1: inv ack; 0: evict ack
     inv_ack_cnt_t           inv_ack_cnt;  // number of inv acks expected
   } coherence_rsp_t;
+
+  typedef struct packed {
+    // tcdm_addr_t             addr;
+    // logic [CoreIDWidth-1:0] core_id;
+    // reqid_t                 req_id;
+    hpdcache_tag_t          addr_tag;
+    hpdcache_req_sid_t      sid;
+    hpdcache_req_tid_t      tid;
+    logic                   is_inv_ack_cnt;   // 1: inv ack; 0: evict ack
+    inv_ack_cnt_t           inv_ack_cnt;  // number of inv acks expected
+  } hpdcache_coherence_rsp_t;
+
+  // typedef logic [2-1:0] type;
+
+  typedef struct packed {
+    tcdm_addr_t             addr;
+    logic [CoreIDWidth-1:0] core_id;
+    reqid_t                 req_id;
+    coherence_req_type_t    req_type;
+  } coherence_req_t;
+
+  typedef struct packed {
+    // tcdm_addr_t             addr;
+    // logic [CoreIDWidth-1:0] core_id;
+    // reqid_t                 req_id;
+    hpdcache_tag_t          addr_tag;
+    hpdcache_req_sid_t      sid;
+    hpdcache_req_tid_t      tid;
+    coherence_req_type_t    req_type;
+  } hpdcache_coherence_req_t;
+
+  typedef struct packed {
+    tcdm_addr_t             addr;
+    logic                   valid;
+  } coherence_evict_t;
+
+  typedef struct packed {
+    // tcdm_addr_t             addr;
+    // logic [CoreIDWidth-1:0] core_id;
+    // reqid_t                 req_id;
+    hpdcache_tag_t          addr_tag;
+    // hpdcache_req_offset_t   addr_offset;
+    logic                   valid;
+  } hpdcache_coherence_evict_t;
 
   // typedef struct packed {
   //   hpdcache_req_sid_t  sid;
@@ -1622,7 +1667,11 @@ module cachepool_tile
       .hpdcache_mem_req_w_t (hpdcache_mem_req_w_t),
       .hpdcache_mem_resp_r_t(hpdcache_mem_resp_r_t),
       .hpdcache_mem_resp_w_t(hpdcache_mem_resp_w_t),
-      .cache_dir_fwd_t      (cache_dir_fwd_t)
+      .cache_dir_fwd_t      (cache_dir_fwd_t),
+      .inv_ack_cnt_t        (inv_ack_cnt_t),
+      .hpdcache_coherence_rsp_t (hpdcache_coherence_rsp_t),
+      // .hpdcache_coherence_req_t (hpdcache_coherence_req_t),
+      .hpdcache_coherence_evict_t (hpdcache_coherence_evict_t)
     ) i_l0_cache (
       .clk_i                              (clk_i),
       .rst_ni                             (rst_ni),
@@ -1649,6 +1698,11 @@ module cachepool_tile
       .fwd_rx_valid_i                     (l1_l0_fwd_valid[i]),
       .fwd_tx_o                           (l0_l1_fwd[i]),
       .fwd_tx_valid_o                     (l0_l1_fwd_valid[i]),
+      .coherence_rsp_i                    (/* TODO */),
+      .coherence_rsp_valid_i              (1'b0),
+      .coherence_evict_o                  (/* TODO */),
+      // .coherence_req_o                    (/*  */),
+      // .coherence_req_valid_o              (/*  */),
 
       .mem_req_read_ready_i               (l0_mem_req_read_ready[i]),
       .mem_req_read_valid_o               (l0_mem_req_read_valid[i]),
@@ -1772,7 +1826,8 @@ module cachepool_tile
       .cache_dir_fwd_t          (cache_dir_fwd_t        ),
       // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
       // .l0_line_state_t          (l0_line_state_t        )
-      .coherence_rsp_t          (coherence_rsp_t        )
+      .coherence_rsp_t          (coherence_rsp_t        ),
+      .coherence_evict_t        (coherence_evict_t      )
     ) i_l2_cache (
       .clk_i                 (clk_i                          ),
       .rst_ni                (rst_ni                         ),
@@ -1794,6 +1849,7 @@ module cachepool_tile
       .core_req_write_i      (l0_l1_req_write[cb]            ),
       .core_req_wdata_i      (l0_l1_req_data [cb]            ),
       .core_req_fake_read_i  (l0_l1_fake_read[cb]            ),
+      .upstream_req_evict_i  (/*TODO*/),
       // .core_req_wstrb_i      (l0_l1_req_wstrb[cb]            ),
       // Response
       .core_resp_valid_o     (cache_rsp_valid[cb]            ),

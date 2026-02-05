@@ -23,19 +23,20 @@ module cahcepool_dir_ctrl
   parameter int unsigned NumCoherenceStates = 4,
 
   // Type parameters
-  parameter type addr_t           = logic [AddrWidth-1:0],
-  parameter type word_data_t      = logic [WordWidth-1:0],
-  parameter type core_meta_t      = logic,
-  parameter type tag_data_t       = logic [TagWidth-1:0],   // 64-bit representation, not actual tag-tag
+  parameter type addr_t             = logic [AddrWidth-1:0],
+  parameter type word_data_t        = logic [WordWidth-1:0],
+  parameter type core_meta_t        = logic,
+  parameter type tag_data_t         = logic [TagWidth-1:0],   // 64-bit representation, not actual tag-tag
   // parameter type cache_tag_t      = logic,
-  parameter type tcdm_bank_addr_t = logic,
-  parameter type reqid_t          = logic,
+  parameter type tcdm_bank_addr_t   = logic,
+  parameter type reqid_t            = logic,
   // parameter type fwd_msg_type_t   = logic,
-  parameter type cache_dir_fwd_t  = logic,
+  parameter type cache_dir_fwd_t    = logic,
   // parameter type dir_cache_fwd_t  = logic,
   // parameter type l0_line_state_t  = logic
-  parameter type coherence_rsp_t  = logic,
-  parameter type inv_ack_cnt_t    = logic [$clog2(NumCores)-1:0]
+  parameter type coherence_rsp_t    = logic,
+  parameter type coherence_evict_t  = logic,
+  parameter type inv_ack_cnt_t      = logic [$clog2(NumCores)-1:0]
 
 ) (
   input logic clk_i,
@@ -48,8 +49,11 @@ module cahcepool_dir_ctrl
   input  core_meta_t                                        upstream_req_meta_i,
   input  logic                                              upstream_req_write_i,
   input  word_data_t                                        upstream_req_wdata_i,
-  input  logic                                              upstream_req_is_evict_i,
+  input  logic                                              upstream_req_is_evict_i,  // TODO: replace with signal below
   input  logic                                              upstream_req_fake_read_i,
+  input  coherence_evict_t                                  upstream_req_evict_i,
+  // TODO: ready
+  // output logic                                              upstream_req_evict_ready_o,
 
   // Cache response to L1
   output logic                                              upstream_resp_valid_o,
@@ -76,12 +80,15 @@ module cahcepool_dir_ctrl
   // FWD message interface
   input   cache_dir_fwd_t                                   fwd_rx_i,
   input   logic                                             fwd_rx_valid_i,
+  // TODO: ready
   output  cache_dir_fwd_t                                   fwd_tx_o,
   output  logic                                             fwd_tx_valid_o,
+  // TODO: ready
 
   // Coherence response to L1
   output coherence_rsp_t                                    coherence_rsp_o,
   output logic                                              coherence_rsp_valid_o,
+  // TODO: ready
 
   // Meta bank (tag) access
   // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_req_o,
@@ -144,7 +151,6 @@ module cahcepool_dir_ctrl
   // logic            tag_bank_req_r, tag_bank_req_w;
   // tcdm_bank_addr_t tag_bank_addr_r, tag_bank_addr_w;
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
-  // TODO: ready cannot be raised when busy
   logic                               busy, busy_q, busy_d; // Does not accept new req when busy
 
   tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
@@ -157,7 +163,8 @@ module cahcepool_dir_ctrl
   // logic                               curr_line_meta_valid;
   coherence_meta_t                    line_coherence_meta, next_coherence_meta;
   dir_line_state_t                    curr_line_state;
-  l0_line_state_t                     next_line_state;
+  // l0_line_state_t                     next_line_state;
+  hpd_coherence_state_t               next_line_state;
   sharer_list_t                       curr_sharer_list;
   pseudo_port_t                       tag_bank_port_accessed_q, tag_bank_port_accessed_d;
 
@@ -165,6 +172,7 @@ module cahcepool_dir_ctrl
 
   core_meta_t                         upstream_req_meta_q;
   logic                               upstream_req_valid_q, upstream_req_is_evict_q, upstream_req_write_q;
+  coherence_evict_t                   upstream_req_evict_q, upstream_req_evict_d;
   core_meta_t                         upstream_req_meta_d;
   logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
   // logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
@@ -182,6 +190,7 @@ module cahcepool_dir_ctrl
   logic                               upstream_req_fake_read_q, upstream_req_fake_read_d;
 
   inv_ack_cnt_t                       inv_ack_count;
+  logic                               op_decoded;
 
   
   // TODO: meta may not need to be latched
@@ -195,53 +204,70 @@ module cahcepool_dir_ctrl
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   // `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
+always_ff @(posedge clk_i or negedge rst_ni) begin
+    // otherwise hold current value
+    upstream_req_meta_q       <= upstream_req_meta_d;
+    upstream_req_valid_q      <= upstream_req_valid_d;
+    upstream_req_is_evict_q   <= upstream_req_is_evict_d;
+    upstream_req_write_q      <= upstream_req_write_d;
+    upstream_req_addr_q       <= upstream_req_addr_d;
+    upstream_req_fake_read_q  <= upstream_req_fake_read_d;
     if(!rst_ni) begin
-      upstream_req_meta_q    <= '0;
-      upstream_req_valid_q   <= 1'b0;
-      upstream_req_is_evict_q<= 1'b0;
-      upstream_req_write_q   <= 1'b0;
-      upstream_req_addr_q    <= '0;
-      upstream_req_fake_read_q <= 1'b0;
-    end else if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
-      // Update on new request
-      upstream_req_meta_q    <= upstream_req_meta_i;
-      upstream_req_valid_q   <= upstream_req_valid_i;
-      upstream_req_is_evict_q<= upstream_req_is_evict_i;
-      upstream_req_write_q   <= upstream_req_write_i;
-      upstream_req_addr_q    <= upstream_req_addr_i;
-      upstream_req_fake_read_q <= upstream_req_fake_read_i;
-    // end else if (tag_bank_gnt) begin
-    //   // Clear on next cycle after granted
-    //   upstream_req_meta_q    <= '0;
-    //   upstream_req_valid_q   <= 1'b0;
-    //   upstream_req_is_evict_q<= 1'b0;
-    //   upstream_req_write_q   <= 1'b0;
-    //   upstream_req_addr_q    <= '0;
-    //   upstream_req_fake_read_q <= 1'b0;
-      // upstream_req_meta_q    <= upstream_req_meta_d;
-      // upstream_req_valid_q   <= upstream_req_valid_d;
-      // upstream_req_is_evict_q<= upstream_req_is_evict_d;
-      // upstream_req_write_q   <= upstream_req_write_d;
-      // upstream_req_addr_q    <= upstream_req_addr_d;
-    end else begin
-      // otherwise hold current value
-      upstream_req_meta_q    <= upstream_req_meta_d;
-      upstream_req_valid_q   <= upstream_req_valid_d;
-      upstream_req_is_evict_q<= upstream_req_is_evict_d;
-      upstream_req_write_q   <= upstream_req_write_d;
-      upstream_req_addr_q    <= upstream_req_addr_d;
-      upstream_req_fake_read_q <= upstream_req_fake_read_d;
+      upstream_req_meta_q       <= '0;
+      upstream_req_valid_q      <= 1'b0;
+      upstream_req_is_evict_q   <= 1'b0;
+      upstream_req_write_q      <= 1'b0;
+      upstream_req_addr_q       <= '0;
+      upstream_req_fake_read_q  <= 1'b0;
+    end else if (op_decoded) begin
+      upstream_req_valid_q      <= 1'b0; // Clear after decoding the op (one cycle after granted)
     end
+    // else if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
+    //   // Update on new request
+    //   upstream_req_meta_q    <= upstream_req_meta_i;
+    //   upstream_req_valid_q   <= upstream_req_valid_i;
+    //   upstream_req_is_evict_q<= upstream_req_is_evict_i;
+    //   upstream_req_write_q   <= upstream_req_write_i;
+    //   upstream_req_addr_q    <= upstream_req_addr_i;
+    //   upstream_req_fake_read_q <= upstream_req_fake_read_i;
+    // // end else if (tag_bank_gnt) begin
+    // //   // Clear on next cycle after granted
+    // //   upstream_req_meta_q    <= '0;
+    // //   upstream_req_valid_q   <= 1'b0;
+    // //   upstream_req_is_evict_q<= 1'b0;
+    // //   upstream_req_write_q   <= 1'b0;
+    // //   upstream_req_addr_q    <= '0;
+    // //   upstream_req_fake_read_q <= 1'b0;
+    //   // upstream_req_meta_q    <= upstream_req_meta_d;
+    //   // upstream_req_valid_q   <= upstream_req_valid_d;
+    //   // upstream_req_is_evict_q<= upstream_req_is_evict_d;
+    //   // upstream_req_write_q   <= upstream_req_write_d;
+    //   // upstream_req_addr_q    <= upstream_req_addr_d;
+    // end else if (upstream_req_evict_i.valid) begin
+    //   upstream_req_evict_q   <= upstream_req_evict_i;
+    // end
   end
 
   always_comb begin
-    upstream_req_meta_d     = upstream_req_meta_q;
-    upstream_req_valid_d    = upstream_req_valid_q;
-    upstream_req_is_evict_d = upstream_req_is_evict_q;
-    upstream_req_write_d    = upstream_req_write_q;
-    upstream_req_addr_d     = upstream_req_addr_q;
-    upstream_req_fake_read_d = upstream_req_fake_read_q;
+    upstream_req_meta_d       = upstream_req_meta_q;
+    upstream_req_valid_d      = upstream_req_valid_q;
+    upstream_req_is_evict_d   = upstream_req_is_evict_q;
+    upstream_req_write_d      = upstream_req_write_q;
+    upstream_req_addr_d       = upstream_req_addr_q;
+    upstream_req_fake_read_d  = upstream_req_fake_read_q;
+    upstream_req_evict_d      = upstream_req_evict_q;
+
+    if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
+      // Update on new request
+      upstream_req_meta_d       = upstream_req_meta_i;
+      upstream_req_valid_d      = upstream_req_valid_i;
+      upstream_req_is_evict_d   = upstream_req_is_evict_i;
+      upstream_req_write_d      = upstream_req_write_i;
+      upstream_req_addr_d       = upstream_req_addr_i;
+      upstream_req_fake_read_d  = upstream_req_fake_read_i;
+    end else if (upstream_req_evict_i.valid) begin
+      upstream_req_evict_d   = upstream_req_evict_i;
+    end
   end
 
   // When upstream_req_valid_i AND not busy: give ready hdshk and process new addr
@@ -304,7 +330,6 @@ module cahcepool_dir_ctrl
   assign tag_bank_addr = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
 
 
-  // TODO: connect write signals
   for (genvar i = 0; i < SetAssociativity; i++) begin: gen_tag_bank_access
     tcdm_bank_addr_t tag_bank_addr_int, tag_bank_waddr_int;
     logic tag_bank_read_valid_int;
@@ -545,13 +570,19 @@ module cahcepool_dir_ctrl
   always_comb begin : req_op_decode
     // req_sid = upstream_req_meta_i.core_id;
     // req_tid = upstream_req_meta_i.req_id;
-    req_sid = upstream_req_meta_q.core_id;
-    req_tid = upstream_req_meta_q.req_id;
+    // req_sid = upstream_req_meta_q.core_id;
+    // req_tid = upstream_req_meta_q.req_id;
+    req_sid = upstream_req_meta_d.core_id;
+    req_tid = upstream_req_meta_d.req_id;
+    op_decoded = 1'b0;
 
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
-    if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
-      if (upstream_req_is_evict_q) begin
+    // if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
+    if(upstream_req_valid_d && busy && !upstream_req_fake_read_d) begin
+      // if (upstream_req_is_evict_q) begin
+      // if (upstream_req_evict_q.valid) begin
+      if (upstream_req_evict_d.valid) begin
         case (curr_line_state)
           DIR_LINE_INVALID: begin
             op = OP_EVICT_S; // evictor is non-owner
@@ -577,12 +608,17 @@ module cahcepool_dir_ctrl
             op = OP_NONE;
           end
         endcase
+        op_decoded = 1'b1;
       // end else if (upstream_req_write_i) begin
-      end else if (upstream_req_write_q) begin
+      // end else if (upstream_req_write_q) begin
+      end else if (upstream_req_write_d) begin
         op      = OP_WRITE;
+        op_decoded = 1'b1;
       // end else if (!upstream_req_write_i) begin
-      end else if (!upstream_req_write_q) begin
+      // end else if (!upstream_req_write_q) begin
+      end else if (!upstream_req_write_d) begin
         op      = OP_READ;
+        op_decoded = 1'b1;
       end else begin
         op      = OP_NONE;    // default
       end
@@ -596,6 +632,7 @@ module cahcepool_dir_ctrl
           op = OP_NONE; // other fwd messages not handled here
         end
       endcase
+      op_decoded = 1'b1;
     end else begin
       op     = OP_NONE;    // default
     end
@@ -614,9 +651,12 @@ module cahcepool_dir_ctrl
   /***************************
   * Action handling
   ***************************/
-  // FIXME: CONTINUE HERE, fix handshake, hold valid until ready comes in
-  // TODO: Might need FF, withdraw valid next cycle after handshake completed
   always_comb begin : act_req_to_l2_ctrl
+    downstream_req_valid_d    = downstream_req_valid_q;
+    downstream_req_addr_d     = downstream_req_addr_q;
+    downstream_req_meta_d     = downstream_req_meta_q;
+    downstream_req_write_d    = downstream_req_write_q;
+    downstream_req_wdata_d    = downstream_req_wdata_q;
     if(act.send_excl_data || act.send_sh_data) begin  // read req to L2
       // downstream_req_valid_o    = 1'b1;
       // downstream_req_valid_o    = upstream_req_valid_q || downstream_req_ready_i;
@@ -626,11 +666,11 @@ module cahcepool_dir_ctrl
       // downstream_req_write_o    = upstream_req_write_q;
       // downstream_req_wdata_o    = upstream_req_wdata_i;
 
-      downstream_req_valid_d    = upstream_req_valid_q;
+      // downstream_req_valid_d    = upstream_req_valid_q;
       // downstream_req_valid_d    = 1'b1;
-      downstream_req_addr_d     = upstream_req_addr_q;
-      downstream_req_meta_d     = upstream_req_meta_q;
-      downstream_req_write_d    = upstream_req_write_q;
+      // downstream_req_addr_d     = upstream_req_addr_q;
+      // downstream_req_meta_d     = upstream_req_meta_q;
+      // downstream_req_write_d    = upstream_req_write_q;
       // downstream_req_write_d    = '0;
       downstream_req_wdata_d    = upstream_req_wdata_i;
     end else if (act.update_l2_data) begin            // write req to L2
@@ -642,11 +682,11 @@ module cahcepool_dir_ctrl
       // downstream_req_write_o    = upstream_req_write_q;
       // downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
       
-      downstream_req_valid_d    = upstream_req_valid_q;
+      // downstream_req_valid_d    = upstream_req_valid_q;
       // downstream_req_valid_d    = 1'b1;
-      downstream_req_addr_d     = upstream_req_addr_q;
-      downstream_req_meta_d     = upstream_req_meta_q;
-      downstream_req_write_d    = upstream_req_write_q;
+      // downstream_req_addr_d     = upstream_req_addr_q;
+      // downstream_req_meta_d     = upstream_req_meta_q;
+      // downstream_req_write_d    = upstream_req_write_q;
       // downstream_req_write_d    = 1'b1;
       downstream_req_wdata_d    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
 
@@ -665,24 +705,24 @@ module cahcepool_dir_ctrl
     //   downstream_req_meta_o     = upstream_req_meta_q;
     //   downstream_req_write_o    = upstream_req_write_q;
     //   downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
-    end else begin
-      // downstream_req_valid_o    = 1'b0;
-      // downstream_req_addr_o     = '0;
-      // downstream_req_meta_o     = '0;
-      // downstream_req_write_o    = 1'b0;
-      // downstream_req_wdata_o    = '0;
+    // end else begin
+    //   // downstream_req_valid_o    = 1'b0;
+    //   // downstream_req_addr_o     = '0;
+    //   // downstream_req_meta_o     = '0;
+    //   // downstream_req_write_o    = 1'b0;
+    //   // downstream_req_wdata_o    = '0;
 
-      // downstream_req_valid_d    = 1'b0;
-      // downstream_req_addr_d     = '0;
-      // downstream_req_meta_d     = '0;
-      // downstream_req_write_d    = 1'b0;
-      // downstream_req_wdata_d    = '0;
+    //   // downstream_req_valid_d    = 1'b0;
+    //   // downstream_req_addr_d     = '0;
+    //   // downstream_req_meta_d     = '0;
+    //   // downstream_req_write_d    = 1'b0;
+    //   // downstream_req_wdata_d    = '0;
 
-      downstream_req_valid_d    = downstream_req_valid_q;
-      downstream_req_addr_d     = downstream_req_addr_q;
-      downstream_req_meta_d     = downstream_req_meta_q;
-      downstream_req_write_d    = downstream_req_write_q;
-      downstream_req_wdata_d    = downstream_req_wdata_q;
+    //   downstream_req_valid_d    = downstream_req_valid_q;
+    //   downstream_req_addr_d     = downstream_req_addr_q;
+    //   downstream_req_meta_d     = downstream_req_meta_q;
+    //   downstream_req_write_d    = downstream_req_write_q;
+    //   downstream_req_wdata_d    = downstream_req_wdata_q;
     end 
   end
 
@@ -719,19 +759,19 @@ module cahcepool_dir_ctrl
   always_comb begin
     case (next_coherence_meta.line_state)
       DIR_LINE_INVALID: begin
-        next_line_state = CACHE_INVALID;
+        next_line_state = HPDCACHE_INVALID;
       end
       DIR_LINE_SHARED: begin
-        next_line_state = CACHE_SHARED;
+        next_line_state = HPDCACHE_SHARED;
       end
       DIR_LINE_EXCLUSIVE: begin
-        next_line_state = CACHE_EXCLUSIVE;
+        next_line_state = HPDCACHE_EXCLUSIVE;
       end
       DIR_LINE_MODIFIED: begin
-        next_line_state = CACHE_MODIFIED;
+        next_line_state = HPDCACHE_MODIFIED;
       end      
       default: begin
-        next_line_state = CACHE_INVALID;
+        next_line_state = HPDCACHE_INVALID;
       end
     endcase
   end
@@ -760,14 +800,14 @@ module cahcepool_dir_ctrl
       coherence_rsp_o.core_id     = req_sid;
       coherence_rsp_o.req_id      = req_tid;
       coherence_rsp_o.addr        = upstream_req_addr_q;
-      coherence_rsp_o.is_inv_ack  = 1'b1;
+      coherence_rsp_o.is_inv_ack_cnt  = 1'b1;
       coherence_rsp_o.inv_ack_cnt = '0; // no data
       coherence_rsp_valid_o       = 1'b1;
     end else if (act.send_inv_ack_cnt) begin
       coherence_rsp_o.core_id     = req_sid;
       coherence_rsp_o.req_id      = req_tid;
       coherence_rsp_o.addr        = upstream_req_addr_q;
-      coherence_rsp_o.is_inv_ack  = 1'b1;
+      coherence_rsp_o.is_inv_ack_cnt  = 1'b1;
       coherence_rsp_o.inv_ack_cnt = inv_ack_count;
       coherence_rsp_valid_o       = 1'b1;
     end else begin
@@ -805,6 +845,10 @@ module cahcepool_dir_ctrl
   // end
 
   // Next-state logic of main FSM
+  dir_line_state_t current_state;
+  sharer_list_t    current_sharers;
+  assign curr_state   = tag_bank_gnt ? curr_line_state : state_q;
+  assign curr_sharers = tag_bank_gnt ? curr_sharer_list : sharers_q;
   always_comb begin
     // Defaults: hold
     state_d       = state_q;
@@ -812,7 +856,8 @@ module cahcepool_dir_ctrl
     pending_req_d = pending_req_q;
     act           = '0;
 
-    unique case (state_q)
+    // unique case (state_q)
+    unique case (curr_state)
       // Invalid state (I)
       DIR_LINE_INVALID: begin
         unique case (op)
@@ -854,7 +899,8 @@ module cahcepool_dir_ctrl
             // Upgrade: invalidate all sharers, serialize WT, owner=req
             act.send_inv_to_sharers = 1'b1;
             act.update_l2_data      = 1'b1;
-            inv_ack_count           = count_set_bits(sharers_q);
+            // inv_ack_count           = count_set_bits(sharers_q);
+            inv_ack_count           = count_set_bits(curr_sharers);
             sharers_d               = '0;
             sharers_d               = set_bit(sharers_d, req_sid);
             act.update_sharers      = 1'b1;
@@ -868,7 +914,7 @@ module cahcepool_dir_ctrl
             act.update_sharers = 1'b1;
             act.send_evict_ack = 1'b1;
             state_d            = (sharers_d == '0) ? DIR_LINE_INVALID : DIR_LINE_SHARED;
-            act.update_state       = 1'b1;
+            act.update_state   = 1'b1;
           end
           default: ;
         endcase
@@ -882,7 +928,7 @@ module cahcepool_dir_ctrl
             act.send_probe_owner = 1'b1;
             pending_req_d        = req_sid;
             state_d              = DIR_LINE_ESA;
-            act.update_state         = 1'b1;
+            act.update_state     = 1'b1;
           end
           OP_WRITE: begin
             // Writer arrives: invalidate current owner; serialize WT; new owner=req
@@ -928,7 +974,8 @@ module cahcepool_dir_ctrl
           OP_GETACK: begin
             // Owner returned latest data → serve pending reader, then S
             act.send_sh_data   = 1'b1;     // to pending_req_q
-            sharers_d          = set_bit(sharers_q, pending_req_q);
+            // sharers_d          = set_bit(sharers_q, pending_req_q);
+            sharers_d          = set_bit(curr_sharers, pending_req_q);
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_SHARED; // TODO: S or E if only one sharer left
             act.update_state       = 1'b1;
@@ -1002,11 +1049,11 @@ module cahcepool_dir_ctrl
       sharers_q     <= '0;
       pending_req_q <= '0;
     // end else if (upstream_req_valid_i & upstream_req_ready_o) begin
-    // end else if (curr_line_hit) begin            // FIXME: one cycle delay, wrong
-    end else if (tag_bank_gnt) begin
-      state_q       <= curr_line_state;
-      sharers_q     <= curr_sharer_list;
-      pending_req_q <= pending_req_d;
+    // end else if (curr_line_hit) begin
+    // end else if (tag_bank_gnt) begin
+    //   state_q       <= curr_line_state;
+    //   sharers_q     <= curr_sharer_list;
+    //   pending_req_q <= pending_req_d;
     end else begin
       // state_q       <= state_d;
       // sharers_q     <= sharers_d;

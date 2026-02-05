@@ -73,6 +73,7 @@ module cachepool_l2_wrapper
   parameter type          dir_cache_fwd_t                                 = logic,
   // parameter type          l0_line_state_t                                 = logic,
   parameter type          coherence_rsp_t                                 = logic,
+  parameter type          coherence_evict_t                               = logic,
 
   /***********************
   * Dependent Parameters *
@@ -122,6 +123,7 @@ module cachepool_l2_wrapper
   input  logic                                              core_req_write_i,
   input  word_data_t                                        core_req_wdata_i,
   input  logic                                              core_req_fake_read_i,
+  input  coherence_evict_t                                  upstream_req_evict_i,
   // input  write_strb_t                                       core_req_wstrb_i,
 
   /// spatz responses
@@ -243,7 +245,8 @@ module cachepool_l2_wrapper
     .cache_dir_fwd_t          (cache_dir_fwd_t        ),
     // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
     // .l0_line_state_t          (l0_line_state_t        )
-    .coherence_rsp_t          (coherence_rsp_t        )
+    .coherence_rsp_t          (coherence_rsp_t        ),
+    .coherence_evict_t        (coherence_evict_t      )
   ) i_l2_directory_ctrl (
     .clk_i                       (clk_i                          ),
     .rst_ni                      (rst_ni                         ),
@@ -260,6 +263,7 @@ module cachepool_l2_wrapper
     .upstream_req_wdata_i        (core_req_wdata_i               ),
     .upstream_req_is_evict_i     (1'b0                           ),
     .upstream_req_fake_read_i    (core_req_fake_read_i           ),
+    .upstream_req_evict_i        (upstream_req_evict_i           ),
 
     .upstream_resp_valid_o       (core_resp_valid_o              ),
     .upstream_resp_ready_i       (core_resp_ready_i              ),
