@@ -124,6 +124,7 @@ module cachepool_l2_wrapper
   input  word_data_t                                        core_req_wdata_i,
   input  logic                                              core_req_fake_read_i,
   input  coherence_evict_t                                  upstream_req_evict_i,
+  output logic                                              upstream_req_evict_ready_o,
   // input  write_strb_t                                       core_req_wstrb_i,
 
   /// spatz responses
@@ -136,6 +137,7 @@ module cachepool_l2_wrapper
   // FWD message for directory controller
   input  cache_dir_fwd_t                                          fwd_rx_i,
   input  logic                                                    fwd_rx_valid_i,
+  output logic                                                    fwd_rx_ready_o,
   output cache_dir_fwd_t                                          fwd_tx_o,
   output logic                                                    fwd_tx_valid_o,
 
@@ -264,6 +266,7 @@ module cachepool_l2_wrapper
     .upstream_req_is_evict_i     (1'b0                           ),
     .upstream_req_fake_read_i    (core_req_fake_read_i           ),
     .upstream_req_evict_i        (upstream_req_evict_i           ),
+    .upstream_req_evict_ready_o  (upstream_req_evict_ready_o     ),
 
     .upstream_resp_valid_o       (core_resp_valid_o              ),
     .upstream_resp_ready_i       (core_resp_ready_i              ),
@@ -287,6 +290,7 @@ module cachepool_l2_wrapper
 
     .fwd_rx_i                    (fwd_rx_i),
     .fwd_rx_valid_i              (fwd_rx_valid_i),
+    .fwd_rx_ready_o              (fwd_rx_ready_o),
     .fwd_tx_o                    (fwd_tx_o),
     .fwd_tx_valid_o              (fwd_tx_valid_o),
 

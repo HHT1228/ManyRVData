@@ -52,8 +52,7 @@ module cahcepool_dir_ctrl
   input  logic                                              upstream_req_is_evict_i,  // TODO: replace with signal below
   input  logic                                              upstream_req_fake_read_i,
   input  coherence_evict_t                                  upstream_req_evict_i,
-  // TODO: ready
-  // output logic                                              upstream_req_evict_ready_o,
+  output logic                                              upstream_req_evict_ready_o,
 
   // Cache response to L1
   output logic                                              upstream_resp_valid_o,
@@ -80,7 +79,8 @@ module cahcepool_dir_ctrl
   // FWD message interface
   input   cache_dir_fwd_t                                   fwd_rx_i,
   input   logic                                             fwd_rx_valid_i,
-  // TODO: ready
+  output  logic                                             fwd_rx_ready_o,
+
   output  cache_dir_fwd_t                                   fwd_tx_o,
   output  logic                                             fwd_tx_valid_o,
   // TODO: ready
@@ -313,7 +313,24 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
 
   assign busy = busy_q;
 
-  assign upstream_req_ready_o = !busy;
+  // assign upstream_req_ready_o = !busy;
+
+  always_comb begin : dir_ctrl_ready
+    fwd_rx_ready_o              = 1'b0;
+    upstream_req_ready_o        = 1'b0;
+    upstream_req_evict_ready_o  = 1'b0;
+
+    // Fwd is sink with higher priority than req
+    if (!busy) begin
+      if (fwd_rx_valid_i) begin
+        fwd_rx_ready_o              = 1'b1;
+      end else if (upstream_req_valid_i) begin
+        upstream_req_ready_o        = 1'b1;
+      end else if (upstream_req_evict_i.valid) begin
+        upstream_req_evict_ready_o  = 1'b1;
+      end
+    end
+  end
 
   // Hold tag addr for write to tag bank
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -666,11 +683,11 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
       // downstream_req_write_o    = upstream_req_write_q;
       // downstream_req_wdata_o    = upstream_req_wdata_i;
 
-      // downstream_req_valid_d    = upstream_req_valid_q;
+      downstream_req_valid_d    = upstream_req_valid_d;
       // downstream_req_valid_d    = 1'b1;
-      // downstream_req_addr_d     = upstream_req_addr_q;
-      // downstream_req_meta_d     = upstream_req_meta_q;
-      // downstream_req_write_d    = upstream_req_write_q;
+      downstream_req_addr_d     = upstream_req_addr_d;
+      downstream_req_meta_d     = upstream_req_meta_d;
+      downstream_req_write_d    = upstream_req_write_d;
       // downstream_req_write_d    = '0;
       downstream_req_wdata_d    = upstream_req_wdata_i;
     end else if (act.update_l2_data) begin            // write req to L2
@@ -682,11 +699,11 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
       // downstream_req_write_o    = upstream_req_write_q;
       // downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
       
-      // downstream_req_valid_d    = upstream_req_valid_q;
+      downstream_req_valid_d    = upstream_req_valid_d;
       // downstream_req_valid_d    = 1'b1;
-      // downstream_req_addr_d     = upstream_req_addr_q;
-      // downstream_req_meta_d     = upstream_req_meta_q;
-      // downstream_req_write_d    = upstream_req_write_q;
+      downstream_req_addr_d     = upstream_req_addr_d;
+      downstream_req_meta_d     = upstream_req_meta_d;
+      downstream_req_write_d    = upstream_req_write_d;
       // downstream_req_write_d    = 1'b1;
       downstream_req_wdata_d    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
 

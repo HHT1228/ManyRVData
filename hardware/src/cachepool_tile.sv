@@ -1060,9 +1060,10 @@ module cachepool_tile
 
   // Coherence signals
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_l1_fwd;
-  logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid;
+  logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid, l0_l1_fwd_ready;
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd;
   logic           [NumL1CacheCtrl-1:0] l1_l0_fwd_valid;
+  logic           [NumL1CacheCtrl-1:0] l0_l1_evict_ready;  
 
   // response from coalescer to CC
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
@@ -1849,7 +1850,8 @@ module cachepool_tile
       .core_req_write_i      (l0_l1_req_write[cb]            ),
       .core_req_wdata_i      (l0_l1_req_data [cb]            ),
       .core_req_fake_read_i  (l0_l1_fake_read[cb]            ),
-      .upstream_req_evict_i  (/*TODO*/),
+      .upstream_req_evict_i       (/*TODO*/),
+      .upstream_req_evict_ready_o (l0_l1_evict_ready[cb]     ),
       // .core_req_wstrb_i      (l0_l1_req_wstrb[cb]            ),
       // Response
       .core_resp_valid_o     (cache_rsp_valid[cb]            ),
@@ -1861,6 +1863,7 @@ module cachepool_tile
       // FWD Message
       .fwd_rx_i              (l0_l1_fwd[cb]),
       .fwd_rx_valid_i        (l0_l1_fwd_valid[cb]),
+      .fwd_rx_ready_o        (l0_l1_fwd_ready[cb]),
       .fwd_tx_o              (l1_l0_fwd[cb]),
       .fwd_tx_valid_o        (l1_l0_fwd_valid[cb]),
 
