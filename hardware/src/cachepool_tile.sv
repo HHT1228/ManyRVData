@@ -572,30 +572,29 @@ module cachepool_tile
     // logic [CoreIDWidth-1:0] core_id;
     // reqid_t                 req_id;
     hpdcache_tag_t          addr_tag;
-    hpdcache_req_sid_t      sid;
+    hpdcache_req_offset_t   addr_offset;
+    // hpdcache_req_sid_t      sid;
     hpdcache_req_tid_t      tid;
     logic                   is_inv_ack_cnt;   // 1: inv ack; 0: evict ack
     inv_ack_cnt_t           inv_ack_cnt;  // number of inv acks expected
   } hpdcache_coherence_rsp_t;
 
-  // typedef logic [2-1:0] type;
+  // typedef struct packed {
+  //   tcdm_addr_t             addr;
+  //   logic [CoreIDWidth-1:0] core_id;
+  //   reqid_t                 req_id;
+  //   coherence_req_type_t    req_type;
+  // } coherence_req_t;
 
-  typedef struct packed {
-    tcdm_addr_t             addr;
-    logic [CoreIDWidth-1:0] core_id;
-    reqid_t                 req_id;
-    coherence_req_type_t    req_type;
-  } coherence_req_t;
-
-  typedef struct packed {
-    // tcdm_addr_t             addr;
-    // logic [CoreIDWidth-1:0] core_id;
-    // reqid_t                 req_id;
-    hpdcache_tag_t          addr_tag;
-    hpdcache_req_sid_t      sid;
-    hpdcache_req_tid_t      tid;
-    coherence_req_type_t    req_type;
-  } hpdcache_coherence_req_t;
+  // typedef struct packed {
+  //   // tcdm_addr_t             addr;
+  //   // logic [CoreIDWidth-1:0] core_id;
+  //   // reqid_t                 req_id;
+  //   hpdcache_tag_t          addr_tag;
+  //   hpdcache_req_sid_t      sid;
+  //   hpdcache_req_tid_t      tid;
+  //   coherence_req_type_t    req_type;
+  // } hpdcache_coherence_req_t;
 
   typedef struct packed {
     tcdm_addr_t             addr;
@@ -1064,6 +1063,11 @@ module cachepool_tile
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd;
   logic           [NumL1CacheCtrl-1:0] l1_l0_fwd_valid;
   logic           [NumL1CacheCtrl-1:0] l0_l1_evict_ready;
+
+  hpdcache_coherence_rsp_t    l1_l0_coherence_rsp_hpd[NumL0CacheCtrl-1:0];
+  coherence_rsp_t             l1_l0_coherence_rsp_tcdm[NumL0CacheCtrl-1:0];
+  hpdcache_coherence_evict_t  l0_l1_coherence_evict_hpd[NumL0CacheCtrl-1:0];
+  coherence_evict_t           l0_l1_coherence_evict_tcdm[NumL0CacheCtrl-1:0];
 
   // response from coalescer to CC
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
@@ -1612,6 +1616,18 @@ module cachepool_tile
       .strb_rsp_o       (l1_l0_tcdm_xbar_rsp[cb]),
       .read_for_strb_o  (l0_l1_fake_read[cb])
     );
+  end
+
+  // TODO: CONTINUE HERE
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_signal_translation
+    assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_tcdm[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+    assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_tcdm[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+    assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_tcdm[cb].req_id;
+    assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_tcdm[cb].is_inv_ack_cnt;
+    assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_tcdm[cb].inv_ack_cnt;
+
+    assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict_hpd[cb].addr_tag;
+    assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict_hpd[cb].valid;
   end
 
   // translate tcdm_xbar signals to/from in-situ cache signals
