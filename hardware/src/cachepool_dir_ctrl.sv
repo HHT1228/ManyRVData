@@ -84,13 +84,11 @@ module cahcepool_dir_ctrl
   output  cache_dir_fwd_t                                   fwd_tx_o,
   output  logic                                             fwd_tx_valid_o,
   input   logic                                             fwd_tx_ready_i,
-  // TODO: ready
 
   // Coherence response to L1
   output coherence_rsp_t                                    coherence_rsp_o,
   output logic                                              coherence_rsp_valid_o,
   input  logic                                              coherence_rsp_ready_i,
-  // TODO: ready
 
   // Meta bank (tag) access
   // output logic            [NumTagBankPerCtrl-1:0]           tag_bank_req_o,
@@ -341,19 +339,56 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
   end
 
   // Hold tag addr for write to tag bank
-  always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni) begin
-      tag_bank_addr_q <= '0;
-    end else if (!busy) begin
-      tag_bank_addr_q <= tag_bank_addr;
-    end else begin
-      tag_bank_addr_q <= tag_bank_addr_d;
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     tag_bank_addr_q <= '0;
+  //   end else if (!busy) begin
+  //     tag_bank_addr_q <= tag_bank_addr;
+  //   end else begin
+  //     tag_bank_addr_q <= tag_bank_addr_d;
+  //   end
+  // end
+
+  // assign tag_bank_addr_d = tag_bank_addr_q;
+  // assign tag_bank_addr = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+
+  // Read request
+  logic tag_bank_rvalid, tag_bank_rvalid_q, tag_bank_rvalid_d;
+  logic [SetAssociativity-1:0] tag_bank_rready;
+
+  always_comb begin
+    tag_bank_rvalid_d = tag_bank_rvalid_q;
+    tag_bank_addr_d   = tag_bank_addr_q;
+
+    if (!upstream_req_fake_read_i && !busy) begin
+      if (downstream_resp_valid_i) begin
+        tag_bank_rvalid_d = 1'b1;
+        tag_bank_addr_d   = downstream_req_addr_q[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+      end else if (fwd_rx_valid_i) begin
+        tag_bank_rvalid_d = 1'b1;
+        tag_bank_addr_d   = fwd_rx_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+      end else if (upstream_req_valid_i) begin
+        tag_bank_rvalid_d = 1'b1;
+        tag_bank_addr_d   = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+      end else if (upstream_req_evict_i.valid) begin
+        tag_bank_rvalid_d = 1'b1;
+        tag_bank_addr_d   = upstream_req_evict_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+      end
     end
   end
 
-  assign tag_bank_addr_d = tag_bank_addr_q;
-  assign tag_bank_addr = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
-
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      tag_bank_rvalid_q <= 1'b0;
+      tag_bank_addr_q   <= '0;
+    end else if (tag_bank_rvalid_d && |tag_bank_rready) begin
+      tag_bank_rvalid_q <= 1'b0;
+      tag_bank_addr_q   <= '0;      
+    end else begin
+      tag_bank_rvalid_q <= tag_bank_rvalid_d;
+      tag_bank_addr_q   <= tag_bank_addr_d;
+    end
+  end
 
   for (genvar i = 0; i < SetAssociativity; i++) begin: gen_tag_bank_access
     tcdm_bank_addr_t tag_bank_addr_int, tag_bank_waddr_int;
@@ -370,9 +405,11 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
       .clk_i                       (clk_i),
       .rst_ni                      (rst_ni),
 
-      .upstream_read_addr_i        (tag_bank_addr),
-      .upstream_read_valid_i       (upstream_req_valid_i && !busy && !upstream_req_fake_read_i),
-      .upstream_read_ready_o       (),
+      // .upstream_read_addr_i        (tag_bank_addr),
+      // .upstream_read_valid_i       (upstream_req_valid_i && !busy && !upstream_req_fake_read_i),
+      .upstream_read_addr_i        (tag_bank_addr_d),
+      .upstream_read_valid_i       (tag_bank_rvalid_d),
+      .upstream_read_ready_o       (tag_bank_rready[i]),
       .upstream_read_data_o        (tag_bank_rdata[i]),
 
       .upstream_write_addr_i       (tag_bank_addr_q),

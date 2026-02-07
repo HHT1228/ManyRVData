@@ -539,10 +539,11 @@ module cachepool_tile
   typedef logic [HPDcacheCfg.u.wbufTimecntWidth-1:0] hpdcache_wbuf_timecnt_t;
   
   // TCDM request/response channels for cacheline transfers
-  
   typedef logic [L1LineWidth/8-1:0] cacheline_strb_t;
   `TCDM_TYPEDEF_REQ_CHAN_T(tcdm_req_chan_cacheline_t, addr_t, cacheline_data_t, cacheline_strb_t, tcdm_user_t)
+  // `TCDM_TYPEDEF_REQ_CHAN_T(tcdm_req_chan_cacheline_t, addr_t, cacheline_data_t, cacheline_strb_t, coherence_tcdm_user_t)
   `TCDM_TYPEDEF_RSP_CHAN_T(tcdm_rsp_chan_cacheline_t, cacheline_data_t, tcdm_user_t)
+  // `TCDM_TYPEDEF_RSP_CHAN_T(tcdm_rsp_chan_cacheline_t, cacheline_data_t, coherence_tcdm_user_t)
   `TCDM_TYPEDEF_REQ_T(tcdm_req_cacheline_t, tcdm_req_chan_cacheline_t)
   `TCDM_TYPEDEF_RSP_T(tcdm_rsp_cacheline_t, tcdm_rsp_chan_cacheline_t)
 
@@ -1068,6 +1069,7 @@ module cachepool_tile
   coherence_rsp_t             l1_l0_coherence_rsp_tcdm[NumL0CacheCtrl-1:0];
   hpdcache_coherence_evict_t  l0_l1_coherence_evict_hpd[NumL0CacheCtrl-1:0];
   coherence_evict_t           l0_l1_coherence_evict_tcdm[NumL0CacheCtrl-1:0];
+  // logic [NumL1CacheCtrl-1:0]  l1_l0_data_is_exc;
 
   // response from coalescer to CC
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_connect
@@ -1618,7 +1620,6 @@ module cachepool_tile
     );
   end
 
-  // TODO: CONTINUE HERE
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_signal_translation
     assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_tcdm[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
     assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_tcdm[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
@@ -1878,6 +1879,7 @@ module cachepool_tile
       .core_resp_write_o     (cache_rsp_write[cb]            ),
       .core_resp_data_o      (cache_rsp_data [cb]            ),
       .core_resp_meta_o      (cache_rsp_meta [cb]            ),
+      // .core_resp_exclusive_o (l1_l0_data_is_exc[cb]),
 
       // FWD Message
       // FIXME: need interconnect (coherence network), no directo connection

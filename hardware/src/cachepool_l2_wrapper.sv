@@ -133,6 +133,7 @@ module cachepool_l2_wrapper
   output logic                                              core_resp_write_o,
   output word_data_t                                        core_resp_data_o,
   output core_meta_t                                        core_resp_meta_o,
+  // output logic                                              core_resp_exclusive_o,
 
   // FWD message for directory controller
   input  cache_dir_fwd_t                                          fwd_rx_i,
