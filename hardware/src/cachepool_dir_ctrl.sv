@@ -731,7 +731,13 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
       downstream_req_valid_d    = upstream_req_valid_d;
       // downstream_req_valid_d    = 1'b1;
       downstream_req_addr_d     = upstream_req_addr_d;
-      downstream_req_meta_d     = upstream_req_meta_d;
+      // downstream_req_meta_d     = upstream_req_meta_d;
+      downstream_req_meta_d.core_id = upstream_req_meta_d.core_id;
+      downstream_req_meta_d.is_amo  = upstream_req_meta_d.is_amo;
+      downstream_req_meta_d.req_id  = upstream_req_meta_d.req_id;
+      downstream_req_meta_d.is_fpu  = upstream_req_meta_d.is_fpu;
+      downstream_req_meta_d.data_exclusive  = 1'b1;
+
       downstream_req_write_d    = upstream_req_write_d;
       // downstream_req_write_d    = '0;
       downstream_req_wdata_d    = upstream_req_wdata_i;

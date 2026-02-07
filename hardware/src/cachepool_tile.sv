@@ -1484,6 +1484,7 @@ module cachepool_tile
     // assign l0_l1_req_meta_int[cb].core_id = l0_l1_req[cb].mem_req_id[tidWidth-2:ReqIdWidth+1];
     assign l0_l1_req_meta_int[cb].core_id = cb;  // manually tag core_id
     assign l0_l1_req_meta_int[cb].is_fpu  = l0_l1_req[cb].mem_req_id[tidWidth-1]; // FIXME: doesn't sound rights
+    assign l0_l1_req_meta_int[cb].data_exclusive = '0;      // req does not carry this info, groudned
     // assign l0_l1_req_write[cb] = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
     // assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
 
