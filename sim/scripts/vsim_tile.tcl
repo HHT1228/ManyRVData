@@ -113,6 +113,7 @@ for {set c 0} {$c < 4} {incr c} {
 #   add wave -noupdate -group tile[$1] -group cache_xbar -group xbar[$c]	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_cache_xbar[$c]/i_cache_xbar/*
 # }
 add wave -noupdate -group tile[$1] -group l0_l1_xbar /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_l0_l1_xbar/*
+add wave -noupdate -group tile[$1] -group coherence_xbar /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_coherence_interco/*
 
 # Add waves for remaining signals
 add wave -noupdate -group tile[$1] -group Internal /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/*

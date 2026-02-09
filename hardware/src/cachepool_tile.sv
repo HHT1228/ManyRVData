@@ -611,6 +611,21 @@ module cachepool_tile
     logic                   valid;
   } hpdcache_coherence_evict_t;
 
+  typedef struct packed {
+    cache_dir_fwd_t   fwd;
+    coherence_evict_t evict;
+  } coherence_down_payload_t;
+
+  typedef struct packed {
+    cache_dir_fwd_t   fwd;
+    coherence_rsp_t   rsp;
+  } coherence_up_payload_t;
+
+  `TCDM_TYPEDEF_REQ_CHAN_T(tcdm_req_chan_coherence_t, addr_t, coherence_down_payload_t, cacheline_strb_t, coherence_tcdm_user_t)
+  `TCDM_TYPEDEF_RSP_CHAN_T(tcdm_rsp_chan_coherence_t, coherence_up_payload_t, coherence_tcdm_user_t)
+  `TCDM_TYPEDEF_REQ_T(tcdm_req_coherence_t, tcdm_req_chan_coherence_t)
+  `TCDM_TYPEDEF_RSP_T(tcdm_rsp_coherence_t, tcdm_rsp_chan_coherence_t)
+
   // typedef struct packed {
   //   hpdcache_req_sid_t  sid;
   //   hpdcache_req_tid_t  tid;
@@ -1059,16 +1074,19 @@ module cachepool_tile
   tcdm_meta_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info;  // downstream
 
   // Coherence signals
-  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_l1_fwd;
-  logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid, l0_l1_fwd_ready;
-  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd;
-  logic           [NumL1CacheCtrl-1:0] l1_l0_fwd_valid;
-  logic           [NumL1CacheCtrl-1:0] l0_l1_evict_ready;
+  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_l1_fwd, l0_l1_fwd_xbar;
+  logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid, l0_l1_fwd_xbar_valid, l0_l1_fwd_ready, l0_l1_fwd_xbar_ready;
+  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd, l1_l0_fwd_xbar;
+  logic           [NumL1CacheCtrl-1:0] l1_l0_fwd_valid, l1_l0_fwd_xbar_valid, l1_l0_fwd_ready, l1_l0_fwd_xbar_ready;
+  coherence_rsp_t [NumL1CacheCtrl-1:0] l1_l0_coherence_rsp, l1_l0_coherence_rsp_xbar;
+  logic           [NumL1CacheCtrl-1:0] l1_l0_coherence_rsp_valid, l1_l0_coherence_rsp_xbar_valid, l1_l0_coherence_rsp_ready, l1_l0_coherence_rsp_xbar_ready;
 
-  hpdcache_coherence_rsp_t    l1_l0_coherence_rsp_hpd[NumL0CacheCtrl-1:0];
-  coherence_rsp_t             l1_l0_coherence_rsp_tcdm[NumL0CacheCtrl-1:0];
-  hpdcache_coherence_evict_t  l0_l1_coherence_evict_hpd[NumL0CacheCtrl-1:0];
-  coherence_evict_t           l0_l1_coherence_evict_tcdm[NumL0CacheCtrl-1:0];
+  hpdcache_coherence_rsp_t    [NumL0CacheCtrl-1:0] l1_l0_coherence_rsp_hpd;
+  coherence_rsp_t             [NumL0CacheCtrl-1:0] l1_l0_coherence_rsp_tcdm;
+  hpdcache_coherence_evict_t  [NumL0CacheCtrl-1:0] l0_l1_coherence_evict_hpd;
+  coherence_evict_t           [NumL0CacheCtrl-1:0] l0_l1_coherence_evict_tcdm, l0_l1_coherence_evict_xbar;
+  logic                       [NumL1CacheCtrl-1:0] l0_l1_coherence_evict_ready, l0_l1_coherence_evict_xbar_ready;
+
   // logic [NumL1CacheCtrl-1:0]  l1_l0_data_is_exc;
 
   // response from coalescer to CC
@@ -1521,6 +1539,8 @@ module cachepool_tile
   // Logic to identify R/W response from L1 in order to interface to the AXI-llike interface of HPDcache
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: l1_l0_rsp_connect
     always_comb begin
+      l0_mem_resp_read[cb].data_exclusive = l1_l0_rsp_tcdm[cb].p.user.data_exclusive;
+
       if (l1_l0_rsp_tcdm[cb].p.write) begin  // write response should go to write channel of HPDcache
         // handshake
         // l0_mem_resp_write_valid[cb] = cache_rsp_valid[cb];
@@ -1621,17 +1641,6 @@ module cachepool_tile
     );
   end
 
-  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_signal_translation
-    assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_tcdm[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
-    assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_tcdm[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
-    assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_tcdm[cb].req_id;
-    assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_tcdm[cb].is_inv_ack_cnt;
-    assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_tcdm[cb].inv_ack_cnt;
-
-    assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict_hpd[cb].addr_tag;
-    assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict_hpd[cb].valid;
-  end
-
   // translate tcdm_xbar signals to/from in-situ cache signals
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_xbar_insitu_translate
     // assign l0_l1_req_addr[cb]       = l0_l1_tcdm_xbar_req[cb].q.addr;
@@ -1661,6 +1670,76 @@ module cachepool_tile
     assign l1_l0_strb_rsp[cb].q_ready  = cache_req_ready[cb];
     assign l1_l0_strb_rsp[cb].p.user   = cache_rsp_meta[cb];
     assign l1_l0_strb_rsp[cb].p.write  = cache_rsp_write[cb];
+  end
+
+  // cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_l1_fwd;
+  // logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid;
+  // coherence_evict_t [NumL1CacheCtrl-1:0] l0_l1_evict;
+
+  coherence_interco #(
+    .NumL0CacheCtrl (NumL0CacheCtrl),
+    .NumL1CacheCtrl (NumL1CacheCtrl),
+    .AddrWidth (TCDMAddrWidth),
+    .cache_dir_fwd_t (cache_dir_fwd_t),
+    .coherence_evict_t (coherence_evict_t),
+    .coherence_rsp_t (coherence_rsp_t),
+    .coherence_down_payload_t (coherence_down_payload_t),
+    .coherence_up_payload_t (coherence_up_payload_t),
+    .tcdm_req_coherence_t (tcdm_req_coherence_t),
+    .tcdm_rsp_coherence_t (tcdm_rsp_coherence_t),
+    .tcdm_req_chan_coherence_t (tcdm_req_chan_coherence_t),
+    .tcdm_rsp_chan_coherence_t (tcdm_rsp_chan_coherence_t)
+  ) i_coherence_interco (
+    .clk_i  (clk_i),
+    .rst_ni (rst_ni),
+
+    .l1_l2_fwd_i        (l0_l1_fwd),
+    .l1_l2_fwd_valid_i  (l0_l1_fwd_valid),
+    .l1_l2_fwd_ready_o  (l0_l1_fwd_ready),
+
+    .l1_l2_fwd_xbar_o   (l0_l1_fwd_xbar),
+    .l1_l2_fwd_xbar_valid_o (l0_l1_fwd_xbar_valid),
+    .l1_l2_fwd_xbar_ready_i (l0_l1_fwd_xbar_ready),
+
+    .l1_l2_evict_i       (l0_l1_coherence_evict_tcdm),
+    .l1_l2_evict_ready_o (l0_l1_coherence_evict_ready),
+
+    .l1_l2_evict_xbar_o  (l0_l1_coherence_evict_xbar),
+    .l1_l2_evict_xbar_ready_i (l0_l1_coherence_evict_xbar_ready),
+
+    .l2_l1_fwd_i        (l1_l0_fwd),
+    .l2_l1_fwd_valid_i  (l1_l0_fwd_valid),
+    .l2_l1_fwd_ready_o  (l1_l0_fwd_ready),
+
+    .l2_l1_fwd_xbar_o   (l1_l0_fwd_xbar),
+    .l2_l1_fwd_xbar_valid_o (l1_l0_fwd_xbar_valid),
+    .l2_l1_fwd_xbar_ready_i (l1_l0_fwd_xbar_ready),
+
+    .l2_l1_rsp_i        (l1_l0_coherence_rsp),
+    .l2_l1_rsp_valid_i  (l1_l0_coherence_rsp_valid),
+    .l2_l1_rsp_ready_o  (l1_l0_coherence_rsp_ready),
+
+    .l2_l1_rsp_xbar_o   (l1_l0_coherence_rsp_xbar),
+    .l2_l1_rsp_xbar_valid_o (l1_l0_coherence_rsp_xbar_valid),
+    .l2_l1_rsp_xbar_ready_i (l1_l0_coherence_rsp_xbar_ready),
+
+    .dynamic_offset_i    (dynamic_offset)
+  );
+
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_signal_translation
+    // assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_tcdm[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+    // assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_tcdm[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+    // assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_tcdm[cb].req_id;
+    // assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_tcdm[cb].is_inv_ack_cnt;
+    // assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_tcdm[cb].inv_ack_cnt;
+    assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+    assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+    assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_xbar[cb].req_id;
+    assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_xbar[cb].is_inv_ack_cnt;
+    assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_xbar[cb].inv_ack_cnt;
+
+    assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict_hpd[cb].addr_tag;
+    assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict_hpd[cb].valid;
   end
 
   // Connecting cache_req (after unmerge before xbar to L0 D$)
@@ -1713,16 +1792,17 @@ module cachepool_tile
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
 
-      .fwd_rx_i                           (l1_l0_fwd[i]),
-      .fwd_rx_valid_i                     (l1_l0_fwd_valid[i]),
-      .fwd_rx_ready_o                     (/* TODO */),
+      .fwd_rx_i                           (l1_l0_fwd_xbar[i]),
+      .fwd_rx_valid_i                     (l1_l0_fwd_xbar_valid[i]),
+      .fwd_rx_ready_o                     (l1_l0_fwd_xbar_ready[i]),
       .fwd_tx_o                           (l0_l1_fwd[i]),
       .fwd_tx_valid_o                     (l0_l1_fwd_valid[i]),
-      .fwd_tx_ready_i                     (/* TODO */),
-      .coherence_rsp_i                    (/* TODO */),
-      .coherence_rsp_valid_i              (1'b0),
-      .coherence_rsp_ready_o              (/* TODO */),
-      .coherence_evict_o                  (/* TODO */),
+      .fwd_tx_ready_i                     (l0_l1_fwd_ready[i]),
+      .coherence_rsp_i                    (l1_l0_coherence_rsp_hpd[i]),
+      .coherence_rsp_valid_i              (l1_l0_coherence_rsp_xbar_valid[i]),
+      .coherence_rsp_ready_o              (l1_l0_coherence_rsp_xbar_ready[i]),
+      .coherence_evict_o                  (l0_l1_coherence_evict_hpd[i]),
+      .coherence_evict_ready_i            (l0_l1_coherence_evict_ready[i]),
       // .coherence_req_o                    (/*  */),
       // .coherence_req_valid_o              (/*  */),
 
@@ -1871,8 +1951,8 @@ module cachepool_tile
       .core_req_write_i      (l0_l1_req_write[cb]            ),
       .core_req_wdata_i      (l0_l1_req_data [cb]            ),
       .core_req_fake_read_i  (l0_l1_fake_read[cb]            ),
-      .upstream_req_evict_i       (/*TODO*/),
-      .upstream_req_evict_ready_o (l0_l1_evict_ready[cb]     ),
+      .upstream_req_evict_i       (l0_l1_coherence_evict_xbar[cb] ),
+      .upstream_req_evict_ready_o (l0_l1_coherence_evict_xbar_ready[cb] ),
       // .core_req_wstrb_i      (l0_l1_req_wstrb[cb]            ),
       // Response
       .core_resp_valid_o     (cache_rsp_valid[cb]            ),
@@ -1883,17 +1963,16 @@ module cachepool_tile
       // .core_resp_exclusive_o (l1_l0_data_is_exc[cb]),
 
       // FWD Message
-      // FIXME: need interconnect (coherence network), no directo connection
-      .fwd_rx_i              (l0_l1_fwd[cb]),
-      .fwd_rx_valid_i        (l0_l1_fwd_valid[cb]),
-      .fwd_rx_ready_o        (l0_l1_fwd_ready[cb]),
+      .fwd_rx_i              (l0_l1_fwd_xbar[cb]),
+      .fwd_rx_valid_i        (l0_l1_fwd_xbar_valid[cb]),
+      .fwd_rx_ready_o        (l0_l1_fwd_xbar_ready[cb]),
       .fwd_tx_o              (l1_l0_fwd[cb]),
       .fwd_tx_valid_o        (l1_l0_fwd_valid[cb]),
-      .fwd_tx_ready_i        (/*TODO*/),
+      .fwd_tx_ready_i        (l1_l0_fwd_ready[cb]),
 
-      .coherence_rsp_o             (/*TODO*/),
-      .coherence_rsp_valid_o       (/*TODO*/),
-      .coherence_rsp_ready_i       (/*TODO*/),
+      .coherence_rsp_o             (l1_l0_coherence_rsp[cb]),
+      .coherence_rsp_valid_o       (l1_l0_coherence_rsp_valid[cb]),
+      .coherence_rsp_ready_i       (l1_l0_coherence_rsp_ready[cb]),
 
       .cache_refill_req_o    (cache_refill_req_o[cb]           ),
       .cache_refill_rsp_i    (cache_refill_rsp_i[cb]           ),

@@ -229,10 +229,11 @@ package cachepool_pkg;
 
   typedef struct packed {
     logic [CoreIDWidth-1:0] core_id;
-    logic                   is_amo;
+    // logic                   is_amo;
     reqid_t                 req_id;
-    logic                   is_fpu;
-    logic                   data_exclusive;
+    // logic                   is_fpu;
+    // logic                   data_exclusive;
+    logic                   is_fwd;
   } coherence_tcdm_user_t;
 
   typedef struct packed {
