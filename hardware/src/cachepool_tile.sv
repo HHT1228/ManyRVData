@@ -1049,7 +1049,7 @@ module cachepool_tile
   logic l0_cache_req_inv_valid      [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic l0_cache_req_ready_final    [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic l0_cache_req_valid_final    [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
-  logic l0_cache_req_ready_inv      [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic l0_cache_req_inv_ready      [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_req_t l0_cache_req_final [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   // hpdcache_req_t l0_cache_req_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_rsp_t l0_cache_rsp_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
@@ -1749,47 +1749,93 @@ module cachepool_tile
   end
 
   // TODO: CONTINUE HERE
-  // for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_inv_cmo
-  //   always_comb begin
-  //     // l0_cache_req_inv_valid[cb] = '0;
-  //     // l0_cache_req_inv[cb] = '0;
-  //     if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
-  //       l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
-  //       l0_cache_req_inv[cb][1].op = HPDCACHE_REQ_CMO_INVAL_NLINE;
-  //       // l0_cache_req_inv[cb][1].size = HPDCACHE_CMO_INVAL_NLINE;
-  //       l0_cache_req_inv[cb][1].sid = '0;
-  //       l0_cache_req_inv[cb][1].tid = '0;
-  //       l0_cache_req_inv[cb][1].need_rsp = 1'b0;
-  //       l0_cache_req_inv[cb][1].phys_indexed = 1'b1;
-  //       l0_cache_req_inv[cb][1].addr_tag = l1_l0_fwd_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+  hpdcache_req_t  l0_cache_req_inv_buf   [NumL0CacheCtrl];
+  logic           l0_cache_req_inv_valid_buf [NumL0CacheCtrl];
+  logic           l0_cache_req_inv_ready_buf [NumL0CacheCtrl];
+  hpdcache_req_t  l0_cache_req_coal_buf   [NumL0CacheCtrl];
+  logic           l0_cache_req_coal_valid_buf [NumL0CacheCtrl];
+  logic           l0_cache_req_coal_ready_buf [NumL0CacheCtrl];
+  logic           [NumL0CacheCtrl-1:0] inv_fifo_full, coal_fifo_full, inv_fifo_empty, coal_fifo_empty;
+  
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_inv_cmo
+    assign l0_cache_req_valid_final[cb][0] = hpd_l0_cache_req_valid_coal[cb][0];
+    assign l0_cache_req_final[cb][0]    = l0_cache_req_coal[cb][0];
 
-  //       l0_cache_req_inv_valid[cb][1] = 1'b1;
-  //     end
-  //   end
+    assign hpd_l0_cache_req_ready_coal[cb][1] = l0_cache_req_coal_ready_buf[cb];
+    assign hpd_l0_cache_req_ready_coal[cb][0] = l0_cache_req_ready_final[cb][0];
 
-  //   // TODO: buffer unserved request? Handshake should do the work.
-  //   // TODO: connect to HPD interface
+    always_comb begin
+      // l0_cache_req_inv_valid[cb] = '0;
+      // l0_cache_req_inv[cb] = '0;
+      if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
+        l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+        l0_cache_req_inv[cb][1].op = HPDCACHE_REQ_CMO_INVAL_NLINE;
+        // l0_cache_req_inv[cb][1].size = HPDCACHE_CMO_INVAL_NLINE;
+        l0_cache_req_inv[cb][1].sid = '0;
+        l0_cache_req_inv[cb][1].tid = '0;
+        l0_cache_req_inv[cb][1].need_rsp = 1'b0;
+        l0_cache_req_inv[cb][1].phys_indexed = 1'b1;
+        l0_cache_req_inv[cb][1].addr_tag = l1_l0_fwd_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
 
-  //   assign l0_l1_req_valid_final[cb][0] = hpd_l0_cache_req_valid_coal[cb][0];
-  //   assign l0_cache_req_final[cb][0] = l0_cache_req_coal[cb][0];
-  //   rr_arb_tree #(
-  //     .NumIn     (2),
-  //     .DataType  (hpdcache_req_t),
-  //     .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
-  //   ) i_l0_req_inv_arb (
-  //     .clk_i   (clk_i),
-  //     .rst_ni  (rst_ni),
-  //     .flush_i (1'b0),
-  //     .rr_i    (1'b1),
-  //     .req_i   ({l0_cache_req_inv_valid[cb][1], hpd_l0_cache_req_valid_coal[cb][1]}),  // valid_i
-  //     .gnt_o   ({l0_cache_req_ready_inv[cb][1], hpd_l0_cache_req_ready_coal[cb][1]}),       // ready_o
-  //     .data_i  ({l0_cache_req_inv[cb][1], l0_cache_req_coal[cb][1]}),
-  //     .req_o   (l0_l1_req_valid_final[cb][1]),                 // valid_o
-  //     .gnt_i   (l0_cache_req_ready_final[cb][1]),     // ready_i; old: cache_req_ready[cb]
-  //     .data_o  (l0_cache_req_final[cb][1]),
-  //     .idx_o   ()
-  //   );
-  // end
+        l0_cache_req_inv_valid[cb][1] = 1'b1;
+      end
+    end
+
+    fifo_v3 #(
+      .FALL_THROUGH(1'b1),
+      .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
+      .DEPTH(8)
+    ) i_l1_inv_fifo (
+      .clk_i      (clk_i),
+      .rst_ni     (rst_ni),
+      .flush_i    (1'b0),
+      .testmode_i (1'b0),
+      .full_o     (inv_fifo_full[cb]),
+      .empty_o    (inv_fifo_empty[cb]),
+      .usage_o    (),
+      .data_i     ({l0_cache_req_inv_valid[cb][1], l0_cache_req_inv[cb][1]}),
+      .push_i     (l0_cache_req_inv_valid[cb][1] && !inv_fifo_full[cb]),
+      .data_o     ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_inv_buf[cb]}),
+      .pop_i      (l0_cache_req_inv_ready_buf[cb] && !inv_fifo_empty[cb])
+    );
+
+    fifo_v3 #(
+      .FALL_THROUGH(1'b1),
+      .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
+      .DEPTH(8)
+    ) i_l1_coal_fifo (
+      .clk_i      (clk_i),
+      .rst_ni     (rst_ni),
+      .flush_i    (1'b0),
+      .testmode_i (1'b0),
+      .full_o     (coal_fifo_full[cb]),
+      .empty_o    (coal_fifo_empty[cb]),
+      .usage_o    (),
+      .data_i     ({hpd_l0_cache_req_valid_coal[cb][1], l0_cache_req_coal[cb][1]}),
+      .push_i     (hpd_l0_cache_req_valid_coal[cb][1] && !coal_fifo_full[cb]),
+      .data_o     ({l0_cache_req_coal_valid_buf[cb], l0_cache_req_coal_buf[cb]}),
+      .pop_i      (l0_cache_req_coal_ready_buf[cb] && !coal_fifo_empty[cb])
+    );
+
+    rr_arb_tree #(
+      .NumIn     (2),
+      .DataType  (hpdcache_req_t),
+      .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
+    ) i_l0_req_inv_arb (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .flush_i (1'b0),
+      .rr_i    (1'b1),
+      .req_i   ({(l0_cache_req_inv_valid_buf[cb] && !inv_fifo_empty[cb]), (l0_cache_req_coal_valid_buf[cb] && !coal_fifo_empty[cb])}),  // valid_i
+      // .req_i   ({l0_cache_req_inv_valid[cb][1], hpd_l0_cache_req_valid_coal[cb][1]}),  // valid_i
+      .gnt_o   ({l0_cache_req_inv_ready_buf[cb], l0_cache_req_coal_ready_buf[cb]}),  // ready_o
+      .data_i  ({l0_cache_req_inv_buf[cb], l0_cache_req_coal_buf[cb]}),
+      .req_o   (l0_cache_req_valid_final[cb][1]),                 // valid_o
+      .gnt_i   (l0_cache_req_ready_final[cb][1]),     // ready_i; old: cache_req_ready[cb]
+      .data_o  (l0_cache_req_final[cb][1]),
+      .idx_o   ()
+    );
+  end
 
   // Connecting cache_req (after unmerge before xbar to L0 D$)
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin: gen_l0_cache
@@ -1832,9 +1878,12 @@ module cachepool_tile
       // .core_req_pma_i                     (/* unused */),
       // .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal_spill[i]),
       // .core_rsp_o                         (l0_cache_rsp_coal_spill[i]),
-      .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
-      .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
-      .core_req_i                         (l0_cache_req_coal[i]),
+      // .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
+      // .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
+      // .core_req_i                         (l0_cache_req_coal[i]),
+      .core_req_valid_i                   (l0_cache_req_valid_final[i]),
+      .core_req_ready_o                   (l0_cache_req_ready_final[i]),
+      .core_req_i                         (l0_cache_req_final[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
       .core_req_tag_i                     (/* unused */),
       .core_req_pma_i                     (/* unused */),

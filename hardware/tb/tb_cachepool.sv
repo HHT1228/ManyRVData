@@ -8,6 +8,7 @@ import "DPI-C" context function byte read_section(input longint address, inout b
 import "DPI-C" function int fesvr_tick();
 import "DPI-C" function int get_entry_point();
 
+`define KERNEL
 `define wait_for(signal) \
   do \
     @(posedge clk); \
@@ -159,65 +160,66 @@ module tb_cachepool;
 
   logic [31:0] entry_point;
 
+`ifdef KERNEL
   // Simulation Sequence
-  // initial begin
-  //   automatic int exit_code;
-  //   exit_code = fesvr_tick();
-  //   // Idle
-  //   to_cluster_req = '0;
-  //   debug_req      = '0;
+  initial begin
+    automatic int exit_code;
+    exit_code = fesvr_tick();
+    // Idle
+    to_cluster_req = '0;
+    debug_req      = '0;
 
-  //   // Wait for a while
-  //   repeat (10)
-  //     @(posedge clk);
+    // Wait for a while
+    repeat (10)
+      @(posedge clk);
 
-  //   // Load the entry point
-  //   entry_point = get_entry_point();
-  //   $display("Loading entry point: %0x", entry_point);
+    // Load the entry point
+    entry_point = get_entry_point();
+    $display("Loading entry point: %0x", entry_point);
 
-  //   // Wait for a while
-  //   repeat (1000)
-  //     @(posedge clk);
+    // Wait for a while
+    repeat (1000)
+      @(posedge clk);
 
-  //   // Store the entry point in the Spatz cluster
-  //   to_cluster_req = '{
-  //     q: '{
-  //       addr   : PeriStartAddr + SPATZ_CLUSTER_PERIPHERAL_CLUSTER_BOOT_CONTROL_OFFSET,
-  //       data   : entry_point,
-  //       write  : 1'b1,
-  //       strb   : '1,
-  //       amo    : reqrsp_pkg::AMONone,
-  //       default: '0
-  //     },
-  //     q_valid: 1'b1,
-  //     p_ready: 1'b0
-  //   };
-  //   `wait_for(to_cluster_rsp.q_ready);
-  //   to_cluster_req = '0;
-  //   `wait_for(to_cluster_rsp.p_valid);
-  //   to_cluster_req = '{
-  //     p_ready: 1'b1,
-  //     q      : '{
-  //       amo    : reqrsp_pkg::AMONone,
-  //       default: '0
-  //     },
-  //     default: '0
-  //   };
-  //   @(posedge clk);
-  //   to_cluster_req = '0;
+    // Store the entry point in the Spatz cluster
+    to_cluster_req = '{
+      q: '{
+        addr   : PeriStartAddr + SPATZ_CLUSTER_PERIPHERAL_CLUSTER_BOOT_CONTROL_OFFSET,
+        data   : entry_point,
+        write  : 1'b1,
+        strb   : '1,
+        amo    : reqrsp_pkg::AMONone,
+        default: '0
+      },
+      q_valid: 1'b1,
+      p_ready: 1'b0
+    };
+    `wait_for(to_cluster_rsp.q_ready);
+    to_cluster_req = '0;
+    `wait_for(to_cluster_rsp.p_valid);
+    to_cluster_req = '{
+      p_ready: 1'b1,
+      q      : '{
+        amo    : reqrsp_pkg::AMONone,
+        default: '0
+      },
+      default: '0
+    };
+    @(posedge clk);
+    to_cluster_req = '0;
 
 
-  //   // Wake up cores
-  //   debug_req = '1;
-  //   @(posedge clk);
-  //   debug_req = '0;
+    // Wake up cores
+    debug_req = '1;
+    @(posedge clk);
+    debug_req = '0;
 
-  //   // Wait for end of computing signal
-  //   wait (eoc);
-  //   $display("[EOC] Simulation ended at %t (retval = WIP).", $time);
-  //   $finish(0);
-  // end
-
+    // Wait for end of computing signal
+    wait (eoc);
+    $display("[EOC] Simulation ended at %t (retval = WIP).", $time);
+    $finish(0);
+  end
+`else
 
   // Coherence test
   initial begin
@@ -231,7 +233,7 @@ module tb_cachepool;
     repeat (1000)
       @(posedge clk);
 
-
+    // FIXME: valid not working
     i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_valid_i[1] = 1'h1;
 
     i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].addr_offset = 10'h3d0;
@@ -262,6 +264,7 @@ module tb_cachepool;
     // $display("[EOC] Simulation ended at %t (retval = WIP).", $time);
     // $finish(0);
   end
+`endif
 
   /**********
   *  UART  *
