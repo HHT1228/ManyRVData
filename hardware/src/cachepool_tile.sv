@@ -1045,6 +1045,12 @@ module cachepool_tile
   // logic hpd_l0_cache_rsp_valid_coal_spill [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic hpd_l0_cache_rsp_ready_coal [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_req_t l0_cache_req_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  hpdcache_req_t l0_cache_req_inv   [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic l0_cache_req_inv_valid      [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic l0_cache_req_ready_final    [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic l0_cache_req_valid_final    [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic l0_cache_req_ready_inv      [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  hpdcache_req_t l0_cache_req_final [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   // hpdcache_req_t l0_cache_req_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_rsp_t l0_cache_rsp_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   // hpdcache_rsp_t l0_cache_rsp_coal_spill  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
@@ -1741,6 +1747,49 @@ module cachepool_tile
     assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict_hpd[cb].addr_tag;
     assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict_hpd[cb].valid;
   end
+
+  // TODO: CONTINUE HERE
+  // for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_inv_cmo
+  //   always_comb begin
+  //     // l0_cache_req_inv_valid[cb] = '0;
+  //     // l0_cache_req_inv[cb] = '0;
+  //     if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
+  //       l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+  //       l0_cache_req_inv[cb][1].op = HPDCACHE_REQ_CMO_INVAL_NLINE;
+  //       // l0_cache_req_inv[cb][1].size = HPDCACHE_CMO_INVAL_NLINE;
+  //       l0_cache_req_inv[cb][1].sid = '0;
+  //       l0_cache_req_inv[cb][1].tid = '0;
+  //       l0_cache_req_inv[cb][1].need_rsp = 1'b0;
+  //       l0_cache_req_inv[cb][1].phys_indexed = 1'b1;
+  //       l0_cache_req_inv[cb][1].addr_tag = l1_l0_fwd_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+
+  //       l0_cache_req_inv_valid[cb][1] = 1'b1;
+  //     end
+  //   end
+
+  //   // TODO: buffer unserved request? Handshake should do the work.
+  //   // TODO: connect to HPD interface
+
+  //   assign l0_l1_req_valid_final[cb][0] = hpd_l0_cache_req_valid_coal[cb][0];
+  //   assign l0_cache_req_final[cb][0] = l0_cache_req_coal[cb][0];
+  //   rr_arb_tree #(
+  //     .NumIn     (2),
+  //     .DataType  (hpdcache_req_t),
+  //     .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
+  //   ) i_l0_req_inv_arb (
+  //     .clk_i   (clk_i),
+  //     .rst_ni  (rst_ni),
+  //     .flush_i (1'b0),
+  //     .rr_i    (1'b1),
+  //     .req_i   ({l0_cache_req_inv_valid[cb][1], hpd_l0_cache_req_valid_coal[cb][1]}),  // valid_i
+  //     .gnt_o   ({l0_cache_req_ready_inv[cb][1], hpd_l0_cache_req_ready_coal[cb][1]}),       // ready_o
+  //     .data_i  ({l0_cache_req_inv[cb][1], l0_cache_req_coal[cb][1]}),
+  //     .req_o   (l0_l1_req_valid_final[cb][1]),                 // valid_o
+  //     .gnt_i   (l0_cache_req_ready_final[cb][1]),     // ready_i; old: cache_req_ready[cb]
+  //     .data_o  (l0_cache_req_final[cb][1]),
+  //     .idx_o   ()
+  //   );
+  // end
 
   // Connecting cache_req (after unmerge before xbar to L0 D$)
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin: gen_l0_cache

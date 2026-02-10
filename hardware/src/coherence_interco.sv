@@ -191,6 +191,9 @@ module coherence_interco
   // coherence_down_payload_t  [NumL0CacheCtrl-1:0] l1_l2_fwd_payload, l1_l2_evict_payload;
   for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : downward_post_xbar
     always_comb begin
+      l1_l2_fwd_xbar_o[i] = '0;
+      l1_l2_fwd_xbar_valid_o[i] = 1'b0;
+      l1_l2_evict_xbar_o[i] = '0;
       if (l1_l2_coherence_tcdm_xbar[i].q_valid) begin
         if (l1_l2_coherence_tcdm_xbar[i].q.user.is_fwd) begin
           l1_l2_fwd_xbar_o[i] = l1_l2_coherence_tcdm_xbar[i].q.data.fwd;
@@ -214,8 +217,8 @@ module coherence_interco
   end
 
   for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : upward_pre_xbar
-    assign l2_l1_fwd_ready_o[i] = ~l2_l1_fwd_fifo_full[i];
-    assign l2_l1_rsp_ready_o[i] = ~l2_l1_rsp_fifo_full[i];
+    assign l2_l1_fwd_ready_o[i] = ~l2_l1_fwd_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
+    assign l2_l1_rsp_ready_o[i] = ~l2_l1_rsp_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
 
     fifo_v3 #(
       .FALL_THROUGH(1'b0),
@@ -259,20 +262,22 @@ module coherence_interco
     assign l2_l1_rsp_payload[i].fwd = '0;
 
     assign l2_l1_fwd_tcdm_int[i].p.data = l2_l1_fwd_payload[i];
-    assign l2_l1_fwd_tcdm_int[i].p.addr = l2_l1_fwd_int[i].addr;
+    // assign l2_l1_fwd_tcdm_int[i].p.addr = l2_l1_fwd_int[i].addr;
+    // assign l2_l1_fwd_tcdm_int[i].p.user.addr = l2_l1_fwd_int[i].addr;
     assign l2_l1_fwd_tcdm_int[i].p_valid = l2_l1_fwd_valid_int[i];
     assign l2_l1_fwd_tcdm_int[i].p.user.is_fwd = 1'b1;
 
     assign l2_l1_rsp_tcdm_int[i].p.data = l2_l1_rsp_payload[i];
-    assign l2_l1_rsp_tcdm_int[i].p.addr = l2_l1_rsp_int[i].addr;
-    assign l2_l1_rsp_tcdm_int[i].p_valid = l2_l1_rsp_int[i].valid;
+    // assign l2_l1_rsp_tcdm_int[i].p.addr = l2_l1_rsp_int[i].addr;
+    // assign l2_l1_rsp_tcdm_int[i].p.user.addr = l2_l1_rsp_int[i].addr;
+    assign l2_l1_rsp_tcdm_int[i].p_valid = l2_l1_rsp_valid_int[i];
     assign l2_l1_rsp_tcdm_int[i].p.user.is_fwd = 1'b0;
-    assign l2_l1_rsp_tcdm_int[i].p.user.core_id = l2_l1_rsp_payload[i].core_id;
-    assign l2_l1_rsp_tcdm_int[i].p.user.req_id = l2_l1_rsp_payload[i].req_id;
+    assign l2_l1_rsp_tcdm_int[i].p.user.core_id = l2_l1_rsp_payload[i].rsp.core_id;
+    assign l2_l1_rsp_tcdm_int[i].p.user.req_id = l2_l1_rsp_payload[i].rsp.req_id;
 
     rr_arb_tree #(
       .NumIn     (2),
-      .DataType  (tcdm_req_coherence_t),
+      .DataType  (tcdm_rsp_coherence_t),
       .AxiVldRdy (1'b1)
     ) i_post_fwd_rsp_arb (
       .clk_i   (clk_i),
@@ -291,29 +296,52 @@ module coherence_interco
 
   for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : upward_post_xbar
     always_comb begin
-      if (l2_l1_coherence_tcdm_xbar[i].p_valid) begin
-        if (l2_l1_coherence_tcdm_xbar[i].p.user.is_fwd) begin
+      l2_l1_fwd_xbar_o[i] = '0;
+      l2_l1_fwd_xbar_valid_o[i] = 1'b0;
+      l2_l1_rsp_xbar_o[i] = '0;
+      l2_l1_rsp_xbar_valid_o[i] = 1'b0;
+      // if (l2_l1_coherence_tcdm_xbar[i].p_valid) begin
+      //   if (l2_l1_coherence_tcdm_xbar[i].p.user.is_fwd) begin
+      //     l2_l1_fwd_xbar_o[i] = l2_l1_coherence_tcdm_xbar[i].p.data.fwd;
+      //     l2_l1_fwd_xbar_valid_o[i] = 1'b1;
+      //     l2_l1_rsp_xbar_o[i] = '0;
+      //     l2_l1_rsp_xbar_valid_o[i] = 1'b0;
+
+      //     l2_l1_ready_tcdm[i] = l2_l1_fwd_xbar_ready_i[i];
+      //   end else begin
+      //     l2_l1_fwd_xbar_o[i] = '0;
+      //     l2_l1_fwd_xbar_valid_o[i] = 1'b0;
+      //     l2_l1_rsp_xbar_o[i] = l2_l1_coherence_tcdm_xbar[i].p.data.rsp;
+      //     l2_l1_rsp_xbar_valid_o[i] = 1'b1;
+
+      //     l2_l1_ready_tcdm[i] = l2_l1_rsp_xbar_ready_i[i];
+      //   end
+      // end
+      if (l2_l1_coherence_tcdm_xbar[i].p.user.is_fwd) begin
+        l2_l1_ready_tcdm[i] = l2_l1_fwd_xbar_ready_i[i];
+
+        if (l2_l1_coherence_tcdm_xbar[i].p_valid) begin
           l2_l1_fwd_xbar_o[i] = l2_l1_coherence_tcdm_xbar[i].p.data.fwd;
           l2_l1_fwd_xbar_valid_o[i] = 1'b1;
           l2_l1_rsp_xbar_o[i] = '0;
           l2_l1_rsp_xbar_valid_o[i] = 1'b0;
+        end
+      end else begin
+        l2_l1_ready_tcdm[i] = l2_l1_rsp_xbar_ready_i[i];
 
-          l2_l1_ready_tcdm[i] = l2_l1_fwd_xbar_ready_i[i];
-        end else begin
+        if (l2_l1_coherence_tcdm_xbar[i].p_valid) begin
           l2_l1_fwd_xbar_o[i] = '0;
           l2_l1_fwd_xbar_valid_o[i] = 1'b0;
           l2_l1_rsp_xbar_o[i] = l2_l1_coherence_tcdm_xbar[i].p.data.rsp;
           l2_l1_rsp_xbar_valid_o[i] = 1'b1;
-
-          l2_l1_ready_tcdm[i] = l2_l1_rsp_xbar_ready_i[i];
         end
       end
     end
   end
 
   // TODO: check
-  assign l2_l1_fwd_ready_o = l2_l1_ready_tcdm_xbar;
-  assign l2_l1_rsp_ready_o = l2_l1_ready_tcdm_xbar;
+  // assign l2_l1_fwd_ready_o = l2_l1_ready_tcdm_xbar;
+  // assign l2_l1_rsp_ready_o = l2_l1_ready_tcdm_xbar;
 
   // XBAR
   tcdm_cache_interco #(

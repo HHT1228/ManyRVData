@@ -236,6 +236,16 @@ package cachepool_pkg;
     logic                   is_fwd;
   } coherence_tcdm_user_t;
 
+  // typedef struct packed {
+  //   tcdm_addr_t                addr;
+  //   logic [CoreIDWidth-1:0] core_id;
+  //   // logic                   is_amo;
+  //   reqid_t                 req_id;
+  //   // logic                   is_fpu;
+  //   // logic                   data_exclusive;
+  //   logic                   is_fwd;
+  // } coherence_tcdm_user_rsp_t;
+
   typedef struct packed {
     logic [BankIDWidth:0]   bank_id;
     cache_info_t            info;

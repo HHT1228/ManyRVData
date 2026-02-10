@@ -690,6 +690,8 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
         // 2'b11: begin
           op = OP_GETACK; // GetAck from owner
         end
+        // TODO: INV_ACK handle, forward to L1. Need to track new owner. OR between L1s, add core id to outgoing invalidations for inter-L1 forwarding.
+        // HPD send INV_ACK to FIFO-based forwarder. Forwarder send it to the owner.
         default: begin
           op = OP_NONE; // other fwd messages not handled here
         end
