@@ -24,6 +24,7 @@ module tb_cachepool;
    *****************/
 
   import cachepool_pkg::*;
+  import hpdcache_pkg::*;
   import spatz_cluster_peripheral_reg_pkg::*;
   import axi_pkg::xbar_cfg_t;
   import axi_pkg::xbar_rule_32_t;
@@ -159,62 +160,107 @@ module tb_cachepool;
   logic [31:0] entry_point;
 
   // Simulation Sequence
+  // initial begin
+  //   automatic int exit_code;
+  //   exit_code = fesvr_tick();
+  //   // Idle
+  //   to_cluster_req = '0;
+  //   debug_req      = '0;
+
+  //   // Wait for a while
+  //   repeat (10)
+  //     @(posedge clk);
+
+  //   // Load the entry point
+  //   entry_point = get_entry_point();
+  //   $display("Loading entry point: %0x", entry_point);
+
+  //   // Wait for a while
+  //   repeat (1000)
+  //     @(posedge clk);
+
+  //   // Store the entry point in the Spatz cluster
+  //   to_cluster_req = '{
+  //     q: '{
+  //       addr   : PeriStartAddr + SPATZ_CLUSTER_PERIPHERAL_CLUSTER_BOOT_CONTROL_OFFSET,
+  //       data   : entry_point,
+  //       write  : 1'b1,
+  //       strb   : '1,
+  //       amo    : reqrsp_pkg::AMONone,
+  //       default: '0
+  //     },
+  //     q_valid: 1'b1,
+  //     p_ready: 1'b0
+  //   };
+  //   `wait_for(to_cluster_rsp.q_ready);
+  //   to_cluster_req = '0;
+  //   `wait_for(to_cluster_rsp.p_valid);
+  //   to_cluster_req = '{
+  //     p_ready: 1'b1,
+  //     q      : '{
+  //       amo    : reqrsp_pkg::AMONone,
+  //       default: '0
+  //     },
+  //     default: '0
+  //   };
+  //   @(posedge clk);
+  //   to_cluster_req = '0;
+
+
+  //   // Wake up cores
+  //   debug_req = '1;
+  //   @(posedge clk);
+  //   debug_req = '0;
+
+  //   // Wait for end of computing signal
+  //   wait (eoc);
+  //   $display("[EOC] Simulation ended at %t (retval = WIP).", $time);
+  //   $finish(0);
+  // end
+
+
+  // Coherence test
   initial begin
-    automatic int exit_code;
-    exit_code = fesvr_tick();
-    // Idle
-    to_cluster_req = '0;
-    debug_req      = '0;
-
-    // Wait for a while
-    repeat (10)
-      @(posedge clk);
-
-    // Load the entry point
-    entry_point = get_entry_point();
-    $display("Loading entry point: %0x", entry_point);
+    // automatic int exit_code;
+    // exit_code = fesvr_tick();
+    // // Idle
+    // to_cluster_req = '0;
+    // debug_req      = '0;
 
     // Wait for a while
     repeat (1000)
       @(posedge clk);
 
-    // Store the entry point in the Spatz cluster
-    to_cluster_req = '{
-      q: '{
-        addr   : PeriStartAddr + SPATZ_CLUSTER_PERIPHERAL_CLUSTER_BOOT_CONTROL_OFFSET,
-        data   : entry_point,
-        write  : 1'b1,
-        strb   : '1,
-        amo    : reqrsp_pkg::AMONone,
-        default: '0
-      },
-      q_valid: 1'b1,
-      p_ready: 1'b0
-    };
-    `wait_for(to_cluster_rsp.q_ready);
-    to_cluster_req = '0;
-    `wait_for(to_cluster_rsp.p_valid);
-    to_cluster_req = '{
-      p_ready: 1'b1,
-      q      : '{
-        amo    : reqrsp_pkg::AMONone,
-        default: '0
-      },
-      default: '0
-    };
+
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_valid_i[1] = 1'h1;
+
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].addr_offset = 10'h3d0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].wdata = 128'h0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].op = HPDCACHE_REQ_STORE;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].be = 16'h000f;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].size = 3'h4;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].sid = 1'b1;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].tid = 11'h020;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].need_rsp = 1'b1;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].phys_indexed = 1'b1;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].addr_tag = 22'h200014;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].pma.uncacheable = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].pma.io = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
+
     @(posedge clk);
-    to_cluster_req = '0;
-
-
-    // Wake up cores
-    debug_req = '1;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1] = '0;
+    
+    repeat (1000)
     @(posedge clk);
-    debug_req = '0;
 
-    // Wait for end of computing signal
-    wait (eoc);
-    $display("[EOC] Simulation ended at %t (retval = WIP).", $time);
-    $finish(0);
+    $display("[tb] TB Finished");
+		$stop;
+
+    // // Wait for end of computing signal
+    // wait (eoc);
+    // $display("[EOC] Simulation ended at %t (retval = WIP).", $time);
+    // $finish(0);
   end
 
   /**********
