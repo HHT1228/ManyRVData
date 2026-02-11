@@ -8,7 +8,7 @@ import "DPI-C" context function byte read_section(input longint address, inout b
 import "DPI-C" function int fesvr_tick();
 import "DPI-C" function int get_entry_point();
 
-`define KERNEL
+`define MANUAL_DEBUG
 `define wait_for(signal) \
   do \
     @(posedge clk); \
@@ -35,6 +35,13 @@ module tb_cachepool;
   localparam TT          = 0.4ns;
 
   localparam PollEoc     = 0;
+
+  localparam int unsigned TCDMAddrWidth     = 32;
+  localparam int unsigned NarrowDataWidth   = 32;
+
+  typedef logic [TCDMAddrWidth-1:0]     tcdm_addr_t;
+  typedef logic [NarrowDataWidth-1:0]   data_t;
+  typedef logic [NarrowDataWidth/8-1:0] strb_t;
 
   /********************************
    *  Clock and Reset Generation  *
@@ -160,7 +167,7 @@ module tb_cachepool;
 
   logic [31:0] entry_point;
 
-`ifdef KERNEL
+`ifndef MANUAL_DEBUG
   // Simulation Sequence
   initial begin
     automatic int exit_code;
@@ -221,6 +228,67 @@ module tb_cachepool;
   end
 `else
 
+  // Coherence test helpers
+  task automatic reset_tcdm_req(input logic [1:0] core_id);
+    int port_id = core_id * 5 + 4;
+    // tcdm_req_t ref_req;
+    // ref_req = '0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id] = '0;
+  endtask
+
+  task automatic send_snitch_read_req(
+    input tcdm_addr_t   addr,
+    input strb_t        strb,
+    input logic [1:0]   core_id,
+    input reqid_t       req_id
+  );
+    int port_id = core_id * 5 + 4;
+
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.addr = addr;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.write = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.amo = reqrsp_pkg::AMONone;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.data = '0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.strb = strb;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.core_id = core_id;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.is_amo = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.req_id = req_id;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.is_fpu = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.data_exclusive = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q_valid = 1'b1;
+  endtask
+  
+  task automatic send_snitch_write_req(
+    input tcdm_addr_t   addr,
+    input data_t        data,
+    input strb_t        strb,
+    input logic [1:0]   core_id,
+    input reqid_t       req_id
+  );
+    int port_id = core_id * 5 + 4;
+
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.addr = addr;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.write = 1'b1;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.amo = reqrsp_pkg::AMONone;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.data = data;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.strb = strb;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.core_id = core_id;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.is_amo = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.req_id = req_id;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.is_fpu = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q.user.data_exclusive = 1'b0;
+    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_req[port_id].q_valid = 1'b1;
+  endtask
+
+  data_t        ref_word;
+  tcdm_addr_t   dram_begin_addr;
+  strb_t        strb_snitch;
+  int port_id;
+  assign ref_word = 32'hDEADBEEF;
+  assign dram_begin_addr = 32'h80000000;
+  assign strb_snitch = 4'hF;
+
+  // assign read_rsp = i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4];
+
   // Coherence test
   initial begin
     // automatic int exit_code;
@@ -229,34 +297,45 @@ module tb_cachepool;
     // to_cluster_req = '0;
     // debug_req      = '0;
 
+    $display("[TB] Coherence test start");
+    
     // Wait for a while
+    repeat (50)
+      @(posedge clk);
+
+    reset_tcdm_req(0);
+    // reset_tcdm_req(1);
+    // reset_tcdm_req(2);
+    // reset_tcdm_req(3);
+
     repeat (1000)
       @(posedge clk);
 
-    // FIXME: valid not working
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_valid_i[1] = 1'h1;
+    // send_snitch_write_req(dram_begin_addr, ref_word, strb_snitch, 2'h0, 5'h00);
+    send_snitch_write_req(32'h800053d0, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
+    // $display("[TB] Write request sent");
+      @(posedge clk);
+    reset_tcdm_req(0);
 
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].addr_offset = 10'h3d0;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].wdata = 128'h0;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].op = HPDCACHE_REQ_STORE;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].be = 16'h000f;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].size = 3'h4;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].sid = 1'b1;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].tid = 11'h020;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].need_rsp = 1'b1;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].phys_indexed = 1'b1;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].addr_tag = 22'h200014;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].pma.uncacheable = 1'b0;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].pma.io = 1'b0;
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
+    // repeat (50)
+    //   @(posedge clk);
+    // send_snitch_read_req(dram_begin_addr, strb_snitch, 2'h0, 5'h01);
+    // $display("[TB] Read request sent");
+    //   @(posedge clk);
+    // reset_tcdm_req(0);
 
-    @(posedge clk);
-    i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.gen_l0_cache[0].i_l0_cache.core_req_i[1] = '0;
-    
-    repeat (1000)
-    @(posedge clk);
+    // if (i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.user.req_id == 5'h01) begin
+    //   if (i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.data == ref_word) begin
+    //     $display("[TB] R/W match!");
+    //   end else begin
+    //     $display("[TB] R/W mismatch! Expected %x but got %x.", ref_word, i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.data);
+    //   end
+    // end
 
-    $display("[tb] TB Finished");
+    repeat (50)
+      @(posedge clk);
+
+    $display("[TB] TB Finished");
 		$stop;
 
     // // Wait for end of computing signal

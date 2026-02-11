@@ -4,6 +4,8 @@
 
 // Author: Diyou Shen <dishen@iis.ee.ethz.ch>
 
+`define MANUAL_DEBUG
+
 `include "axi/assign.svh"
 `include "axi/typedef.svh"
 `include "common_cells/assertions.svh"
@@ -1765,8 +1767,8 @@ module cachepool_tile
     assign hpd_l0_cache_req_ready_coal[cb][0] = l0_cache_req_ready_final[cb][0];
 
     always_comb begin
-      // l0_cache_req_inv_valid[cb] = '0;
-      // l0_cache_req_inv[cb] = '0;
+      l0_cache_req_inv_valid[cb][1] = '0;
+      l0_cache_req_inv[cb][1] = '0;
       if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
         l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
         l0_cache_req_inv[cb][1].op = HPDCACHE_REQ_CMO_INVAL_NLINE;
@@ -2364,9 +2366,11 @@ module cachepool_tile
     );
     for (genvar j = 0; j < TcdmPorts; j++) begin : gen_tcdm_user
       always_comb begin
+`ifndef MANUAL_DEBUG
         tcdm_req[TcdmPortsOffs+j].q              = tcdm_req_wo_user[j].q;
         tcdm_req[TcdmPortsOffs+j].q.user.core_id = i[CoreIDWidth-1:0];
         tcdm_req[TcdmPortsOffs+j].q_valid        = tcdm_req_wo_user[j].q_valid;
+`endif
       end
     end
   end
