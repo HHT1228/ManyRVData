@@ -158,13 +158,13 @@ module cahcepool_dir_ctrl
   tag_data_t [SetAssociativity-1:0]   tag_bank_rdata, tag_bank_wdata;
   logic                               tag_bank_write_req;
 
-  tag_data_t                          curr_line_meta;
+  tag_data_t                          curr_line_meta, curr_line_meta_q;
   // logic      [SetAssociativity-1:0]   way_hit;
   // logic                               curr_line_meta_valid;
-  coherence_meta_t                    line_coherence_meta, next_coherence_meta;
+  coherence_meta_t                    line_coherence_meta, next_coherence_meta, next_coherence_meta_q;
   dir_line_state_t                    curr_line_state;
   // l0_line_state_t                     next_line_state;
-  hpd_coherence_state_t               next_line_state;
+  hpd_coherence_state_t               next_line_state, next_line_state_q;
   sharer_list_t                       curr_sharer_list;
   pseudo_port_t                       tag_bank_port_accessed_q, tag_bank_port_accessed_d;
 
@@ -198,6 +198,9 @@ module cahcepool_dir_ctrl
   inv_ack_cnt_t                       inv_ack_count;
   logic                               op_decoded;
 
+  `FF(next_line_state_q, next_line_state, '0, clk_i, rst_ni)
+  `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
+  `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -210,14 +213,7 @@ module cahcepool_dir_ctrl
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   // `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
 
-always_ff @(posedge clk_i or negedge rst_ni) begin
-    // otherwise hold current value
-    upstream_req_meta_q       <= upstream_req_meta_d;
-    upstream_req_valid_q      <= upstream_req_valid_d;
-    upstream_req_is_evict_q   <= upstream_req_is_evict_d;
-    upstream_req_write_q      <= upstream_req_write_d;
-    upstream_req_addr_q       <= upstream_req_addr_d;
-    upstream_req_fake_read_q  <= upstream_req_fake_read_d;
+  always_ff @(posedge clk_i or negedge rst_ni) begin
     if(!rst_ni) begin
       upstream_req_meta_q       <= '0;
       upstream_req_valid_q      <= 1'b0;
@@ -227,6 +223,19 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
       upstream_req_fake_read_q  <= 1'b0;
     end else if (op_decoded) begin
       upstream_req_valid_q      <= 1'b0; // Clear after decoding the op (one cycle after granted)
+      upstream_req_meta_q       <= upstream_req_meta_d;
+      upstream_req_is_evict_q   <= upstream_req_is_evict_d;
+      upstream_req_write_q      <= upstream_req_write_d;
+      upstream_req_addr_q       <= upstream_req_addr_d;
+      upstream_req_fake_read_q  <= upstream_req_fake_read_d;
+    end else begin
+      // otherwise hold current value
+      upstream_req_meta_q       <= upstream_req_meta_d;
+      upstream_req_valid_q      <= upstream_req_valid_d;
+      upstream_req_is_evict_q   <= upstream_req_is_evict_d;
+      upstream_req_write_q      <= upstream_req_write_d;
+      upstream_req_addr_q       <= upstream_req_addr_d;
+      upstream_req_fake_read_q  <= upstream_req_fake_read_d;
     end
     // else if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
     //   // Update on new request
@@ -397,6 +406,8 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     logic tag_bank_write_req_int;
     tag_data_t tag_bank_rdata_int, tag_bank_wdata_int;
 
+    logic rport_size_matcher, wport_size_matcher, rport_size_matcher_int, wport_size_matcher_int;
+
     insitu_cache_bank_access_controller #(
       .DEPTH              (CacheBankDepth),
       .NumWordsPerLine    (1),
@@ -407,27 +418,28 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
 
       // .upstream_read_addr_i        (tag_bank_addr),
       // .upstream_read_valid_i       (upstream_req_valid_i && !busy && !upstream_req_fake_read_i),
-      .upstream_read_addr_i        (tag_bank_addr_d),
+      .upstream_read_addr_i        ({1'b0, tag_bank_addr_d}),
       .upstream_read_valid_i       (tag_bank_rvalid_d),
       .upstream_read_ready_o       (tag_bank_rready[i]),
       .upstream_read_data_o        (tag_bank_rdata[i]),
 
-      .upstream_write_addr_i       (tag_bank_addr_q),
+      .upstream_write_addr_i       ({1'b0, tag_bank_addr_d}),
       .upstream_write_req_i        (tag_bank_write_req),
       // .upstream_write_req_i        ('0),
       .upstream_write_data_i       (tag_bank_wdata[i]),
 
-      .downstream_read_addr_o      (tag_bank_addr_int),
+      .downstream_read_addr_o      ({rport_size_matcher_int, tag_bank_addr_int}),
       .downstream_read_valid_o     (tag_bank_read_valid_int),
       .downstream_read_ready_i     (tag_bank_read_ready_int),
       .downstream_read_data_i      (tag_bank_rdata_int),
 
-      .downstream_write_addr_o     (tag_bank_waddr_int),
+      .downstream_write_addr_o     ({wport_size_matcher_int, tag_bank_waddr_int}),
       .downstream_write_req_o      (tag_bank_write_req_int),
       .downstream_write_data_o     (tag_bank_wdata_int),
 
       // .bank_gnt_i                  (&(l1_data_bank_gnt_i[i]))
       .bank_gnt_i                  ('1)   // FIXME: this blocks outgoing requests
+      // .bank_gnt_i                  (&(dir_tag_bank_gnt_i[i]))
 
     );
 
@@ -441,12 +453,12 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
       .clk_i              (clk_i),
       .rst_ni             (rst_ni),
 
-      .read_addr_i        (tag_bank_addr_int),
+      .read_addr_i        ({1'b0, tag_bank_addr_int}),
       .read_valid_i       (tag_bank_read_valid_int),
       .read_ready_o       (tag_bank_read_ready_int),
       .read_data_o        (tag_bank_rdata_int),
 
-      .write_addr_i       (tag_bank_waddr_int),
+      .write_addr_i       ({1'b0, tag_bank_waddr_int}),
       .write_req_i        (tag_bank_write_req_int),
       .write_data_i       (tag_bank_wdata_int),
 
@@ -607,7 +619,9 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     logic update_state;        // commit state_d to tag/meta RAM
   } dir_actions_t;
 
-  dir_actions_t act;
+  dir_actions_t act, act_q;
+
+  `FF(act_q, act, '0, clk_i, rst_ni)
 
   // ---- Remember the pending reader when we’re in ESA (E-substate) ----
   logic [$clog2(NumCores)-1:0] pending_req_q, pending_req_d;
@@ -721,7 +735,8 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     downstream_req_meta_d     = downstream_req_meta_q;
     downstream_req_write_d    = downstream_req_write_q;
     downstream_req_wdata_d    = downstream_req_wdata_q;
-    if(act.send_excl_data || act.send_sh_data) begin  // read req to L2
+    // if(act.send_excl_data || act.send_sh_data) begin  // read req to L2
+    if (act_q.send_excl_data || act_q.send_sh_data) begin  // read req to L2
       // downstream_req_valid_o    = 1'b1;
       // downstream_req_valid_o    = upstream_req_valid_q || downstream_req_ready_i;
       // downstream_req_addr_o     = upstream_req_addr_q;
@@ -743,7 +758,8 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
       downstream_req_write_d    = upstream_req_write_d;
       // downstream_req_write_d    = '0;
       downstream_req_wdata_d    = upstream_req_wdata_i;
-    end else if (act.update_l2_data) begin            // write req to L2
+    // end else if (act.update_l2_data) begin            // write req to L2
+    end else if (act_q.update_l2_data) begin            // write req to L2
       // downstream_req_valid_o    = 1'b1;
       // downstream_req_valid_o    = upstream_req_valid_q || downstream_req_ready_i;
       // downstream_req_addr_o     = upstream_req_addr_q;
@@ -868,14 +884,18 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     fwd_tx_d        = fwd_tx_q;
     fwd_tx_valid_d  = fwd_tx_valid_q;
 
-    if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
+    // if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
+    if(act_q.send_inv_to_owner || act_q.send_inv_to_sharers) begin
       fwd_tx_d.addr           = upstream_req_addr_d;
-      fwd_tx_d.line_state     = next_line_state;
+      // fwd_tx_d.line_state     = next_line_state;
+      fwd_tx_d.line_state     = next_line_state_q;
       fwd_tx_d.fwd_msg_type = INV;
       fwd_tx_valid_d        = 1'b1;
-    end else if(act.send_probe_owner) begin
+    // end else if(act.send_probe_owner) begin
+    end else if(act_q.send_probe_owner) begin
       fwd_tx_d.addr           = upstream_req_addr_d;
-      fwd_tx_d.line_state     = next_line_state;
+      // fwd_tx_d.line_state     = next_line_state;
+      fwd_tx_d.line_state     = next_line_state_q;
       fwd_tx_d.fwd_msg_type = GET;
       fwd_tx_valid_d        = 1'b1;
     end
@@ -927,14 +947,16 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     coherence_rsp_d       = coherence_rsp_q;
     coherence_rsp_valid_d = coherence_rsp_valid_q;
 
-    if(act.send_evict_ack) begin
+    // if(act.send_evict_ack) begin
+    if(act_q.send_evict_ack) begin
       coherence_rsp_d.core_id         = req_sid;
       coherence_rsp_d.req_id          = req_tid;
       coherence_rsp_d.addr            = upstream_req_addr_d;
       coherence_rsp_d.is_inv_ack_cnt  = 1'b0;
       coherence_rsp_d.inv_ack_cnt     = '0; // no data
       coherence_rsp_valid_d           = 1'b1;
-    end else if (act.send_inv_ack_cnt) begin
+    // end else if (act.send_inv_ack_cnt) begin
+    end else if (act_q.send_inv_ack_cnt) begin
       coherence_rsp_d.core_id         = req_sid;
       coherence_rsp_d.req_id          = req_tid;
       coherence_rsp_d.addr            = upstream_req_addr_d;
@@ -975,9 +997,11 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
   // end
   
   always_comb begin : act_write_to_tag_bank
-    if(act.update_sharers || act.update_state) begin
+    // if(act.update_sharers || act.update_state) begin
+    if(act_q.update_sharers || act_q.update_state) begin
       tag_bank_write_req = 1'b1;
-      tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
+      // tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
+      tag_bank_wdata[way_id] = {next_coherence_meta_q, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
     end else begin
       tag_bank_write_req = 1'b0;
       tag_bank_wdata = '0;
@@ -1204,10 +1228,10 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     //   sharers_q     <= curr_sharer_list;
     //   pending_req_q <= pending_req_d;
     end else begin
-      // state_q       <= state_d;
-      // sharers_q     <= sharers_d;
-      state_q       <= DIR_LINE_INVALID;
-      sharers_q     <= '0;
+      state_q       <= state_d;
+      sharers_q     <= sharers_d;
+      // state_q       <= DIR_LINE_INVALID;
+      // sharers_q     <= '0;
       pending_req_q <= pending_req_d;
     end
   end

@@ -101,7 +101,9 @@ module cache_dir_tag_arb #(
     );
     // assign is_cache_meta_o[i] = !dir_tag_bank_req_i[i];
     assign cache_tag_bank_gnt_o[i] = cache_req_gnt[i];
+    // assign cache_tag_bank_gnt_o[i] = 1'b1;
     assign dir_tag_bank_gnt_o[i]   = dir_req_gnt[i];
+    // assign dir_tag_bank_gnt_o[i]   = 1'b1;
   end
 
   // `FF(cache_tag_bank_gnt_q, cache_req_gnt, '0, clk_i, rst_ni)

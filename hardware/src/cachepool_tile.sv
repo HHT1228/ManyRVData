@@ -4,7 +4,7 @@
 
 // Author: Diyou Shen <dishen@iis.ee.ethz.ch>
 
-`define MANUAL_DEBUG
+// `define MANUAL_DEBUG
 
 `include "axi/assign.svh"
 `include "axi/typedef.svh"
