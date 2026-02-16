@@ -1887,8 +1887,8 @@ module cachepool_tile
       .core_req_ready_o                   (l0_cache_req_ready_final[i]),
       .core_req_i                         (l0_cache_req_final[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
-      .core_req_tag_i                     (/* unused */),
-      .core_req_pma_i                     (/* unused */),
+      .core_req_tag_i                     ('{default: 1'b0}),
+      .core_req_pma_i                     ('{default: 1'b0}),
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
 

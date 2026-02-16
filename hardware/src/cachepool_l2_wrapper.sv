@@ -160,7 +160,7 @@ module cachepool_l2_wrapper
   input logic             [SpatzAxiAddrWidth-1:0] bitmask_up_i,
   input logic             [$clog2(TCDMAddrWidth)-1:0] dynamic_offset_i,
   
-  input logic[31:0]       cb_id_i
+  input logic             [$clog2(NumL1CacheCtrl)-1:0]  cb_id_i
 );
 
   localparam NumSelBits = $clog2(NumL1CacheCtrl);
@@ -208,7 +208,7 @@ module cachepool_l2_wrapper
   logic            [NumTagBankPerCtrl-1:0] tag_bank_be;
   tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_rdata;
 
-  logic            [NumTagBankPerCtrl-1:0] is_cache_meta;
+  // logic            [NumTagBankPerCtrl-1:0] is_cache_meta;
 
   logic            l2_dir_resp_valid;
   logic            l2_dir_resp_ready;
@@ -412,7 +412,7 @@ module cachepool_l2_wrapper
   assign tag_bank_be    = l1_tag_bank_be;
 
   assign core_req_ready_o = dir_l2_req_ready;
-  assign is_cache_meta    = {NumTagBankPerCtrl{1'b1}};
+  // assign is_cache_meta    = {NumTagBankPerCtrl{1'b1}};
 `else
   cache_dir_tag_arb #(
     .NumTagBankPerCtrl   (NumTagBankPerCtrl ),
@@ -441,7 +441,7 @@ module cachepool_l2_wrapper
     .tag_bank_wdata_o       (tag_bank_wdata),
     .tag_bank_be_o          (tag_bank_be),
 
-    // .is_cache_meta_o        (is_cache_meta)
+    // .is_cache_meta_o        (is_cache_meta),
     .cache_tag_bank_gnt_o   (l1_cache_tag_bank_gnt),
     .dir_tag_bank_gnt_o     (l1_dir_tag_bank_gnt)
 
@@ -497,55 +497,55 @@ module cachepool_l2_wrapper
   // TODO: arbitration logic between dir ctrl and cache ctrl for tag bank access
 
   for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
-    // tc_sram_impl #(
-    //   .NumWords  (L1CacheWayEntry/BankFactor),
-    //   .DataWidth ($bits(tag_data_t)           ),
-    //   .ByteWidth ($bits(tag_data_t)           ),
-    //   .NumPorts  (1                           ),
-    //   .Latency   (1                           ),
-    //   .SimInit   ("zeros"                     ),
-    //   .impl_in_t (impl_in_t                   )
-    // ) i_meta_bank (
-    //   .clk_i  (clk_i                   ),
-    //   .rst_ni (rst_ni                  ),
-    //   .impl_i ('0                      ),
-    //   .impl_o (/* unsed */             ),
-    //   // .req_i  (l1_tag_bank_req  [j]),
-    //   // .we_i   (l1_tag_bank_we   [j]),
-    //   // .addr_i (l1_tag_bank_addr [j]),
-    //   // .wdata_i(l1_tag_bank_wdata[j]),
-    //   // .be_i   (l1_tag_bank_be   [j]),
-    //   // .rdata_o(l1_tag_bank_rdata[j])
-    //   .req_i  (tag_bank_req  [j]),
-    //   .we_i   (tag_bank_we   [j]),
-    //   .addr_i (tag_bank_addr [j]),
-    //   .wdata_i(tag_bank_wdata[j]),
-    //   .be_i   (tag_bank_be   [j]),
-    //   .rdata_o(tag_bank_rdata[j])
-    // );
-
-    tc_sram_meta_impl #(
+    tc_sram_impl #(
       .NumWords  (L1CacheWayEntry/BankFactor),
       .DataWidth ($bits(tag_data_t)           ),
       .ByteWidth ($bits(tag_data_t)           ),
       .NumPorts  (1                           ),
       .Latency   (1                           ),
       .SimInit   ("zeros"                     ),
-      .impl_in_t (impl_in_t                   ),
-      .NumBitsCacheMeta (29)                          // TODO: remove hardcoding
+      .impl_in_t (impl_in_t                   )
     ) i_meta_bank (
       .clk_i  (clk_i                   ),
       .rst_ni (rst_ni                  ),
       .impl_i ('0                      ),
       .impl_o (/* unsed */             ),
+      // .req_i  (l1_tag_bank_req  [j]),
+      // .we_i   (l1_tag_bank_we   [j]),
+      // .addr_i (l1_tag_bank_addr [j]),
+      // .wdata_i(l1_tag_bank_wdata[j]),
+      // .be_i   (l1_tag_bank_be   [j]),
+      // .rdata_o(l1_tag_bank_rdata[j])
       .req_i  (tag_bank_req  [j]),
       .we_i   (tag_bank_we   [j]),
       .addr_i (tag_bank_addr [j]),
       .wdata_i(tag_bank_wdata[j]),
       .be_i   (tag_bank_be   [j]),
-      .is_cache_meta_i (is_cache_meta[j]),
       .rdata_o(tag_bank_rdata[j])
     );
+
+    // tc_sram_meta_impl #(
+    //   .NumWords  (L1CacheWayEntry/BankFactor),
+    //   .DataWidth ($bits(tag_data_t)           ),
+    //   .ByteWidth ($bits(tag_data_t)           ),
+    //   .NumPorts  (1                           ),
+    //   .Latency   (1                           ),
+    //   .SimInit   ("zeros"                     ),
+    //   .impl_in_t (impl_in_t                   ),
+    //   .NumBitsCacheMeta (29)                          // TODO: remove hardcoding
+    // ) i_meta_bank (
+    //   .clk_i  (clk_i                   ),
+    //   .rst_ni (rst_ni                  ),
+    //   .impl_i ('0                      ),
+    //   .impl_o (/* unsed */             ),
+    //   .req_i  (tag_bank_req  [j]),
+    //   .we_i   (tag_bank_we   [j]),
+    //   .addr_i (tag_bank_addr [j]),
+    //   .wdata_i(tag_bank_wdata[j]),
+    //   .be_i   (tag_bank_be   [j]),
+    //   .is_cache_meta_i (1'b0),
+    //   .rdata_o(tag_bank_rdata[j])
+    // );
   end
 
   // TODO: Should we use a single large bank or multiple narrow ones?

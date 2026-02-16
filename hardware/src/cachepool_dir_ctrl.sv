@@ -198,7 +198,7 @@ module cahcepool_dir_ctrl
   inv_ack_cnt_t                       inv_ack_count;
   logic                               op_decoded;
 
-  `FF(next_line_state_q, next_line_state, '0, clk_i, rst_ni)
+  `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
   `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
   
@@ -210,7 +210,7 @@ module cahcepool_dir_ctrl
   
   // `FF(upstream_req_addr_q, upstream_req_addr_i, '0, clk_i, rst_ni)
 
-  assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
+  // assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   // `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -221,6 +221,7 @@ module cahcepool_dir_ctrl
       upstream_req_write_q      <= 1'b0;
       upstream_req_addr_q       <= '0;
       upstream_req_fake_read_q  <= 1'b0;
+      upstream_req_evict_q      <= '0;
     end else if (op_decoded) begin
       upstream_req_valid_q      <= 1'b0; // Clear after decoding the op (one cycle after granted)
       upstream_req_meta_q       <= upstream_req_meta_d;
@@ -228,6 +229,7 @@ module cahcepool_dir_ctrl
       upstream_req_write_q      <= upstream_req_write_d;
       upstream_req_addr_q       <= upstream_req_addr_d;
       upstream_req_fake_read_q  <= upstream_req_fake_read_d;
+      upstream_req_evict_q      <= '0;
     end else begin
       // otherwise hold current value
       upstream_req_meta_q       <= upstream_req_meta_d;
@@ -236,6 +238,7 @@ module cahcepool_dir_ctrl
       upstream_req_write_q      <= upstream_req_write_d;
       upstream_req_addr_q       <= upstream_req_addr_d;
       upstream_req_fake_read_q  <= upstream_req_fake_read_d;
+      upstream_req_evict_q      <= upstream_req_evict_d;
     end
     // else if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
     //   // Update on new request
@@ -370,10 +373,11 @@ module cahcepool_dir_ctrl
     tag_bank_addr_d   = tag_bank_addr_q;
 
     if (!upstream_req_fake_read_i && !busy) begin
-      if (downstream_resp_valid_i) begin
-        tag_bank_rvalid_d = 1'b1;
-        tag_bank_addr_d   = downstream_req_addr_q[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
-      end else if (fwd_rx_valid_i) begin
+      // if (downstream_resp_valid_i) begin
+      //   tag_bank_rvalid_d = 1'b1;
+      //   tag_bank_addr_d   = downstream_req_addr_q[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+      // end else 
+      if (fwd_rx_valid_i) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = fwd_rx_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
       end else if (upstream_req_valid_i) begin
@@ -531,6 +535,7 @@ module cahcepool_dir_ctrl
   tag_data_t curr_line_meta_reg;
   logic      curr_line_hit;
   logic [$clog2(SetAssociativity)-1:0] way_id, way_id_q;
+  cache_tag_t [SetAssociativity-1:0] local_tag;
 
   always_comb begin
     curr_line_meta_reg = '0;      // default: no match -> zero meta
@@ -541,7 +546,7 @@ module cahcepool_dir_ctrl
     // scan ways once (single always_comb)
     for (int i = 0; i < SetAssociativity; i++) begin
       // tag_data_t local_meta;
-      cache_tag_t local_tag;
+      // cache_tag_t local_tag;
 
       // pick the port data according to tag_bank_port_accessed
       // unique case (tag_bank_port_accessed_q)
@@ -555,12 +560,12 @@ module cahcepool_dir_ctrl
       // endcase
 
       // extract tag bits from the meta (same slicing you used before)
-      local_tag = tag_bank_rdata[i][NumLRUBits +: NumActualTagBits];
+      local_tag[i] = tag_bank_rdata[i][NumLRUBits +: NumActualTagBits];
 
       // If not already found a hit, compare and latch
       // if (!curr_line_hit && (local_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits])) begin
       if (!curr_line_hit &&
-          (local_tag == upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits]) &&
+          (local_tag[i] == upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits]) &&
           (upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits] != '0)) begin
         curr_line_meta_reg = tag_bank_rdata[i];
         curr_line_hit      = 1'b1;
@@ -997,14 +1002,13 @@ module cahcepool_dir_ctrl
   // end
   
   always_comb begin : act_write_to_tag_bank
+    tag_bank_write_req = 1'b0;
+    tag_bank_wdata = '0;
     // if(act.update_sharers || act.update_state) begin
     if(act_q.update_sharers || act_q.update_state) begin
       tag_bank_write_req = 1'b1;
       // tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
       tag_bank_wdata[way_id] = {next_coherence_meta_q, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
-    end else begin
-      tag_bank_write_req = 1'b0;
-      tag_bank_wdata = '0;
     end
   end
 
@@ -1020,6 +1024,7 @@ module cahcepool_dir_ctrl
   // Next-state logic of main FSM
   dir_line_state_t current_state;
   sharer_list_t    current_sharers;
+  assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   assign curr_state   = tag_bank_gnt ? curr_line_state : state_q;
   assign curr_sharers = tag_bank_gnt ? curr_sharer_list : sharers_q;
   always_comb begin
@@ -1028,6 +1033,7 @@ module cahcepool_dir_ctrl
     sharers_d     = sharers_q;
     pending_req_d = pending_req_q;
     act           = '0;
+    inv_ack_count = '0;
 
     // unique case (state_q)
     unique case (curr_state)

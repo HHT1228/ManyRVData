@@ -194,6 +194,9 @@ module coherence_interco
       l1_l2_fwd_xbar_o[i] = '0;
       l1_l2_fwd_xbar_valid_o[i] = 1'b0;
       l1_l2_evict_xbar_o[i] = '0;
+      l2_l1_fwd_tcdm_int[i].q_ready = 1'b0;
+      l2_l1_rsp_tcdm_int[i].q_ready = 1'b0;
+      
       if (l1_l2_coherence_tcdm_xbar[i].q_valid) begin
         if (l1_l2_coherence_tcdm_xbar[i].q.user.is_fwd) begin
           l1_l2_fwd_xbar_o[i] = l1_l2_coherence_tcdm_xbar[i].q.data.fwd;
