@@ -4,7 +4,7 @@
 
 // Author: Diyou Shen <dishen@iis.ee.ethz.ch>
 
-// `define MANUAL_DEBUG
+`define MANUAL_DEBUG
 
 `include "axi/assign.svh"
 `include "axi/typedef.svh"
@@ -1986,6 +1986,18 @@ module cachepool_tile
   // } dir_cache_fwd_t;
 
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin: gen_l1_cache_ctrl
+    // Width casting (works only for NumL1CacheCtrl=4)
+    logic [$clog2(NumL1CacheCtrl)-1:0]  cb_id;
+    always_comb begin
+      case (cb)
+        0: cb_id = 2'b00;
+        1: cb_id = 2'b01;
+        2: cb_id = 2'b10;
+        3: cb_id = 2'b11;
+        default: cb_id = '0;
+      endcase
+    end
+
     cachepool_l2_wrapper #(
       // Core
       .NumPorts         (NrL1PortsAsL2      ),
@@ -2080,7 +2092,7 @@ module cachepool_tile
       .bitmask_lo_i          (bitmask_lo                     ),
       .bitmask_up_i          (bitmask_up                     ),
       .dynamic_offset_i      (dynamic_offset                 ),
-      .cb_id_i               (cb                             )
+      .cb_id_i               (cb_id                          )
     );
 
     // cachepool_cache_ctrl #(

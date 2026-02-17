@@ -41,7 +41,7 @@ module cache_dir_tag_arb #(
   // Response to upstream (cache or dir)
   // output tag_data_t       [NumTagBankPerCtrl-1:0] tag_bank_rdata_o,
 
-  // output logic            [NumTagBankPerCtrl-1:0] is_cache_meta_o,
+  output logic            [NumTagBankPerCtrl-1:0] is_cache_meta_o,
   output logic            [NumTagBankPerCtrl-1:0] cache_tag_bank_gnt_o,
   output logic            [NumTagBankPerCtrl-1:0] dir_tag_bank_gnt_o
 );
@@ -99,7 +99,7 @@ module cache_dir_tag_arb #(
       .data_o  (final_req_pack[i]),
       .idx_o   ()
     );
-    // assign is_cache_meta_o[i] = !dir_tag_bank_req_i[i];
+    assign is_cache_meta_o[i] = !dir_tag_bank_req_i[i];
     assign cache_tag_bank_gnt_o[i] = cache_req_gnt[i];
     // assign cache_tag_bank_gnt_o[i] = 1'b1;
     assign dir_tag_bank_gnt_o[i]   = dir_req_gnt[i];

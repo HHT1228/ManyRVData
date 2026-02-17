@@ -154,6 +154,7 @@ module cahcepool_dir_ctrl
   logic                               busy, busy_q, busy_d; // Does not accept new req when busy
 
   tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
+  // tcdm_bank_addr_t                    tag_bank_waddr;
   // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
   tag_data_t [SetAssociativity-1:0]   tag_bank_rdata, tag_bank_wdata;
   logic                               tag_bank_write_req;
@@ -175,6 +176,7 @@ module cahcepool_dir_ctrl
   coherence_evict_t                   upstream_req_evict_q, upstream_req_evict_d;
   core_meta_t                         upstream_req_meta_d;
   logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
+  word_data_t                         upstream_req_wdata_q, upstream_req_wdata_d;
   // logic                               upstream_req_valid_d, upstream_req_is_evict_d, upstream_req_write_d;
 
   addr_t                              upstream_req_addr_q, upstream_req_addr_d;
@@ -229,6 +231,7 @@ module cahcepool_dir_ctrl
       upstream_req_write_q      <= upstream_req_write_d;
       upstream_req_addr_q       <= upstream_req_addr_d;
       upstream_req_fake_read_q  <= upstream_req_fake_read_d;
+      upstream_req_wdata_q      <= upstream_req_wdata_d;
       upstream_req_evict_q      <= '0;
     end else begin
       // otherwise hold current value
@@ -238,6 +241,7 @@ module cahcepool_dir_ctrl
       upstream_req_write_q      <= upstream_req_write_d;
       upstream_req_addr_q       <= upstream_req_addr_d;
       upstream_req_fake_read_q  <= upstream_req_fake_read_d;
+      upstream_req_wdata_q      <= upstream_req_wdata_d;
       upstream_req_evict_q      <= upstream_req_evict_d;
     end
     // else if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
@@ -273,6 +277,7 @@ module cahcepool_dir_ctrl
     upstream_req_write_d      = upstream_req_write_q;
     upstream_req_addr_d       = upstream_req_addr_q;
     upstream_req_fake_read_d  = upstream_req_fake_read_q;
+    upstream_req_wdata_d      = upstream_req_wdata_q;
     upstream_req_evict_d      = upstream_req_evict_q;
 
     if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
@@ -283,6 +288,7 @@ module cahcepool_dir_ctrl
       upstream_req_write_d      = upstream_req_write_i;
       upstream_req_addr_d       = upstream_req_addr_i;
       upstream_req_fake_read_d  = upstream_req_fake_read_i;
+      upstream_req_wdata_d      = upstream_req_wdata_i;
     end else if (upstream_req_evict_i.valid) begin
       upstream_req_evict_d   = upstream_req_evict_i;
     end
@@ -396,7 +402,7 @@ module cahcepool_dir_ctrl
       tag_bank_addr_q   <= '0;
     end else if (tag_bank_rvalid_d && |tag_bank_rready) begin
       tag_bank_rvalid_q <= 1'b0;
-      tag_bank_addr_q   <= '0;      
+      tag_bank_addr_q   <= tag_bank_addr_d;      
     end else begin
       tag_bank_rvalid_q <= tag_bank_rvalid_d;
       tag_bank_addr_q   <= tag_bank_addr_d;
@@ -758,7 +764,7 @@ module cahcepool_dir_ctrl
       downstream_req_meta_d.is_amo  = upstream_req_meta_d.is_amo;
       downstream_req_meta_d.req_id  = upstream_req_meta_d.req_id;
       downstream_req_meta_d.is_fpu  = upstream_req_meta_d.is_fpu;
-      downstream_req_meta_d.data_exclusive  = 1'b1;
+      downstream_req_meta_d.data_exclusive  = act_q.send_excl_data;
 
       downstream_req_write_d    = upstream_req_write_d;
       // downstream_req_write_d    = '0;
@@ -773,8 +779,8 @@ module cahcepool_dir_ctrl
       // downstream_req_write_o    = upstream_req_write_q;
       // downstream_req_wdata_o    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
       
-      downstream_req_valid_d    = upstream_req_valid_d;
-      // downstream_req_valid_d    = 1'b1;
+      // downstream_req_valid_d    = upstream_req_valid_d;
+      downstream_req_valid_d    = 1'b1;
       downstream_req_addr_d     = upstream_req_addr_d;
       downstream_req_meta_d     = upstream_req_meta_d;
       downstream_req_write_d    = upstream_req_write_d;
@@ -1002,10 +1008,12 @@ module cahcepool_dir_ctrl
   // end
   
   always_comb begin : act_write_to_tag_bank
+    // tag_bank_waddr = '0;
     tag_bank_write_req = 1'b0;
     tag_bank_wdata = '0;
     // if(act.update_sharers || act.update_state) begin
     if(act_q.update_sharers || act_q.update_state) begin
+      // tag_bank_waddr = tag_bank_addr_d;
       tag_bank_write_req = 1'b1;
       // tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
       tag_bank_wdata[way_id] = {next_coherence_meta_q, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
@@ -1025,8 +1033,8 @@ module cahcepool_dir_ctrl
   dir_line_state_t current_state;
   sharer_list_t    current_sharers;
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
-  assign curr_state   = tag_bank_gnt ? curr_line_state : state_q;
-  assign curr_sharers = tag_bank_gnt ? curr_sharer_list : sharers_q;
+  assign current_state   = tag_bank_gnt ? curr_line_state : state_q;
+  assign current_sharers = tag_bank_gnt ? curr_sharer_list : sharers_q;
   always_comb begin
     // Defaults: hold
     state_d       = state_q;
@@ -1036,7 +1044,7 @@ module cahcepool_dir_ctrl
     inv_ack_count = '0;
 
     // unique case (state_q)
-    unique case (curr_state)
+    unique case (current_state)
       // Invalid state (I)
       DIR_LINE_INVALID: begin
         unique case (op)
@@ -1079,7 +1087,7 @@ module cahcepool_dir_ctrl
             act.send_inv_to_sharers = 1'b1;
             act.update_l2_data      = 1'b1;
             // inv_ack_count           = count_set_bits(sharers_q);
-            inv_ack_count           = count_set_bits(curr_sharers);
+            inv_ack_count           = count_set_bits(current_sharers);
             sharers_d               = '0;
             sharers_d               = set_bit(sharers_d, req_sid);
             act.update_sharers      = 1'b1;
@@ -1154,7 +1162,7 @@ module cahcepool_dir_ctrl
             // Owner returned latest data → serve pending reader, then S
             act.send_sh_data   = 1'b1;     // to pending_req_q
             // sharers_d          = set_bit(sharers_q, pending_req_q);
-            sharers_d          = set_bit(curr_sharers, pending_req_q);
+            sharers_d          = set_bit(current_sharers, pending_req_q);
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_SHARED; // TODO: S or E if only one sharer left
             act.update_state       = 1'b1;
@@ -1180,10 +1188,15 @@ module cahcepool_dir_ctrl
         unique case (op)
           OP_READ: begin
             // Someone wants to read: probe owner then S
-            act.send_probe_owner = 1'b1;
-            pending_req_d        = req_sid;
-            state_d              = DIR_LINE_ESA;
-            act.update_state         = 1'b1;
+            // FIXME: reader is the owner itself
+            if (current_sharers[req_sid] == 1'b1) begin
+              act.send_excl_data   = 1'b1;
+            end else begin
+              act.send_probe_owner = 1'b1;
+              pending_req_d        = req_sid;
+              state_d              = DIR_LINE_ESA;
+              act.update_state     = 1'b1;
+            end
           end
           OP_WRITE: begin
             // Another writer: invalidate current owner; serialize WT; new owner=req

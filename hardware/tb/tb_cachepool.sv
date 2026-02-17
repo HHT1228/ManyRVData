@@ -8,7 +8,7 @@ import "DPI-C" context function byte read_section(input longint address, inout b
 import "DPI-C" function int fesvr_tick();
 import "DPI-C" function int get_entry_point();
 
-// `define MANUAL_DEBUG
+`define MANUAL_DEBUG
 
 `define wait_for(signal) \
   do \
@@ -309,21 +309,21 @@ module tb_cachepool;
     // reset_tcdm_req(2);
     // reset_tcdm_req(3);
 
-    repeat (1000)
+    repeat (50)
       @(posedge clk);
 
     // send_snitch_write_req(dram_begin_addr, ref_word, strb_snitch, 2'h0, 5'h00);
     send_snitch_write_req(32'h800053d0, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
-    // $display("[TB] Write request sent");
+    $display("[TB] Write request sent");
       @(posedge clk);
     reset_tcdm_req(0);
 
-    // repeat (50)
-    //   @(posedge clk);
-    // send_snitch_read_req(dram_begin_addr, strb_snitch, 2'h0, 5'h01);
-    // $display("[TB] Read request sent");
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
+    repeat (50)
+      @(posedge clk);
+    send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h01);
+    $display("[TB] Read request sent");
+      @(posedge clk);
+    reset_tcdm_req(0);
 
     // if (i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.user.req_id == 5'h01) begin
     //   if (i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.data == ref_word) begin
