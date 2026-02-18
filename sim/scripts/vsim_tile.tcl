@@ -77,11 +77,11 @@ for {set c 0} {$c < 4} {incr c} {
 
 	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group dir_read_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_read_arb/*
+	# add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group dir_access_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_access_arb/*
 
 	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group req_arbiter	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_arbiter_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group dir_read_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_read_arb/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group dir_access_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_access_arb/*
 
 	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group wbuf	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/gen_wbuf/hpdcache_wbuf_i/*
 

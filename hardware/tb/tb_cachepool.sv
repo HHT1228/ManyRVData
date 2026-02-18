@@ -292,11 +292,6 @@ module tb_cachepool;
 
   // Coherence test
   initial begin
-    // automatic int exit_code;
-    // exit_code = fesvr_tick();
-    // // Idle
-    // to_cluster_req = '0;
-    // debug_req      = '0;
 
     $display("[TB] Coherence test start");
     
@@ -305,14 +300,18 @@ module tb_cachepool;
       @(posedge clk);
 
     reset_tcdm_req(0);
-    // reset_tcdm_req(1);
-    // reset_tcdm_req(2);
-    // reset_tcdm_req(3);
 
     repeat (50)
       @(posedge clk);
 
-    // send_snitch_write_req(dram_begin_addr, ref_word, strb_snitch, 2'h0, 5'h00);
+    send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h01);
+    $display("[TB] Read request sent");
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+    
     send_snitch_write_req(32'h800053d0, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
     $display("[TB] Write request sent");
       @(posedge clk);
@@ -320,6 +319,7 @@ module tb_cachepool;
 
     repeat (50)
       @(posedge clk);
+    
     send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h01);
     $display("[TB] Read request sent");
       @(posedge clk);
@@ -338,11 +338,6 @@ module tb_cachepool;
 
     $display("[TB] TB Finished");
 		$stop;
-
-    // // Wait for end of computing signal
-    // wait (eoc);
-    // $display("[EOC] Simulation ended at %t (retval = WIP).", $time);
-    // $finish(0);
   end
 `endif
 

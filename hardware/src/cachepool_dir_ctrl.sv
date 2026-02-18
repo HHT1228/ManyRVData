@@ -756,8 +756,8 @@ module cahcepool_dir_ctrl
       // downstream_req_write_o    = upstream_req_write_q;
       // downstream_req_wdata_o    = upstream_req_wdata_i;
 
-      downstream_req_valid_d    = upstream_req_valid_d;
-      // downstream_req_valid_d    = 1'b1;
+      // downstream_req_valid_d    = upstream_req_valid_d;
+      downstream_req_valid_d    = 1'b1;
       downstream_req_addr_d     = upstream_req_addr_d;
       // downstream_req_meta_d     = upstream_req_meta_d;
       downstream_req_meta_d.core_id = upstream_req_meta_d.core_id;
@@ -1188,9 +1188,13 @@ module cahcepool_dir_ctrl
         unique case (op)
           OP_READ: begin
             // Someone wants to read: probe owner then S
-            // FIXME: reader is the owner itself
             if (current_sharers[req_sid] == 1'b1) begin
+              // Owner read on M line: effectively exclusive read, no probe needed
               act.send_excl_data   = 1'b1;
+              // TODO: this transition might be redudant
+              // Keep L1 L2 consistent or tolerate E/M inconsistency?
+              state_d              = DIR_LINE_EXCLUSIVE;
+              act.update_state     = 1'b1;
             end else begin
               act.send_probe_owner = 1'b1;
               pending_req_d        = req_sid;
