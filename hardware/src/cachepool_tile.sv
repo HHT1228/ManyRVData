@@ -1841,6 +1841,13 @@ module cachepool_tile
 
   // Connecting cache_req (after unmerge before xbar to L0 D$)
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin: gen_l0_cache
+    hpdcache_pma_t dummy_pma [HPDCACHE_NREQUESTERS]; // PMA is don't care for non-VIPT, to bypass lint check
+    for (genvar j = 0; j < HPDCACHE_NREQUESTERS; j++) begin
+      assign dummy_pma[j].uncacheable = 1'b0;
+      assign dummy_pma[j].io = 1'b0;
+      assign dummy_pma[j].wr_policy_hint = HPDCACHE_WR_POLICY_WT;
+    end
+
     hpdcache  #(
       .HPDcacheCfg          (HPDcacheCfg),
       .wbuf_timecnt_t       (hpdcache_wbuf_timecnt_t),
@@ -1888,7 +1895,7 @@ module cachepool_tile
       .core_req_i                         (l0_cache_req_final[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
       .core_req_tag_i                     ('{default: 1'b0}),
-      .core_req_pma_i                     ('{default: 1'b0}),
+      .core_req_pma_i                     (dummy_pma),
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
 

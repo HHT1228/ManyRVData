@@ -212,8 +212,8 @@ module cahcepool_dir_ctrl
   
   // `FF(upstream_req_addr_q, upstream_req_addr_i, '0, clk_i, rst_ni)
 
-  // assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
-  // `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
+  assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
+  `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if(!rst_ni) begin
@@ -571,8 +571,9 @@ module cahcepool_dir_ctrl
       // If not already found a hit, compare and latch
       // if (!curr_line_hit && (local_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits])) begin
       if (!curr_line_hit &&
-          (local_tag[i] == upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits]) &&
-          (upstream_req_addr_q[AddrWidth-1 -: NumActualTagBits] != '0)) begin
+          (local_tag[i] == upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits]) &&
+          (upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits] != '0) &&
+          tag_bank_gnt_q) begin
         curr_line_meta_reg = tag_bank_rdata[i];
         curr_line_hit      = 1'b1;
         way_id             = i;
@@ -1032,9 +1033,9 @@ module cahcepool_dir_ctrl
   // Next-state logic of main FSM
   dir_line_state_t current_state;
   sharer_list_t    current_sharers;
-  assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
-  assign current_state   = tag_bank_gnt ? curr_line_state : state_q;
-  assign current_sharers = tag_bank_gnt ? curr_sharer_list : sharers_q;
+  // assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
+  assign current_state   = tag_bank_gnt_q ? curr_line_state : state_q;
+  assign current_sharers = tag_bank_gnt_q ? curr_sharer_list : sharers_q;
   always_comb begin
     // Defaults: hold
     state_d       = state_q;
