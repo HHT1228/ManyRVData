@@ -70,7 +70,8 @@ module cachepool_l2_wrapper
   parameter type          reqid_t                                         = logic,
   // parameter type          fwd_msg_type_t                                  = logic,
   parameter type          cache_dir_fwd_t                                 = logic,
-  parameter type          dir_cache_fwd_t                                 = logic,
+  parameter type          dir_ctrl_fwd_t                                  = logic,
+  parameter type          sharer_list_t                                   = logic,
   // parameter type          l0_line_state_t                                 = logic,
   parameter type          coherence_rsp_t                                 = logic,
   parameter type          coherence_evict_t                               = logic,
@@ -139,7 +140,7 @@ module cachepool_l2_wrapper
   input  cache_dir_fwd_t                                          fwd_rx_i,
   input  logic                                                    fwd_rx_valid_i,
   output logic                                                    fwd_rx_ready_o,
-  output cache_dir_fwd_t                                          fwd_tx_o,
+  output dir_ctrl_fwd_t                                           fwd_tx_o,
   output logic                                                    fwd_tx_valid_o,
   input  logic                                                    fwd_tx_ready_i,
 
@@ -248,6 +249,8 @@ module cachepool_l2_wrapper
     .reqid_t                  (reqid_t                ),
     // .fwd_msg_type_t           (fwd_msg_type_t         ),
     .cache_dir_fwd_t          (cache_dir_fwd_t        ),
+    .dir_ctrl_fwd_t           (dir_ctrl_fwd_t         ),
+    .sharer_list_t            (sharer_list_t          ),
     // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
     // .l0_line_state_t          (l0_line_state_t        )
     .coherence_rsp_t          (coherence_rsp_t        ),

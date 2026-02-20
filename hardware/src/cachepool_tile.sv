@@ -550,14 +550,24 @@ module cachepool_tile
   `TCDM_TYPEDEF_RSP_T(tcdm_rsp_cacheline_t, tcdm_rsp_chan_cacheline_t)
 
   // typedef logic [L1LineWidth/DataWidth-1:0] l1_wstrb_t;
+  typedef logic [NumCores-1:0]                   sharer_list_t;
 
   // Coherence typedefs
   typedef struct packed {
-    tcdm_addr_t     addr;
+    tcdm_addr_t           addr;
     // logic           is_ack;    // no need, covered by fwd_msg_type
-    fwd_msg_type_t  fwd_msg_type;
+    fwd_msg_type_t        fwd_msg_type;
     hpd_coherence_state_t line_state;
+    logic [CoreIDWidth-1:0] core_id;
   } cache_dir_fwd_t;
+
+  typedef struct packed {
+    tcdm_addr_t           addr;
+    // logic           is_ack;    // no need, covered by fwd_msg_type
+    fwd_msg_type_t        fwd_msg_type;
+    hpd_coherence_state_t line_state;
+    sharer_list_t         inv_receivers;
+  } dir_ctrl_fwd_t;
 
   // TODO: coherence req/rsp translation and interconnect
   typedef logic [$clog2(NrCores)-1:0] inv_ack_cnt_t;
@@ -627,6 +637,8 @@ module cachepool_tile
   `TCDM_TYPEDEF_RSP_CHAN_T(tcdm_rsp_chan_coherence_t, coherence_up_payload_t, coherence_tcdm_user_t)
   `TCDM_TYPEDEF_REQ_T(tcdm_req_coherence_t, tcdm_req_chan_coherence_t)
   `TCDM_TYPEDEF_RSP_T(tcdm_rsp_coherence_t, tcdm_rsp_chan_coherence_t)
+
+  typedef logic [$clog2(NumL0CacheCtrl)-1:0] fwd_sel_t;
 
   // typedef struct packed {
   //   hpdcache_req_sid_t  sid;
@@ -1084,7 +1096,11 @@ module cachepool_tile
   // Coherence signals
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_l1_fwd, l0_l1_fwd_xbar;
   logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid, l0_l1_fwd_xbar_valid, l0_l1_fwd_ready, l0_l1_fwd_xbar_ready;
-  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd, l1_l0_fwd_xbar;
+  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd_xbar;
+  dir_ctrl_fwd_t  [NumL1CacheCtrl-1:0] l1_l0_fwd;
+  cache_dir_fwd_t [NumL1CacheCtrl*NumL0CacheCtrl-1:0] l1_l0_fwd_unmerged;
+  logic           [NumL1CacheCtrl*NumL0CacheCtrl-1:0] l1_l0_fwd_unmerged_valid, l1_l0_fwd_unmerged_ready;
+  fwd_sel_t       [NumL1CacheCtrl*NumL0CacheCtrl-1:0] l1_l0_fwd_sel;
   logic           [NumL1CacheCtrl-1:0] l1_l0_fwd_valid, l1_l0_fwd_xbar_valid, l1_l0_fwd_ready, l1_l0_fwd_xbar_ready;
   coherence_rsp_t [NumL1CacheCtrl-1:0] l1_l0_coherence_rsp, l1_l0_coherence_rsp_xbar;
   logic           [NumL1CacheCtrl-1:0] l1_l0_coherence_rsp_valid, l1_l0_coherence_rsp_xbar_valid, l1_l0_coherence_rsp_ready, l1_l0_coherence_rsp_xbar_ready;
@@ -1715,13 +1731,13 @@ module cachepool_tile
     .l1_l2_evict_xbar_o  (l0_l1_coherence_evict_xbar),
     .l1_l2_evict_xbar_ready_i (l0_l1_coherence_evict_xbar_ready),
 
-    .l2_l1_fwd_i        (l1_l0_fwd),
-    .l2_l1_fwd_valid_i  (l1_l0_fwd_valid),
-    .l2_l1_fwd_ready_o  (l1_l0_fwd_ready),
+    // .l2_l1_fwd_i        ('0),
+    // .l2_l1_fwd_valid_i  (l1_l0_fwd_valid),
+    // .l2_l1_fwd_ready_o  (l1_l0_fwd_ready),
 
-    .l2_l1_fwd_xbar_o   (l1_l0_fwd_xbar),
-    .l2_l1_fwd_xbar_valid_o (l1_l0_fwd_xbar_valid),
-    .l2_l1_fwd_xbar_ready_i (l1_l0_fwd_xbar_ready),
+    // .l2_l1_fwd_xbar_o   (l1_l0_fwd_xbar),
+    // .l2_l1_fwd_xbar_valid_o (l1_l0_fwd_xbar_valid),
+    // .l2_l1_fwd_xbar_ready_i (l1_l0_fwd_xbar_ready),
 
     .l2_l1_rsp_i        (l1_l0_coherence_rsp),
     .l2_l1_rsp_valid_i  (l1_l0_coherence_rsp_valid),
@@ -1749,6 +1765,55 @@ module cachepool_tile
     assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict_hpd[cb].addr_tag;
     assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict_hpd[cb].valid;
   end
+
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : l1_l0_fwd_unmerge
+    for (genvar j = 0; j < NumL0CacheCtrl; j++) begin
+      always_comb begin
+        l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j]       = '0;
+        l1_l0_fwd_unmerged_valid[cb*NumL0CacheCtrl+j] = 1'b0;
+
+        if (l1_l0_fwd_valid[cb]) begin
+          if (l1_l0_fwd[cb].inv_receivers[j]) begin
+            l1_l0_fwd_unmerged_valid[cb*NumL0CacheCtrl+j]         = 1'b1;
+
+            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].addr          = l1_l0_fwd[cb].addr;
+            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].fwd_msg_type  = l1_l0_fwd[cb].fwd_msg_type;
+            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].line_state    = l1_l0_fwd[cb].line_state;
+            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].core_id       = j;
+
+            l1_l0_fwd_sel[cb*NumL0CacheCtrl+j] = j;
+          end
+        end
+      end
+    end
+  end
+
+  // TODO: CONTINUE HERE
+  stream_xbar #(
+    .NumInp       (NumL0CacheCtrl * NumL1CacheCtrl),
+    .NumOut       (NumL0CacheCtrl                 ),
+    // LockIn cannot be set when using external priority
+    .ExtPrio      (1'b0             ),
+    .AxiVldRdy    (1'b1             ),
+    .LockIn       (1'b1             ),
+    .payload_t    (cache_dir_fwd_t  )
+  ) i_coherence_fwd_xbar (
+    .clk_i  (clk_i            ),
+    .rst_ni (rst_ni           ),
+    .flush_i(1'b0             ),
+    // External priority flag
+    .rr_i   ('0             ),
+    // Master
+    .data_i (l1_l0_fwd_unmerged),
+    .valid_i(l1_l0_fwd_unmerged_valid),
+    .ready_o(l1_l0_fwd_unmerged_ready),
+    .sel_i  (l1_l0_fwd_sel),
+    // Slave
+    .data_o (l1_l0_fwd_xbar),
+    .valid_o(l1_l0_fwd_xbar_valid),
+    .ready_i(l1_l0_fwd_xbar_ready),
+    .idx_o  (/* Unused */)
+  );
 
   // TODO: CONTINUE HERE
   hpdcache_req_t  l0_cache_req_inv_buf   [NumL0CacheCtrl];
@@ -1870,6 +1935,7 @@ module cachepool_tile
       .hpdcache_mem_resp_r_t(hpdcache_mem_resp_r_t),
       .hpdcache_mem_resp_w_t(hpdcache_mem_resp_w_t),
       .cache_dir_fwd_t      (cache_dir_fwd_t),
+      .sharer_list_t        (sharer_list_t),
       .inv_ack_cnt_t        (inv_ack_cnt_t),
       .hpdcache_coherence_rsp_t (hpdcache_coherence_rsp_t),
       // .hpdcache_coherence_req_t (hpdcache_coherence_req_t),
@@ -2045,6 +2111,8 @@ module cachepool_tile
       .reqid_t                  (reqid_t                ),
       // .fwd_msg_type_t           (fwd_msg_type_t         ),
       .cache_dir_fwd_t          (cache_dir_fwd_t        ),
+      .dir_ctrl_fwd_t           (dir_ctrl_fwd_t         ),
+      .sharer_list_t              (sharer_list_t          ),
       // .dir_cache_fwd_t          (dir_cache_fwd_t        ),
       // .l0_line_state_t          (l0_line_state_t        )
       .coherence_rsp_t          (coherence_rsp_t        ),

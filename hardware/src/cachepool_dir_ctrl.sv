@@ -32,6 +32,8 @@ module cahcepool_dir_ctrl
   parameter type reqid_t            = logic,
   // parameter type fwd_msg_type_t   = logic,
   parameter type cache_dir_fwd_t    = logic,
+  parameter type dir_ctrl_fwd_t     = logic,
+  parameter type sharer_list_t      = logic,
   // parameter type dir_cache_fwd_t  = logic,
   // parameter type l0_line_state_t  = logic
   parameter type coherence_rsp_t    = logic,
@@ -81,7 +83,7 @@ module cahcepool_dir_ctrl
   input   logic                                             fwd_rx_valid_i,
   output  logic                                             fwd_rx_ready_o,
 
-  output  cache_dir_fwd_t                                   fwd_tx_o,
+  output  dir_ctrl_fwd_t                                    fwd_tx_o,
   output  logic                                             fwd_tx_valid_o,
   input   logic                                             fwd_tx_ready_i,
 
@@ -124,7 +126,7 @@ module cahcepool_dir_ctrl
   */
   // Coherence metadata as exntension to L2 tags
   // typedef logic [$clog2(NumCoherenceStates)-1:0] dir_line_state_t;
-  typedef logic [NumCores-1:0]                   sharer_list_t;
+  // typedef logic [NumCores-1:0]                   sharer_list_t;
   typedef logic [NumActualTagBits-1:0]           cache_tag_t;
   
   typedef enum logic [1:0] {
@@ -191,7 +193,8 @@ module cahcepool_dir_ctrl
   logic                               tag_bank_gnt, tag_bank_gnt_q;
   logic                               upstream_req_fake_read_q, upstream_req_fake_read_d;
 
-  cache_dir_fwd_t                     fwd_tx_q, fwd_tx_d;
+  // cache_dir_fwd_t                     fwd_tx_q, fwd_tx_d;
+  dir_ctrl_fwd_t                      fwd_tx_q, fwd_tx_d;
   logic                               fwd_tx_valid_q, fwd_tx_valid_d;
 
   coherence_rsp_t                     coherence_rsp_q, coherence_rsp_d;
@@ -200,9 +203,12 @@ module cahcepool_dir_ctrl
   inv_ack_cnt_t                       inv_ack_count;
   logic                               op_decoded;
 
+  sharer_list_t                       inv_receivers, inv_receivers_q;
+
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
   `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
+  `FF(inv_receivers_q, inv_receivers, '0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -892,6 +898,7 @@ module cahcepool_dir_ctrl
   //   end
   // end
 
+  // FIXME: need to include destination core id + multiple req (like broadcast?)
   always_comb begin : act_fwd_tx
     fwd_tx_d        = fwd_tx_q;
     fwd_tx_valid_d  = fwd_tx_valid_q;
@@ -901,15 +908,17 @@ module cahcepool_dir_ctrl
       fwd_tx_d.addr           = upstream_req_addr_d;
       // fwd_tx_d.line_state     = next_line_state;
       fwd_tx_d.line_state     = next_line_state_q;
-      fwd_tx_d.fwd_msg_type = INV;
-      fwd_tx_valid_d        = 1'b1;
+      fwd_tx_d.fwd_msg_type   = INV;
+      fwd_tx_valid_d          = 1'b1;
+      fwd_tx_d.inv_receivers  = inv_receivers_q;
     // end else if(act.send_probe_owner) begin
     end else if(act_q.send_probe_owner) begin
       fwd_tx_d.addr           = upstream_req_addr_d;
       // fwd_tx_d.line_state     = next_line_state;
       fwd_tx_d.line_state     = next_line_state_q;
-      fwd_tx_d.fwd_msg_type = GET;
-      fwd_tx_valid_d        = 1'b1;
+      fwd_tx_d.fwd_msg_type   = GET;
+      fwd_tx_valid_d          = 1'b1;
+      fwd_tx_d.inv_receivers  = '0;
     end
     // else begin
     //   fwd_tx_d.fwd_msg_type = INV;
@@ -1043,6 +1052,7 @@ module cahcepool_dir_ctrl
     pending_req_d = pending_req_q;
     act           = '0;
     inv_ack_count = '0;
+    inv_receivers = '0;
 
     // unique case (state_q)
     unique case (current_state)
@@ -1094,6 +1104,8 @@ module cahcepool_dir_ctrl
             act.update_sharers      = 1'b1;
             state_d                 = DIR_LINE_MODIFIED;
             act.update_state        = 1'b1;
+            inv_receivers           = current_sharers & ~(1'b1 << req_sid);
+            // inv_receivers           = current_sharers;
           end
           // Evictions remove bit; S->I if last sharer leaves
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_M_OWNER: begin
@@ -1120,13 +1132,14 @@ module cahcepool_dir_ctrl
           end
           OP_WRITE: begin
             // Writer arrives: invalidate current owner; serialize WT; new owner=req
-            act.send_inv_to_owner = 1'b1;
+            act.send_inv_to_owner = 1'b1;   // FIXME: don't need this, for temp debug xbar
             act.update_l2_data    = 1'b1;
             sharers_d             = '0;
             sharers_d             = set_bit(sharers_d, req_sid);
             act.update_sharers    = 1'b1;
             state_d               = DIR_LINE_MODIFIED;
-            act.update_state          = 1'b1;
+            act.update_state      = 1'b1;
+            inv_receivers         = current_sharers;
           end
           OP_GETACK: begin
             // No outstanding probe → ignore
@@ -1205,12 +1218,13 @@ module cahcepool_dir_ctrl
           end
           OP_WRITE: begin
             // Another writer: invalidate current owner; serialize WT; new owner=req
-            act.send_inv_to_owner = 1'b1;
+            act.send_inv_to_owner = 1'b1; // FIXME: no need
             act.update_l2_data    = 1'b1;
             sharers_d             = '0;
             sharers_d             = set_bit(sharers_d, req_sid);
             act.update_sharers    = 1'b1;
             state_d               = DIR_LINE_MODIFIED;
+            inv_receivers         = current_sharers;
           end
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
             act.send_evict_ack = 1'b1;
