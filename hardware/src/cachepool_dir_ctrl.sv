@@ -3,7 +3,8 @@
 `include "common_cells/registers.svh"
 
 module cahcepool_dir_ctrl 
-  import coherence_pkg::*; 
+  import cachepool_pkg::*;
+  import coherence_pkg::*;
   import hpdcache_pkg::*;
   #(
   
@@ -43,6 +44,8 @@ module cahcepool_dir_ctrl
 ) (
   input logic clk_i,
   input logic rst_ni,
+
+  input  logic                      [$clog2(AddrWidth)-1:0] dynamic_offset_i,
 
   // Request from L1
   input  logic                                              upstream_req_valid_i,
@@ -120,6 +123,7 @@ module cahcepool_dir_ctrl
   localparam int unsigned CacheBankDepth    = NumCacheEntry/SetAssociativity;
   localparam int unsigned NumLRUBits        = $clog2(SetAssociativity);
   localparam int unsigned NumActualTagBits  = AddrWidth - $clog2(CacheLineWidth/8) - $clog2(CacheBankDepth);
+  localparam int unsigned NumMemSelBits     = $clog2(NumL0CacheCtrl);
 
   /**
   * Type definitions
@@ -204,11 +208,13 @@ module cahcepool_dir_ctrl
   logic                               op_decoded;
 
   sharer_list_t                       inv_receivers, inv_receivers_q;
+  logic [CoreIDWidth-1:0]             new_owner, new_owner_q;
 
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
   `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
   `FF(inv_receivers_q, inv_receivers, '0, clk_i, rst_ni)
+  `FF(new_owner_q, new_owner, '0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -898,27 +904,32 @@ module cahcepool_dir_ctrl
   //   end
   // end
 
-  // FIXME: need to include destination core id + multiple req (like broadcast?)
+  logic [AddrWidth-1:0] lo_mask;
+  assign lo_mask = (AddrWidth'(1) << dynamic_offset_i) - 1;
   always_comb begin : act_fwd_tx
     fwd_tx_d        = fwd_tx_q;
     fwd_tx_valid_d  = fwd_tx_valid_q;
 
     // if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
     if(act_q.send_inv_to_owner || act_q.send_inv_to_sharers) begin
-      fwd_tx_d.addr           = upstream_req_addr_d;
+      // fwd_tx_d.addr           = upstream_req_addr_d;
+      fwd_tx_d.addr = ((upstream_req_addr_d & ~lo_mask) << NumMemSelBits) | (AddrWidth'(upstream_req_meta_d.lost_bits) << dynamic_offset_i) | (upstream_req_addr_d & lo_mask);
       // fwd_tx_d.line_state     = next_line_state;
       fwd_tx_d.line_state     = next_line_state_q;
       fwd_tx_d.fwd_msg_type   = INV;
       fwd_tx_valid_d          = 1'b1;
       fwd_tx_d.inv_receivers  = inv_receivers_q;
+      fwd_tx_d.new_owner      = new_owner_q;
     // end else if(act.send_probe_owner) begin
     end else if(act_q.send_probe_owner) begin
-      fwd_tx_d.addr           = upstream_req_addr_d;
+      // fwd_tx_d.addr           = upstream_req_addr_d;
+      fwd_tx_d.addr = ((upstream_req_addr_d & ~lo_mask) << NumMemSelBits) | (AddrWidth'(upstream_req_meta_d.lost_bits) << dynamic_offset_i) | (upstream_req_addr_d & lo_mask);
       // fwd_tx_d.line_state     = next_line_state;
       fwd_tx_d.line_state     = next_line_state_q;
       fwd_tx_d.fwd_msg_type   = GET;
       fwd_tx_valid_d          = 1'b1;
       fwd_tx_d.inv_receivers  = '0;
+      fwd_tx_d.new_owner      = '0;
     end
     // else begin
     //   fwd_tx_d.fwd_msg_type = INV;
@@ -972,7 +983,8 @@ module cahcepool_dir_ctrl
     if(act_q.send_evict_ack) begin
       coherence_rsp_d.core_id         = req_sid;
       coherence_rsp_d.req_id          = req_tid;
-      coherence_rsp_d.addr            = upstream_req_addr_d;
+      // coherence_rsp_d.addr            = upstream_req_addr_d;
+      coherence_rsp_d.addr = ((upstream_req_addr_d & ~lo_mask) << NumMemSelBits) | (AddrWidth'(upstream_req_meta_d.lost_bits) << dynamic_offset_i) | (upstream_req_addr_d & lo_mask);
       coherence_rsp_d.is_inv_ack_cnt  = 1'b0;
       coherence_rsp_d.inv_ack_cnt     = '0; // no data
       coherence_rsp_valid_d           = 1'b1;
@@ -980,7 +992,8 @@ module cahcepool_dir_ctrl
     end else if (act_q.send_inv_ack_cnt) begin
       coherence_rsp_d.core_id         = req_sid;
       coherence_rsp_d.req_id          = req_tid;
-      coherence_rsp_d.addr            = upstream_req_addr_d;
+      // coherence_rsp_d.addr            = upstream_req_addr_d;
+      coherence_rsp_d.addr = ((upstream_req_addr_d & ~lo_mask) << NumMemSelBits) | (AddrWidth'(upstream_req_meta_d.lost_bits) << dynamic_offset_i) | (upstream_req_addr_d & lo_mask);
       coherence_rsp_d.is_inv_ack_cnt  = 1'b1;
       coherence_rsp_d.inv_ack_cnt     = inv_ack_count;
       coherence_rsp_valid_d           = 1'b1;
@@ -1053,6 +1066,7 @@ module cahcepool_dir_ctrl
     act           = '0;
     inv_ack_count = '0;
     inv_receivers = '0;
+    new_owner     = '0;
 
     // unique case (state_q)
     unique case (current_state)
@@ -1105,6 +1119,7 @@ module cahcepool_dir_ctrl
             state_d                 = DIR_LINE_MODIFIED;
             act.update_state        = 1'b1;
             inv_receivers           = current_sharers & ~(1'b1 << req_sid);
+            new_owner               = req_sid;
             // inv_receivers           = current_sharers;
           end
           // Evictions remove bit; S->I if last sharer leaves
@@ -1132,7 +1147,7 @@ module cahcepool_dir_ctrl
           end
           OP_WRITE: begin
             // Writer arrives: invalidate current owner; serialize WT; new owner=req
-            act.send_inv_to_owner = 1'b1;   // FIXME: don't need this, for temp debug xbar
+            // act.send_inv_to_owner = 1'b1;   // FIXME: don't need this, for temp debug xbar
             act.update_l2_data    = 1'b1;
             sharers_d             = '0;
             sharers_d             = set_bit(sharers_d, req_sid);
@@ -1140,6 +1155,7 @@ module cahcepool_dir_ctrl
             state_d               = DIR_LINE_MODIFIED;
             act.update_state      = 1'b1;
             inv_receivers         = current_sharers;
+            new_owner             = req_sid;
           end
           OP_GETACK: begin
             // No outstanding probe → ignore
@@ -1218,13 +1234,14 @@ module cahcepool_dir_ctrl
           end
           OP_WRITE: begin
             // Another writer: invalidate current owner; serialize WT; new owner=req
-            act.send_inv_to_owner = 1'b1; // FIXME: no need
+            // act.send_inv_to_owner = 1'b1;
             act.update_l2_data    = 1'b1;
             sharers_d             = '0;
             sharers_d             = set_bit(sharers_d, req_sid);
             act.update_sharers    = 1'b1;
             state_d               = DIR_LINE_MODIFIED;
-            inv_receivers         = current_sharers;
+            // inv_receivers         = current_sharers;
+            // new_owner             = req_sid;
           end
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
             act.send_evict_ack = 1'b1;

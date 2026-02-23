@@ -104,6 +104,8 @@ module cachepool_l2_wrapper
   /// Reset, active low.
   input  logic                                                            rst_ni,
 
+  // input  logic          [$clog2(AddrWidth)-1:0] dynamic_offset_i,
+
   /// Sync Control Signals
   input  logic                                                            cache_sync_valid_i,
   output logic                                                            cache_sync_ready_o,
@@ -258,6 +260,7 @@ module cachepool_l2_wrapper
   ) i_l2_directory_ctrl (
     .clk_i                       (clk_i                          ),
     .rst_ni                      (rst_ni                         ),
+    .dynamic_offset_i            (dynamic_offset_i                ),
     // Core Interface
     .upstream_req_valid_i        (core_req_valid_i               ),
 `ifdef CACHE_DIRECT

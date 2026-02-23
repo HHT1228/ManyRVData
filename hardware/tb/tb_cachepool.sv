@@ -304,7 +304,7 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
 
-    send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h01);
+    send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h00);
     $display("[TB] Read request sent");
       @(posedge clk);
     reset_tcdm_req(0);
@@ -312,7 +312,7 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
     
-    send_snitch_write_req(32'h800053d0, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
+    send_snitch_write_req(32'h800053d0, 32'hDEADBEEF, 4'hF, 2'h0, 5'h01);
     $display("[TB] Write request sent");
       @(posedge clk);
     reset_tcdm_req(0);
@@ -320,18 +320,18 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
     
-    send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h01);
+    send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h02);
     $display("[TB] Read request sent");
       @(posedge clk);
     reset_tcdm_req(0);
 
-    // if (i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.user.req_id == 5'h01) begin
-    //   if (i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.data == ref_word) begin
-    //     $display("[TB] R/W match!");
-    //   end else begin
-    //     $display("[TB] R/W mismatch! Expected %x but got %x.", ref_word, i_cluster_wrapper.i_cluster.gen_tiles[0].i_tile.tcdm_rsp[4].p.data);
-    //   end
-    // end
+    repeat (50)
+      @(posedge clk);
+
+    send_snitch_write_req(32'h800053d0, 32'hBEEFBEEF, 4'hF, 2'h0, 5'h03);
+    $display("[TB] Write request sent");
+      @(posedge clk);
+    reset_tcdm_req(0);
 
     repeat (50)
       @(posedge clk);

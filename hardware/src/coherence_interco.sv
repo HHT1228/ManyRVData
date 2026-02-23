@@ -110,6 +110,7 @@ module coherence_interco
   logic                     [NumL0CacheCtrl-1:0] l2_l1_fwd_empty, l2_l1_rsp_empty;
   logic                     [NumL1CacheCtrl-1:0] l2_l1_fwd_fifo_full, l2_l1_rsp_fifo_full;
 
+  logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_valid;
   
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : doownward_pre_xbar
     /*****************************
@@ -117,6 +118,8 @@ module coherence_interco
     *****************************/
     assign l1_l2_fwd_ready_o[i] = ~l1_l2_fwd_fifo_full[i];
     assign l1_l2_evict_ready_o[i] = ~l1_l2_evict_fifo_full[i];
+    // INV_ACK is inter-L1 traffic
+    assign l1_l2_fwd_valid[i] = l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type != INV_ACK);
 
     fifo_v3 #(
       .FALL_THROUGH(1'b0),
@@ -130,8 +133,8 @@ module coherence_interco
       .full_o     (l1_l2_fwd_fifo_full[i]),
       .empty_o    (l1_l2_fwd_empty[i]),
       .usage_o    (),
-      .data_i     ({l1_l2_fwd_valid_i[i], l1_l2_fwd_i[i]}),
-      .push_i     (l1_l2_fwd_valid_i[i]),
+      .data_i     ({l1_l2_fwd_valid[i], l1_l2_fwd_i[i]}),
+      .push_i     (l1_l2_fwd_valid[i]),
       .data_o     ({l1_l2_fwd_valid_int[i], l1_l2_fwd_int[i]}),
       .pop_i      (l1_l2_fwd_gnt[i] && !l1_l2_fwd_empty[i])
     );
@@ -366,5 +369,39 @@ module coherence_interco
     .mem_rsp_ready_o  (l2_l1_ready_tcdm_xbar),
     .mem_rsp_i        (l2_l1_coherence_tcdm)
   );
+
+  // Inter-L1 fwd message
+  // cache_dir_fwd_t           [NumL0CacheCtrl-1:0] inter_l1_fwd;
+  // logic                     [NumL0CacheCtrl-1:0] inter_l1_fwd_valid;
+  // for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : inter_l1_fwd
+  //   assign inter_l1_fwd_valid[i] = l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type == INV_ACK);
+  //   assign inter_l1_fwd[i]       = inter_l1_fwd_valid[i] ?  l1_l2_fwd_i[i] : '0;
+  // end
+
+  // stream_xbar #(
+  //   .NumInp       (NumL0CacheCtrl),
+  //   .NumOut       (NumL0CacheCtrl),
+  //   // LockIn cannot be set when using external priority
+  //   .ExtPrio      (1'b0             ),
+  //   .AxiVldRdy    (1'b1             ),
+  //   .LockIn       (1'b1             ),
+  //   .payload_t    (cache_dir_fwd_t  )
+  // ) i_inter_l1_fwd_xbar (
+  //   .clk_i  (clk_i            ),
+  //   .rst_ni (rst_ni           ),
+  //   .flush_i(1'b0             ),
+  //   // External priority flag
+  //   .rr_i   ('0             ),
+  //   // Master
+  //   .data_i (inter_l1_fwd),
+  //   .valid_i(inter_l1_fwd_valid),
+  //   .ready_o(inter_l1_fwd_ready),
+  //   .sel_i  (inter),
+  //   // Slave
+  //   .data_o (l1_l0_fwd_xbar),
+  //   .valid_o(l1_l0_fwd_xbar_valid),
+  //   .ready_i(l1_l0_fwd_xbar_ready),
+  //   .idx_o  (/* Unused */)
+  // );
 
 endmodule

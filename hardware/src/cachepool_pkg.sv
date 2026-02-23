@@ -225,6 +225,7 @@ package cachepool_pkg;
     reqid_t                 req_id;
     logic                   is_fpu;
     logic                   data_exclusive;
+    logic [$clog2(NumL0CacheCtrl)-1:0] lost_bits;
   } tcdm_user_t;
 
   typedef struct packed {

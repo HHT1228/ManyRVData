@@ -558,6 +558,7 @@ module cachepool_tile
     // logic           is_ack;    // no need, covered by fwd_msg_type
     fwd_msg_type_t        fwd_msg_type;
     hpd_coherence_state_t line_state;
+    logic [CoreIDWidth-1:0] new_owner;
     logic [CoreIDWidth-1:0] core_id;
   } cache_dir_fwd_t;
 
@@ -566,6 +567,7 @@ module cachepool_tile
     // logic           is_ack;    // no need, covered by fwd_msg_type
     fwd_msg_type_t        fwd_msg_type;
     hpd_coherence_state_t line_state;
+    logic [CoreIDWidth-1:0] new_owner;
     sharer_list_t         inv_receivers;
   } dir_ctrl_fwd_t;
 
@@ -1527,6 +1529,8 @@ module cachepool_tile
     assign l0_l1_req_meta_int[cb].core_id = cb;  // manually tag core_id
     assign l0_l1_req_meta_int[cb].is_fpu  = l0_l1_req[cb].mem_req_id[tidWidth-1]; // FIXME: doesn't sound rights
     assign l0_l1_req_meta_int[cb].data_exclusive = '0;      // req does not carry this info, groudned
+    assign l0_l1_req_meta_int[cb].lost_bits = l0_l1_req[cb].mem_req_addr[dynamic_offset+$clog2(NumL0CacheCtrl)-1-:$clog2(NumL0CacheCtrl)];
+    // assign l0_l1_req_meta_int[cb].lost_bits = '0;
     // assign l0_l1_req_write[cb] = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
     // assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
 
@@ -1564,6 +1568,7 @@ module cachepool_tile
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: l1_l0_rsp_connect
     always_comb begin
       l0_mem_resp_read[cb].data_exclusive = l1_l0_rsp_tcdm[cb].p.user.data_exclusive;
+      // l0_mem_resp_read[cb].lost_bits = '0; // don't care
 
       if (l1_l0_rsp_tcdm[cb].p.write) begin  // write response should go to write channel of HPDcache
         // handshake
@@ -1780,15 +1785,16 @@ module cachepool_tile
             l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].fwd_msg_type  = l1_l0_fwd[cb].fwd_msg_type;
             l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].line_state    = l1_l0_fwd[cb].line_state;
             l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].core_id       = j;
+            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].new_owner     = l1_l0_fwd[cb].new_owner;
 
             l1_l0_fwd_sel[cb*NumL0CacheCtrl+j] = j;
           end
         end
       end
     end
+    assign l1_l0_fwd_ready[cb] = |l1_l0_fwd_unmerged_ready[cb*NumL0CacheCtrl +: NumL0CacheCtrl];
   end
 
-  // TODO: CONTINUE HERE
   stream_xbar #(
     .NumInp       (NumL0CacheCtrl * NumL1CacheCtrl),
     .NumOut       (NumL0CacheCtrl                 ),
@@ -1815,7 +1821,6 @@ module cachepool_tile
     .idx_o  (/* Unused */)
   );
 
-  // TODO: CONTINUE HERE
   hpdcache_req_t  l0_cache_req_inv_buf   [NumL0CacheCtrl];
   logic           l0_cache_req_inv_valid_buf [NumL0CacheCtrl];
   logic           l0_cache_req_inv_ready_buf [NumL0CacheCtrl];
@@ -2120,6 +2125,7 @@ module cachepool_tile
     ) i_l2_cache (
       .clk_i                 (clk_i                          ),
       .rst_ni                (rst_ni                         ),
+      // .dynamic_offset_i      (dynamic_offset                 ),
       .impl_i                ('0                             ),
       // Sync Control
       .cache_sync_valid_i    (l1d_insn_valid                 ),
