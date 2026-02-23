@@ -1742,7 +1742,7 @@ module cachepool_tile
 
     // .l2_l1_fwd_xbar_o   (l1_l0_fwd_xbar),
     // .l2_l1_fwd_xbar_valid_o (l1_l0_fwd_xbar_valid),
-    // .l2_l1_fwd_xbar_ready_i (l1_l0_fwd_xbar_ready),
+    .l2_l1_fwd_xbar_ready_i (l1_l0_fwd_xbar_ready),
 
     .l2_l1_rsp_i        (l1_l0_coherence_rsp),
     .l2_l1_rsp_valid_i  (l1_l0_coherence_rsp_valid),
