@@ -4,7 +4,7 @@
 
 // Author: Diyou Shen <dishen@iis.ee.ethz.ch>
 
-`define MANUAL_DEBUG
+// `define MANUAL_DEBUG
 
 `include "axi/assign.svh"
 `include "axi/typedef.svh"
@@ -568,7 +568,7 @@ module cachepool_tile
     fwd_msg_type_t        fwd_msg_type;
     hpd_coherence_state_t line_state;
     logic [CoreIDWidth-1:0] new_owner;
-    sharer_list_t         inv_receivers;
+    sharer_list_t           receivers;
   } dir_ctrl_fwd_t;
 
   // TODO: coherence req/rsp translation and interconnect
@@ -1778,16 +1778,28 @@ module cachepool_tile
         l1_l0_fwd_unmerged_valid[cb*NumL0CacheCtrl+j] = 1'b0;
 
         if (l1_l0_fwd_valid[cb]) begin
-          if (l1_l0_fwd[cb].inv_receivers[j]) begin
-            l1_l0_fwd_unmerged_valid[cb*NumL0CacheCtrl+j]         = 1'b1;
+          if (l1_l0_fwd[cb].receivers[j]) begin
+            if (l1_l0_fwd[cb].fwd_msg_type == INV) begin
+              l1_l0_fwd_unmerged_valid[cb*NumL0CacheCtrl+j]         = 1'b1;
 
-            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].addr          = l1_l0_fwd[cb].addr;
-            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].fwd_msg_type  = l1_l0_fwd[cb].fwd_msg_type;
-            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].line_state    = l1_l0_fwd[cb].line_state;
-            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].core_id       = j;
-            l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].new_owner     = l1_l0_fwd[cb].new_owner;
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].addr          = l1_l0_fwd[cb].addr;
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].fwd_msg_type  = l1_l0_fwd[cb].fwd_msg_type;
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].line_state    = l1_l0_fwd[cb].line_state;
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].core_id       = j;
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].new_owner     = l1_l0_fwd[cb].new_owner;
 
-            l1_l0_fwd_sel[cb*NumL0CacheCtrl+j] = j;
+              l1_l0_fwd_sel[cb*NumL0CacheCtrl+j] = j;
+            end else if (l1_l0_fwd[cb].fwd_msg_type == GET) begin
+              l1_l0_fwd_unmerged_valid[cb*NumL0CacheCtrl+j]         = 1'b1;
+
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].addr          = l1_l0_fwd[cb].addr;
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].fwd_msg_type  = l1_l0_fwd[cb].fwd_msg_type;
+              // l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].li`ne_state    = l1_l0_fwd[cb].line_state;
+              l1_l0_fwd_unmerged[cb*NumL0CacheCtrl+j].core_id       = j;
+              // l1_l0_fwd_unmerged[cb*NumL0CacheCtrl].new_owner     = l1_l0_fwd[cb].new_owner;
+              
+              l1_l0_fwd_sel[cb*NumL0CacheCtrl+j] = j;
+            end
           end
         end
       end

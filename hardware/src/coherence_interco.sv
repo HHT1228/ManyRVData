@@ -105,6 +105,7 @@ module coherence_interco
   coherence_up_payload_t    [NumL0CacheCtrl-1:0] l2_l1_fwd_payload, l2_l1_rsp_payload;
   tcdm_rsp_coherence_t      [NumL0CacheCtrl-1:0] l2_l1_fwd_tcdm_int, l2_l1_rsp_tcdm_int;
   tcdm_rsp_coherence_t      [NumL0CacheCtrl-1:0] l2_l1_coherence_tcdm;
+  logic                     [NumL0CacheCtrl-1:0] l2_l1_rsp_tcdm_int_req, l2_l1_fwd_tcdm_int_req;
   tcdm_rsp_coherence_t      [NumL1CacheCtrl-1:0] l2_l1_coherence_tcdm_xbar;
   logic                     [NumL1CacheCtrl-1:0] l2_l1_ready_tcdm, l2_l1_ready_tcdm_xbar;
 
@@ -292,6 +293,10 @@ module coherence_interco
     assign l2_l1_rsp_tcdm_int[i].p.user.core_id = l2_l1_rsp_payload[i].rsp.core_id;
     assign l2_l1_rsp_tcdm_int[i].p.user.req_id = l2_l1_rsp_payload[i].rsp.req_id;
 
+    // Need to pass q_ready even when the request itself is not valid
+    assign l2_l1_rsp_tcdm_int_req[i] = l2_l1_rsp_tcdm_int[i].p_valid || l2_l1_rsp_tcdm_int[i].q_ready;
+    assign l2_l1_fwd_tcdm_int_req[i] = l2_l1_fwd_tcdm_int[i].p_valid || l2_l1_fwd_tcdm_int[i].q_ready;
+
     rr_arb_tree #(
       .NumIn     (2),
       .DataType  (tcdm_rsp_coherence_t),
@@ -301,12 +306,13 @@ module coherence_interco
       .rst_ni  (rst_ni),
       .flush_i (1'b0),
       .rr_i    (1'b1),
-      .req_i   ({l2_l1_rsp_tcdm_int[i].p_valid, l2_l1_fwd_tcdm_int[i].p_valid}),  // valid_i
+      // .req_i   ({l2_l1_rsp_tcdm_int[i].p_valid, l2_l1_fwd_tcdm_int[i].p_valid}),  // valid_i
+      .req_i   ({l2_l1_rsp_tcdm_int_req[i], l2_l1_fwd_tcdm_int_req[i]}),  // valid_i
       .gnt_o   ({l2_l1_rsp_gnt[i], l2_l1_fwd_gnt[i]}),  // ready_o
       .data_i  ({l2_l1_rsp_tcdm_int[i], l2_l1_fwd_tcdm_int[i]}),
       .req_o   (),                           // valid_o
       .gnt_i   (1'b1),                       // ready_i
-      .data_o  (l2_l1_coherence_tcdm[i]),     // data_o,
+      .data_o  (l2_l1_coherence_tcdm[i]),     // data_o
       .idx_o   ()
     );
   end

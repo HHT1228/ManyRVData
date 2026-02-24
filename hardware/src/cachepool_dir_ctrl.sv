@@ -207,13 +207,13 @@ module cahcepool_dir_ctrl
   inv_ack_cnt_t                       inv_ack_count;
   logic                               op_decoded;
 
-  sharer_list_t                       inv_receivers, inv_receivers_q;
+  sharer_list_t                       receivers, receivers_q;
   logic [CoreIDWidth-1:0]             new_owner, new_owner_q;
 
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
   `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
-  `FF(inv_receivers_q, inv_receivers, '0, clk_i, rst_ni)
+  `FF(receivers_q, receivers, '0, clk_i, rst_ni)
   `FF(new_owner_q, new_owner, '0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
@@ -781,7 +781,7 @@ module cahcepool_dir_ctrl
 
       downstream_req_write_d    = upstream_req_write_d;
       // downstream_req_write_d    = '0;
-      downstream_req_wdata_d    = upstream_req_wdata_i;
+      downstream_req_wdata_d    = upstream_req_wdata_d;
     // end else if (act.update_l2_data) begin            // write req to L2
     end else if (act_q.update_l2_data) begin            // write req to L2
       // downstream_req_valid_o    = 1'b1;
@@ -798,7 +798,7 @@ module cahcepool_dir_ctrl
       downstream_req_meta_d     = upstream_req_meta_d;
       downstream_req_write_d    = upstream_req_write_d;
       // downstream_req_write_d    = 1'b1;
-      downstream_req_wdata_d    = upstream_req_wdata_i; // no need to latch as observed, could be dangerous
+      downstream_req_wdata_d    = upstream_req_wdata_d; // no need to latch as observed, could be dangerous
 
     // end else if (upstream_req_fake_read_i) begin
     //   // Fake read fall-thru without triggering coherence engine
@@ -918,7 +918,7 @@ module cahcepool_dir_ctrl
       fwd_tx_d.line_state     = next_line_state_q;
       fwd_tx_d.fwd_msg_type   = INV;
       fwd_tx_valid_d          = 1'b1;
-      fwd_tx_d.inv_receivers  = inv_receivers_q;
+      fwd_tx_d.receivers      = receivers_q;
       fwd_tx_d.new_owner      = new_owner_q;
     // end else if(act.send_probe_owner) begin
     end else if(act_q.send_probe_owner) begin
@@ -928,7 +928,7 @@ module cahcepool_dir_ctrl
       fwd_tx_d.line_state     = next_line_state_q;
       fwd_tx_d.fwd_msg_type   = GET;
       fwd_tx_valid_d          = 1'b1;
-      fwd_tx_d.inv_receivers  = '0;
+      fwd_tx_d.receivers      = receivers_q;
       fwd_tx_d.new_owner      = '0;
     end
     // else begin
@@ -1065,7 +1065,7 @@ module cahcepool_dir_ctrl
     pending_req_d = pending_req_q;
     act           = '0;
     inv_ack_count = '0;
-    inv_receivers = '0;
+    receivers = '0;
     new_owner     = '0;
 
     // unique case (state_q)
@@ -1118,9 +1118,9 @@ module cahcepool_dir_ctrl
             act.update_sharers      = 1'b1;
             state_d                 = DIR_LINE_MODIFIED;
             act.update_state        = 1'b1;
-            inv_receivers           = current_sharers & ~(1'b1 << req_sid);
+            receivers           = current_sharers & ~(1'b1 << req_sid);
             new_owner               = req_sid;
-            // inv_receivers           = current_sharers;
+            // receivers           = current_sharers;
           end
           // Evictions remove bit; S->I if last sharer leaves
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_M_OWNER: begin
@@ -1144,6 +1144,7 @@ module cahcepool_dir_ctrl
             pending_req_d        = req_sid;
             state_d              = DIR_LINE_ESA;
             act.update_state     = 1'b1;
+            receivers            = current_sharers;
           end
           OP_WRITE: begin
             // Writer arrives: invalidate current owner; serialize WT; new owner=req
@@ -1154,7 +1155,7 @@ module cahcepool_dir_ctrl
             act.update_sharers    = 1'b1;
             state_d               = DIR_LINE_MODIFIED;
             act.update_state      = 1'b1;
-            inv_receivers         = current_sharers;
+            receivers         = current_sharers;
             new_owner             = req_sid;
           end
           OP_GETACK: begin
@@ -1230,6 +1231,7 @@ module cahcepool_dir_ctrl
               pending_req_d        = req_sid;
               state_d              = DIR_LINE_ESA;
               act.update_state     = 1'b1;
+              receivers            = current_sharers;
             end
           end
           OP_WRITE: begin
@@ -1240,7 +1242,7 @@ module cahcepool_dir_ctrl
             sharers_d             = set_bit(sharers_d, req_sid);
             act.update_sharers    = 1'b1;
             state_d               = DIR_LINE_MODIFIED;
-            // inv_receivers         = current_sharers;
+            // receivers         = current_sharers;
             // new_owner             = req_sid;
           end
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
