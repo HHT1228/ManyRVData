@@ -1099,7 +1099,7 @@ module cachepool_tile
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_l1_fwd, l0_l1_fwd_xbar;
   logic           [NumL1CacheCtrl-1:0] l0_l1_fwd_valid, l0_l1_fwd_xbar_valid, l0_l1_fwd_ready, l0_l1_fwd_xbar_ready;
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l1_l0_fwd_xbar, inv_ack_fwd;
-  logic           [NumL1CacheCtrl-1:0] inv_ack_fwd_valid;
+  logic           [NumL1CacheCtrl-1:0] inv_ack_fwd_valid, inv_ack_fwd_ready;
   dir_ctrl_fwd_t  [NumL1CacheCtrl-1:0] l1_l0_fwd;
   cache_dir_fwd_t [NumL1CacheCtrl*NumL0CacheCtrl-1:0] l1_l0_fwd_unmerged;
   logic           [NumL1CacheCtrl*NumL0CacheCtrl-1:0] l1_l0_fwd_unmerged_valid, l1_l0_fwd_unmerged_ready;
@@ -1113,6 +1113,9 @@ module cachepool_tile
   hpdcache_coherence_evict_t  [NumL0CacheCtrl-1:0] l0_l1_coherence_evict_hpd;
   coherence_evict_t           [NumL0CacheCtrl-1:0] l0_l1_coherence_evict_tcdm, l0_l1_coherence_evict_xbar;
   logic                       [NumL1CacheCtrl-1:0] l0_l1_coherence_evict_ready, l0_l1_coherence_evict_xbar_ready;
+
+  cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_fwd_rx, inv_ack_fwd_int, l1_l0_fwd_int;
+  logic [NumL1CacheCtrl-1:0] l0_fwd_rx_valid, l0_fwd_rx_ready, inv_ack_fwd_int_valid, inv_ack_fwd_int_ready, l1_l0_fwd_int_valid, l1_l0_fwd_int_ready;
 
   // logic [NumL1CacheCtrl-1:0]  l1_l0_data_is_exc;
 
@@ -1742,9 +1745,11 @@ module cachepool_tile
     // .l2_l1_fwd_valid_i  (l1_l0_fwd_valid),
     // .l2_l1_fwd_ready_o  (l1_l0_fwd_ready),
 
+    // TODO: naming confusing, actualy inter-L1
     .l2_l1_fwd_xbar_o       (inv_ack_fwd),
     .l2_l1_fwd_xbar_valid_o (inv_ack_fwd_valid),
-    .l2_l1_fwd_xbar_ready_i (l1_l0_fwd_xbar_ready),
+    // .l2_l1_fwd_xbar_ready_i (l1_l0_fwd_xbar_ready),
+    .l2_l1_fwd_xbar_ready_i (inv_ack_fwd_ready),
 
     .l2_l1_rsp_i        (l1_l0_coherence_rsp),
     .l2_l1_rsp_valid_i  (l1_l0_coherence_rsp_valid),
@@ -1836,6 +1841,54 @@ module cachepool_tile
     .idx_o  (/* Unused */)
   );
 
+  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_fwd_arb
+    spill_register #(
+      .T      (cache_dir_fwd_t ),
+      .Bypass (1'b0)
+    ) i_spill_reg_inv_ack (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .valid_i (inv_ack_fwd_valid[cb]),
+      .ready_o (inv_ack_fwd_ready[cb]),
+      .data_i  (inv_ack_fwd[cb]),
+      .valid_o (inv_ack_fwd_int_valid[cb]),
+      .ready_i (inv_ack_fwd_int_ready[cb]),
+      .data_o  (inv_ack_fwd_int[cb])
+    );
+
+    spill_register #(
+      .T      (cache_dir_fwd_t ),
+      .Bypass (1'b0)
+    ) i_spill_reg_fwd_xbar (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .valid_i (l1_l0_fwd_xbar_valid[cb]),
+      .ready_o (l1_l0_fwd_xbar_ready[cb]),
+      .data_i  (l1_l0_fwd_xbar[cb]),
+      .valid_o (l1_l0_fwd_int_valid[cb]),
+      .ready_i (l1_l0_fwd_int_ready[cb]),
+      .data_o  (l1_l0_fwd_int[cb])
+    );
+
+    rr_arb_tree #(
+      .NumIn     (2),
+      .DataType  (cache_dir_fwd_t),
+      .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
+    ) i_coherence_fwd_arb (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .flush_i (1'b0),
+      .rr_i    (1'b1),
+      .req_i   ({inv_ack_fwd_int_valid[cb], l1_l0_fwd_int_valid[cb]}),  // valid_i
+      .gnt_o   ({inv_ack_fwd_int_ready[cb], l1_l0_fwd_int_ready[cb]}),  // ready_o
+      .data_i  ({inv_ack_fwd_int[cb], l1_l0_fwd_int[cb]}),
+      .req_o   (l0_fwd_rx_valid[cb]),  // valid_o
+      .gnt_i   (l0_fwd_rx_ready[cb]),  // ready_i
+      .data_o  (l0_fwd_rx[cb]),
+      .idx_o   ()
+    );
+  end
+
   hpdcache_req_t  l0_cache_req_inv_buf   [NumL0CacheCtrl];
   logic           l0_cache_req_inv_valid_buf [NumL0CacheCtrl];
   logic           l0_cache_req_inv_ready_buf [NumL0CacheCtrl];
@@ -1854,15 +1907,18 @@ module cachepool_tile
     always_comb begin
       l0_cache_req_inv_valid[cb][1] = '0;
       l0_cache_req_inv[cb][1] = '0;
-      if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
-        l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+      // if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
+      if (l0_fwd_rx_valid[cb] && l0_fwd_rx[cb].fwd_msg_type == INV) begin
+        // l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+        l0_cache_req_inv[cb][1].addr_offset = l0_fwd_rx[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
         l0_cache_req_inv[cb][1].op = HPDCACHE_REQ_CMO_INVAL_NLINE;
         // l0_cache_req_inv[cb][1].size = HPDCACHE_CMO_INVAL_NLINE;
         l0_cache_req_inv[cb][1].sid = '0;
         l0_cache_req_inv[cb][1].tid = '0;
         l0_cache_req_inv[cb][1].need_rsp = 1'b0;
         l0_cache_req_inv[cb][1].phys_indexed = 1'b1;
-        l0_cache_req_inv[cb][1].addr_tag = l1_l0_fwd_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+        // l0_cache_req_inv[cb][1].addr_tag = l1_l0_fwd_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+        l0_cache_req_inv[cb][1].addr_tag = l0_fwd_rx[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
 
         l0_cache_req_inv_valid[cb][1] = 1'b1;
       end
@@ -1985,9 +2041,12 @@ module cachepool_tile
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
 
-      .fwd_rx_i                           (l1_l0_fwd_xbar[i]),
-      .fwd_rx_valid_i                     (l1_l0_fwd_xbar_valid[i]),
-      .fwd_rx_ready_o                     (l1_l0_fwd_xbar_ready[i]),
+      // .fwd_rx_i                           (l1_l0_fwd_xbar[i]),
+      // .fwd_rx_valid_i                     (l1_l0_fwd_xbar_valid[i]),
+      // .fwd_rx_ready_o                     (l1_l0_fwd_xbar_ready[i]),
+      .fwd_rx_i                           (l0_fwd_rx[i]),
+      .fwd_rx_valid_i                     (l0_fwd_rx_valid[i]),
+      .fwd_rx_ready_o                     (l0_fwd_rx_ready[i]),
       .fwd_tx_o                           (l0_l1_fwd[i]),
       .fwd_tx_valid_o                     (l0_l1_fwd_valid[i]),
       .fwd_tx_ready_i                     (l0_l1_fwd_ready[i]),
