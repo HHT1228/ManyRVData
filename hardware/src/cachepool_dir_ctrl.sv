@@ -201,10 +201,13 @@ module cahcepool_dir_ctrl
   dir_ctrl_fwd_t                      fwd_tx_q, fwd_tx_d;
   logic                               fwd_tx_valid_q, fwd_tx_valid_d;
 
+  cache_dir_fwd_t                     fwd_rx_q, fwd_rx_d;
+  logic                               fwd_rx_valid_q, fwd_rx_valid_d;
+
   coherence_rsp_t                     coherence_rsp_q, coherence_rsp_d;
   logic                               coherence_rsp_valid_q, coherence_rsp_valid_d;
 
-  inv_ack_cnt_t                       inv_ack_count;
+  inv_ack_cnt_t                       inv_ack_count, inv_ack_count_q;
   logic                               op_decoded;
 
   sharer_list_t                       receivers, receivers_q;
@@ -215,6 +218,7 @@ module cahcepool_dir_ctrl
   `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
   `FF(receivers_q, receivers, '0, clk_i, rst_ni)
   `FF(new_owner_q, new_owner, '0, clk_i, rst_ni)
+  `FF(inv_ack_count_q, inv_ack_count, '0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -235,7 +239,11 @@ module cahcepool_dir_ctrl
       upstream_req_write_q      <= 1'b0;
       upstream_req_addr_q       <= '0;
       upstream_req_fake_read_q  <= 1'b0;
+
       upstream_req_evict_q      <= '0;
+
+      fwd_rx_q                  <= '0;
+      fwd_rx_valid_q            <= 1'b0;
     end else if (op_decoded) begin
       upstream_req_valid_q      <= 1'b0; // Clear after decoding the op (one cycle after granted)
       upstream_req_meta_q       <= upstream_req_meta_d;
@@ -244,7 +252,11 @@ module cahcepool_dir_ctrl
       upstream_req_addr_q       <= upstream_req_addr_d;
       upstream_req_fake_read_q  <= upstream_req_fake_read_d;
       upstream_req_wdata_q      <= upstream_req_wdata_d;
+
       upstream_req_evict_q      <= '0;
+
+      fwd_rx_q                  <= fwd_rx_d;
+      fwd_rx_valid_q            <= 1'b0;
     end else begin
       // otherwise hold current value
       upstream_req_meta_q       <= upstream_req_meta_d;
@@ -254,7 +266,11 @@ module cahcepool_dir_ctrl
       upstream_req_addr_q       <= upstream_req_addr_d;
       upstream_req_fake_read_q  <= upstream_req_fake_read_d;
       upstream_req_wdata_q      <= upstream_req_wdata_d;
+
       upstream_req_evict_q      <= upstream_req_evict_d;
+
+      fwd_rx_q                  <= fwd_rx_d;
+      fwd_rx_valid_q            <= fwd_rx_valid_d;
     end
     // else if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
     //   // Update on new request
@@ -290,7 +306,11 @@ module cahcepool_dir_ctrl
     upstream_req_addr_d       = upstream_req_addr_q;
     upstream_req_fake_read_d  = upstream_req_fake_read_q;
     upstream_req_wdata_d      = upstream_req_wdata_q;
+
     upstream_req_evict_d      = upstream_req_evict_q;
+
+    fwd_rx_d                  = fwd_rx_q;
+    fwd_rx_valid_d            = fwd_rx_valid_q;
 
     if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
       // Update on new request
@@ -303,6 +323,9 @@ module cahcepool_dir_ctrl
       upstream_req_wdata_d      = upstream_req_wdata_i;
     end else if (upstream_req_evict_i.valid) begin
       upstream_req_evict_d   = upstream_req_evict_i;
+    end else if (fwd_rx_valid_i) begin
+      fwd_rx_d               = fwd_rx_i;
+      fwd_rx_valid_d         = 1'b1;
     end
   end
 
@@ -602,7 +625,8 @@ module cahcepool_dir_ctrl
   assign curr_line_state     = line_coherence_meta.line_state;
   assign curr_sharer_list    = line_coherence_meta.sharers;
 
-  assign fwd_msg_type = fwd_rx_i.fwd_msg_type;
+  // assign fwd_msg_type = fwd_rx_i.fwd_msg_type;
+  assign fwd_msg_type = fwd_rx_d.fwd_msg_type;
 
   // TODO: integrate with request/response interface
   // Operation classes
@@ -682,6 +706,7 @@ module cahcepool_dir_ctrl
     if(upstream_req_valid_d && busy && !upstream_req_fake_read_d) begin
       // if (upstream_req_is_evict_q) begin
       // if (upstream_req_evict_q.valid) begin
+      // TODO: evict need to be out of this scope, separate from req?
       if (upstream_req_evict_d.valid) begin
         case (curr_line_state)
           DIR_LINE_INVALID: begin
@@ -722,13 +747,13 @@ module cahcepool_dir_ctrl
       end else begin
         op      = OP_NONE;    // default
       end
-    end else if (fwd_rx_valid_i) begin
+    // end else if (fwd_rx_valid_i) begin
+    end else if (busy && fwd_rx_valid_d) begin
       case (fwd_msg_type)
         GET_ACK: begin
         // 2'b11: begin
           op = OP_GETACK; // GetAck from owner
         end
-        // TODO: INV_ACK handle, forward to L1. Need to track new owner. OR between L1s, add core id to outgoing invalidations for inter-L1 forwarding.
         // HPD send INV_ACK to FIFO-based forwarder. Forwarder send it to the owner.
         default: begin
           op = OP_NONE; // other fwd messages not handled here
@@ -920,6 +945,7 @@ module cahcepool_dir_ctrl
       fwd_tx_valid_d          = 1'b1;
       fwd_tx_d.receivers      = receivers_q;
       fwd_tx_d.new_owner      = new_owner_q;
+      // fwd_tx_d.num_inv_ack    = 0;
     // end else if(act.send_probe_owner) begin
     end else if(act_q.send_probe_owner) begin
       // fwd_tx_d.addr           = upstream_req_addr_d;
@@ -930,6 +956,7 @@ module cahcepool_dir_ctrl
       fwd_tx_valid_d          = 1'b1;
       fwd_tx_d.receivers      = receivers_q;
       fwd_tx_d.new_owner      = '0;
+      // fwd_tx_d.num_inv_ack    = 0;
     end
     // else begin
     //   fwd_tx_d.fwd_msg_type = INV;
@@ -995,7 +1022,8 @@ module cahcepool_dir_ctrl
       // coherence_rsp_d.addr            = upstream_req_addr_d;
       coherence_rsp_d.addr = ((upstream_req_addr_d & ~lo_mask) << NumMemSelBits) | (AddrWidth'(upstream_req_meta_d.lost_bits) << dynamic_offset_i) | (upstream_req_addr_d & lo_mask);
       coherence_rsp_d.is_inv_ack_cnt  = 1'b1;
-      coherence_rsp_d.inv_ack_cnt     = inv_ack_count;
+      // coherence_rsp_d.inv_ack_cnt     = inv_ack_count;
+      coherence_rsp_d.inv_ack_cnt     = inv_ack_count_q;
       coherence_rsp_valid_d           = 1'b1;
     end 
     // else begin
@@ -1039,7 +1067,7 @@ module cahcepool_dir_ctrl
       // tag_bank_waddr = tag_bank_addr_d;
       tag_bank_write_req = 1'b1;
       // tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
-      tag_bank_wdata[way_id] = {next_coherence_meta_q, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
+      tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
     end
   end
 
@@ -1118,8 +1146,9 @@ module cahcepool_dir_ctrl
             act.update_sharers      = 1'b1;
             state_d                 = DIR_LINE_MODIFIED;
             act.update_state        = 1'b1;
-            receivers           = current_sharers & ~(1'b1 << req_sid);
+            receivers               = current_sharers & ~(1'b1 << req_sid);
             new_owner               = req_sid;
+            act.send_inv_ack_cnt    = 1'b1;
             // receivers           = current_sharers;
           end
           // Evictions remove bit; S->I if last sharer leaves

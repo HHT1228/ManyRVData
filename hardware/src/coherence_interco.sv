@@ -23,6 +23,7 @@ module coherence_interco
   parameter int unsigned NumL1CacheCtrl = 4,
   parameter int unsigned AddrWidth      = 32,
 
+  parameter type         inv_ack_cnt_t              = logic,
   parameter type         cache_dir_fwd_t              = logic,
   parameter type         coherence_evict_t            = logic,
   parameter type         coherence_rsp_t             = logic,
@@ -409,10 +410,32 @@ module coherence_interco
   );
 
   // Inter-L1 fwd message
+  // TODO: might need to compare addr, merge only inv_ack with the same addr
+  inv_ack_cnt_t num_inv_ack;  // Number of incoming INV_ACK in the same cycle
+  always_comb begin
+    num_inv_ack = 0;
+    for (int i = 0; i < NumL0CacheCtrl; i++)  begin
+      if (l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type == INV_ACK)) begin
+        num_inv_ack = num_inv_ack + 1;
+      end
+    end
+  end
+
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : inter_l1_pre_xbar
     assign inter_l1_fwd_valid[i] = l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type == INV_ACK);
-    assign inter_l1_fwd[i]       = inter_l1_fwd_valid[i] ?  l1_l2_fwd_i[i] : '0;
     assign inter_l1_fwd_sel[i]   = inter_l1_fwd[i].new_owner;
+    // assign inter_l1_fwd[i]       = inter_l1_fwd_valid[i] ?  l1_l2_fwd_i[i] : '0;
+    always_comb begin
+      inter_l1_fwd[i] = '0;
+      if (inter_l1_fwd_valid[i]) begin
+        inter_l1_fwd[i].addr = l1_l2_fwd_i[i].addr;
+        inter_l1_fwd[i].fwd_msg_type = l1_l2_fwd_i[i].fwd_msg_type;
+        inter_l1_fwd[i].line_state = l1_l2_fwd_i[i].line_state;
+        inter_l1_fwd[i].new_owner = l1_l2_fwd_i[i].new_owner;
+        inter_l1_fwd[i].core_id = l1_l2_fwd_i[i].core_id;
+        inter_l1_fwd[i].num_inv_ack = num_inv_ack;
+      end
+    end
   end
 
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : inter_l1_ready_mux
