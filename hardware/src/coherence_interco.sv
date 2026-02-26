@@ -370,6 +370,7 @@ module coherence_interco
     end
   end
 
+  // TODO: what if both are valid? may need buffering
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : fwd_output_mux
     always_comb begin
       l2_l1_fwd_xbar_o[i] = '0;
@@ -413,29 +414,53 @@ module coherence_interco
   // Inter-L1 fwd message
   // TODO: might need to compare addr, merge only inv_ack with the same addr
   inv_ack_cnt_t num_inv_ack;  // Number of incoming INV_ACK in the same cycle
+  logic         [NumL0CacheCtrl-1:0]          inv_ack_valid;
+  logic         [$clog2(NumL0CacheCtrl)-1:0]  id_for_merge;
   always_comb begin
     num_inv_ack = 0;
+    inv_ack_valid = '0;
+    id_for_merge = 0;
     for (int i = 0; i < NumL0CacheCtrl; i++)  begin
       if (l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type == INV_ACK)) begin
         num_inv_ack = num_inv_ack + 1;
+        inv_ack_valid[i] = 1'b1;
+        id_for_merge = i;
       end
     end
   end
 
-  for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : inter_l1_pre_xbar
-    assign inter_l1_fwd_valid[i] = l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type == INV_ACK);
-    assign inter_l1_fwd_sel[i]   = inter_l1_fwd[i].new_owner;
-    // assign inter_l1_fwd[i]       = inter_l1_fwd_valid[i] ?  l1_l2_fwd_i[i] : '0;
-    always_comb begin
-      inter_l1_fwd[i] = '0;
-      if (inter_l1_fwd_valid[i]) begin
-        inter_l1_fwd[i].addr = l1_l2_fwd_i[i].addr;
-        inter_l1_fwd[i].fwd_msg_type = l1_l2_fwd_i[i].fwd_msg_type;
-        inter_l1_fwd[i].line_state = l1_l2_fwd_i[i].line_state;
-        inter_l1_fwd[i].new_owner = l1_l2_fwd_i[i].new_owner;
-        inter_l1_fwd[i].core_id = l1_l2_fwd_i[i].core_id;
-        inter_l1_fwd[i].num_inv_ack = num_inv_ack;
-      end
+  // for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : inter_l1_pre_xbar
+  //   assign inter_l1_fwd_valid[i] = l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type == INV_ACK);
+  //   assign inter_l1_fwd_sel[i]   = inter_l1_fwd[i].new_owner;
+  //   // assign inter_l1_fwd[i]       = inter_l1_fwd_valid[i] ?  l1_l2_fwd_i[i] : '0;
+  //   always_comb begin
+  //     inter_l1_fwd[i] = '0;
+  //     if (inter_l1_fwd_valid[i]) begin
+  //       inter_l1_fwd[i].addr = l1_l2_fwd_i[i].addr;
+  //       inter_l1_fwd[i].fwd_msg_type = l1_l2_fwd_i[i].fwd_msg_type;
+  //       inter_l1_fwd[i].line_state = l1_l2_fwd_i[i].line_state;
+  //       inter_l1_fwd[i].new_owner = l1_l2_fwd_i[i].new_owner;
+  //       inter_l1_fwd[i].core_id = l1_l2_fwd_i[i].core_id;
+  //       inter_l1_fwd[i].num_inv_ack = num_inv_ack;
+  //       break;
+  //     end
+  //   end
+  // end
+
+  always_comb begin : inv_ack_merge
+    inter_l1_fwd_valid = '0;
+    inter_l1_fwd_sel = '0;
+    inter_l1_fwd = '0;
+    if (|(inv_ack_valid)) begin
+      inter_l1_fwd_valid[id_for_merge] = 1'b1;
+      inter_l1_fwd[id_for_merge].addr = l1_l2_fwd_i[id_for_merge].addr;
+      inter_l1_fwd[id_for_merge].fwd_msg_type = l1_l2_fwd_i[id_for_merge].fwd_msg_type;
+      inter_l1_fwd[id_for_merge].line_state = l1_l2_fwd_i[id_for_merge].line_state;
+      inter_l1_fwd[id_for_merge].new_owner = l1_l2_fwd_i[id_for_merge].new_owner;
+      inter_l1_fwd[id_for_merge].core_id = l1_l2_fwd_i[id_for_merge].core_id;
+      inter_l1_fwd[id_for_merge].num_inv_ack = num_inv_ack;
+
+      inter_l1_fwd_sel[id_for_merge] = l1_l2_fwd_i[id_for_merge].new_owner;
     end
   end
 
