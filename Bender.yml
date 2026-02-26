@@ -37,6 +37,7 @@ sources:
   - hardware/src/coherence_pkg.sv
   # Level 1
   - hardware/src/cachepool_pkg.sv
+  - hardware/src/coherence_fwd_interco.sv
   - hardware/src/coherence_interco.sv
   - hardware/src/cachepool_dir_ctrl.sv
   - hardware/src/cache_dir_tag_arb.sv

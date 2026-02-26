@@ -46,6 +46,7 @@ module coherence_interco
   input logic         rst_ni,
 
   // L1 to L2 forward channel (class 2)
+  // TODO: not only l1-l2, also includes inter-l1 fwdarding (INV_ACK)
   input   cache_dir_fwd_t [NumL0CacheCtrl-1:0] l1_l2_fwd_i,
   input   logic           [NumL0CacheCtrl-1:0] l1_l2_fwd_valid_i,
   output  logic           [NumL0CacheCtrl-1:0] l1_l2_fwd_ready_o,
