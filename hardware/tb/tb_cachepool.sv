@@ -368,52 +368,52 @@ module tb_cachepool;
       @(posedge clk);
     reset_tcdm_req(0);
 
-    // repeat (100)
-    //   @(posedge clk);
+    repeat (100)
+      @(posedge clk);
 
-    // $display("[TB] Basic coherence transitions set 2");
+    $display("[TB] Basic coherence transitions set 2");
 
-    // send_snitch_write_req(32'h80008000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h10);
-    // $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80008000, 5'h10);
-    // $display("[TB] L1 write miss on I cacheline expected.");
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
+    send_snitch_write_req(32'h80008000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h10);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80008000, 5'h10);
+    $display("[TB] L1 write miss on I cacheline expected.");
+      @(posedge clk);
+    reset_tcdm_req(0);
 
-    // repeat (50)
-    //   @(posedge clk);
+    repeat (50)
+      @(posedge clk);
 
-    // send_snitch_read_req(32'h80008000, 4'hF, 2'h0, 5'h11);
-    // $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80008000, 5'h11);
-    // $display("[TB] L1 read miss on M cacheline expected.");
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
+    send_snitch_read_req(32'h80008000, 4'hF, 2'h0, 5'h11);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80008000, 5'h11);
+    $display("[TB] L1 read miss on M cacheline expected.");
+      @(posedge clk);
+    reset_tcdm_req(0);
 
-    // repeat (50)
-    //   @(posedge clk);
+    repeat (50)
+      @(posedge clk);
 
-    // send_snitch_read_req(32'h80008000, 4'hF, 2'h1, 5'h12);
-    // $display("[TB] Core %0d read on address %x with id %x", 2'h1, 32'h80008000, 5'h12);
-    // $display("[TB] L1 read miss on S cacheline expected.");
-    //   @(posedge clk);
-    // reset_tcdm_req(1);
+    send_snitch_read_req(32'h80008000, 4'hF, 2'h1, 5'h12);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h1, 32'h80008000, 5'h12);
+    $display("[TB] L1 read miss on E cacheline expected.");
+      @(posedge clk);
+    reset_tcdm_req(1);
 
-    // repeat (50)
-    //   @(posedge clk);
+    repeat (50)
+      @(posedge clk);
 
-    // send_snitch_write_req(32'h80008000, 32'hCAFEBABE, 4'hF, 2'h0, 5'h13);
-    // $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80008000, 5'h13);
-    // $display("[TB] L1 write hit on S cacheline expected.");
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
+    send_snitch_write_req(32'h80008000, 32'hCAFEBABE, 4'hF, 2'h0, 5'h13);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80008000, 5'h13);
+    $display("[TB] L1 write hit on S cacheline expected.");
+      @(posedge clk);
+    reset_tcdm_req(0);
 
-    // repeat (50)
-    //   @(posedge clk);
+    repeat (50)
+      @(posedge clk);
 
-    // send_snitch_read_req(32'h80008000, 4'hF, 2'h0, 5'h14);
-    // $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80008000, 5'h14);
-    // $display("[TB] L1 read hit on M cacheline expected.");
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
+    send_snitch_read_req(32'h80008000, 4'hF, 2'h0, 5'h14);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80008000, 5'h14);
+    $display("[TB] L1 read hit on M cacheline expected.");
+      @(posedge clk);
+    reset_tcdm_req(0);
 
     repeat (50)
       @(posedge clk);

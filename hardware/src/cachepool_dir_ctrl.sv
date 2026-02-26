@@ -1140,7 +1140,7 @@ module cahcepool_dir_ctrl
             act.send_inv_to_sharers = 1'b1;
             act.update_l2_data      = 1'b1;
             // inv_ack_count           = count_set_bits(sharers_q);
-            inv_ack_count           = count_set_bits(current_sharers);
+            inv_ack_count           = count_set_bits(current_sharers) - 1; // exclude requester from ack count
             sharers_d               = '0;
             sharers_d               = set_bit(sharers_d, req_sid);
             act.update_sharers      = 1'b1;
