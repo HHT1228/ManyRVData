@@ -39,25 +39,44 @@ module coherence_fwd_interco
   logic           [NumL0CacheCtrl-1:0] l2_l1_fwd_unmerged_valid, l2_l1_fwd_unmerged_ready;
   fwd_sel_t       [NumL0CacheCtrl-1:0] l2_l1_fwd_sel;
 
-  assign l2_l1_fwd_ready_o = l2_l1_fwd_valid_i & ~l2_l1_fwd_fifo_full;
+  // assign l2_l1_fwd_ready_o = l2_l1_fwd_valid_i & ~l2_l1_fwd_fifo_full;
 
-  for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : fwd_buffer
-    fifo_v3 #(
+  for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : gem_fwd_buffer
+  //   fifo_v3 #(
+  //     .FALL_THROUGH(1'b0),
+  //     .DATA_WIDTH($bits(dir_ctrl_fwd_t)+1),  // +1 for valid bit
+  //     .DEPTH(4)
+  //   ) i_l2_l1_fwd_fifo (
+  //     .clk_i      (clk_i),
+  //     .rst_ni     (rst_ni),
+  //     .flush_i    (1'b0),
+  //     .testmode_i (1'b0),
+  //     .full_o     (l2_l1_fwd_fifo_full[i]),
+  //     .empty_o    (l2_l1_fwd_fifo_empty[i]),
+  //     .usage_o    (),
+  //     .data_i     ({l2_l1_fwd_valid_i[i], l2_l1_fwd_i[i]}),
+  //     .push_i     (l2_l1_fwd_valid_i[i] && !l2_l1_fwd_fifo_full[i]),
+  //     .data_o     ({l2_l1_fwd_valid_int[i], l2_l1_fwd_int[i]}),
+  //     .pop_i      (l2_l1_fwd_ready_int[i] && !l2_l1_fwd_fifo_empty[i])
+  //   );
+    stream_fifo #(
       .FALL_THROUGH(1'b0),
-      .DATA_WIDTH($bits(dir_ctrl_fwd_t)+1),  // +1 for valid bit
+      .DATA_WIDTH($bits(dir_ctrl_fwd_t)),
       .DEPTH(4)
     ) i_l2_l1_fwd_fifo (
       .clk_i      (clk_i),
       .rst_ni     (rst_ni),
       .flush_i    (1'b0),
       .testmode_i (1'b0),
-      .full_o     (l2_l1_fwd_fifo_full[i]),
-      .empty_o    (l2_l1_fwd_fifo_empty[i]),
+      // .full_o     (l2_l1_fwd_fifo_full),
+      // .empty_o    (l2_l1_fwd_fifo_empty),
       .usage_o    (),
-      .data_i     ({l2_l1_fwd_valid_i[i], l2_l1_fwd_i[i]}),
-      .push_i     (l2_l1_fwd_valid_i[i] && !l2_l1_fwd_fifo_full[i]),
-      .data_o     ({l2_l1_fwd_valid_int[i], l2_l1_fwd_int[i]}),
-      .pop_i      (l2_l1_fwd_ready_int[i] && !l2_l1_fwd_fifo_empty[i])
+      .data_i     (l2_l1_fwd_i[i]),
+      .valid_i    (l2_l1_fwd_valid_i[i]),
+      .ready_o    (l2_l1_fwd_ready_o[i]),
+      .data_o     (l2_l1_fwd_int[i]),
+      .valid_o    (l2_l1_fwd_valid_int[i]),
+      .ready_i    (l2_l1_fwd_ready_int[i])
     );
   end
 

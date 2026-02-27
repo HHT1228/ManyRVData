@@ -307,6 +307,10 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
 
+    /**
+    * COHERENCE BASIC SET 1
+    **/
+
     $display("[TB] Basic coherence transitions set 1");
     send_snitch_read_req(32'h800053d0, 4'hF, 2'h0, 5'h00);
     $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h800053d0, 5'h00);
@@ -371,6 +375,10 @@ module tb_cachepool;
     repeat (100)
       @(posedge clk);
 
+    /**
+    * COHERENCE BASIC SET 2
+    **/
+
     $display("[TB] Basic coherence transitions set 2");
 
     send_snitch_write_req(32'h80008000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h10);
@@ -415,7 +423,47 @@ module tb_cachepool;
       @(posedge clk);
     reset_tcdm_req(0);
 
-    repeat (50)
+    repeat (100)
+      @(posedge clk);
+
+    /**
+    * EVICTION TEST
+    **/
+
+    $display("[TB] Eviction test");
+
+    
+
+    // send_snitch_write_req(32'h8000A000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h20);
+    // $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000A000, 5'h15);
+    //   @(posedge clk);
+    // reset_tcdm_req(0);
+
+    // repeat (50)
+    //   @(posedge clk);
+
+    // send_snitch_read_req(32'h8000A000, 4'hF, 2'h1, 5'h21);
+    // $display("[TB] Core %0d read on address %x with id %x", 2'h1, 32'h8000A000, 5'h16);
+    //   @(posedge clk);
+    // reset_tcdm_req(1);
+
+    // repeat (50)
+    //   @(posedge clk);
+
+    // send_snitch_write_req(32'h8000A000, 32'hCAFEBABE, 4'hF, 2'h0, 5'h22);
+    // $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000A000, 5'h17);
+    //   @(posedge clk);
+    // reset_tcdm_req(0);
+
+    // repeat (50)
+    //   @(posedge clk);
+
+    // send_snitch_read_req(32'h8000A000, 4'hF, 2'h1, 5'h23);
+    // $display("[TB] Core %0d read on address %x with id %x", 2'h1, 32'h8000A000, 5'h18);
+    //   @(posedge clk);
+    // reset_tcdm_req(1);
+
+    repeat (100)
       @(posedge clk);
 
     $display("[TB] TB Finished");

@@ -116,6 +116,11 @@ for {set c 0} {$c < 4} {incr c} {
 add wave -noupdate -group tile[$1] -group l0_l1_xbar /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_l0_l1_xbar/*
 add wave -noupdate -group tile[$1] -group coherence_xbar /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_coherence_interco/*
 add wave -noupdate -group tile[$1] -group coherence_fwd_xbar /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_coherence_fwd_xbar/*
+
+for {set c 0} {$c < 4} {incr c} {
+	onerror {resume}
+	add wave -noupdate -group tile[$1] -group coherence_fwd_xbar -group fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_coherence_fwd_xbar/gem_fwd_buffer[$c]/i_l2_l1_fwd_fifo/*
+}
 # add wave -noupdate -group tile[$1] -group coherence_xbar -rsp_stream_xbar /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_coherence_interco/i_coherence_xbar/i_cache_xbar/i_rsp_xbar/*
 
 for {set c 0} {$c < 4} {incr c} {
