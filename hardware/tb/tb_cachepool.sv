@@ -308,6 +308,54 @@ module tb_cachepool;
       @(posedge clk);
 
     /**
+    * EVICTION TEST
+    **/
+
+    $display("[TB] Eviction test");
+
+    send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000400, 5'h00);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+
+    send_snitch_read_req(32'h8000_0800, 4'hF, 2'h0, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000800, 5'h00);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+
+    send_snitch_read_req(32'h8000_0c00, 4'hF, 2'h0, 5'h02);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000c00, 5'h02);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+
+    send_snitch_read_req(32'h8000_1000, 4'hF, 2'h0, 5'h03);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80001000, 5'h03);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+
+    // This read should trigger an eviction
+    send_snitch_read_req(32'h8000_1400, 4'hF, 2'h0, 5'h00);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80001400, 5'h04);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    
+    repeat (100)
+      @(posedge clk);
+
+    /**
     * COHERENCE BASIC SET 1
     **/
 
@@ -423,16 +471,6 @@ module tb_cachepool;
       @(posedge clk);
     reset_tcdm_req(0);
 
-    repeat (100)
-      @(posedge clk);
-
-    /**
-    * EVICTION TEST
-    **/
-
-    $display("[TB] Eviction test");
-
-    
 
     // send_snitch_write_req(32'h8000A000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h20);
     // $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000A000, 5'h15);
