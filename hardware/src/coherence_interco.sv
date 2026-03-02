@@ -278,8 +278,12 @@ module coherence_interco
   for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : upward_pre_xbar
     // assign l2_l1_fwd_ready_o[i] = ~l2_l1_fwd_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
     // assign l2_l1_rsp_ready_o[i] = ~l2_l1_rsp_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
-    assign l2_l1_fwd_ready_o[i] = l2_l1_fwd_fifo_ready[i] && l2_l1_ready_tcdm_xbar[i];
-    assign l2_l1_rsp_ready_o[i] = l2_l1_rsp_fifo_ready[i] && l2_l1_ready_tcdm_xbar[i];
+
+    // assign l2_l1_fwd_ready_o[i] = l2_l1_fwd_fifo_ready[i] && l2_l1_ready_tcdm_xbar[i];
+    // assign l2_l1_rsp_ready_o[i] = l2_l1_rsp_fifo_ready[i] && l2_l1_ready_tcdm_xbar[i];
+
+    assign l2_l1_fwd_ready_o[i] = l2_l1_fwd_fifo_ready[i];
+    assign l2_l1_rsp_ready_o[i] = l2_l1_rsp_fifo_ready[i];
 
     // fifo_v3 #(
     //   .FALL_THROUGH(1'b0),
@@ -390,7 +394,7 @@ module coherence_interco
       .gnt_o   ({l2_l1_rsp_gnt[i], l2_l1_fwd_gnt[i]}),  // ready_o
       .data_i  ({l2_l1_rsp_tcdm_int[i], l2_l1_fwd_tcdm_int[i]}),
       .req_o   (),                           // valid_o
-      .gnt_i   (1'b1),                       // ready_i
+      .gnt_i   (l2_l1_ready_tcdm_xbar[i]),                       // ready_i
       .data_o  (l2_l1_coherence_tcdm[i]),     // data_o
       .idx_o   ()
     );
@@ -485,7 +489,7 @@ module coherence_interco
     .core_rsp_o       (l2_l1_coherence_tcdm_xbar),
     .mem_req_o        (l1_l2_coherence_tcdm_xbar),
     .mem_rsp_ready_o  (l2_l1_ready_tcdm_xbar),
-    .mem_rsp_i        (l2_l1_coherence_tcdm)
+    .mem_rsp_i        (l2_l1_coherence_tcdm)        // FIXME: not deasserting, causing blockage
   );
 
   // Inter-L1 fwd message

@@ -321,10 +321,26 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
 
-    send_snitch_read_req(32'h8000_0800, 4'hF, 2'h0, 5'h01);
-    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000800, 5'h00);
+    send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000400, 5'h00);
       @(posedge clk);
     reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+
+    send_snitch_read_req(32'h8000_0800, 4'hF, 2'h0, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000800, 5'h01);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+
+    // send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
+    // $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000400, 5'h00);
+    //   @(posedge clk);
+    // reset_tcdm_req(0);
 
     repeat (50)
       @(posedge clk);
@@ -342,6 +358,14 @@ module tb_cachepool;
       @(posedge clk);
     reset_tcdm_req(0);
 
+    // repeat (50)
+    //   @(posedge clk);
+
+    // send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
+    // $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000400, 5'h00);
+    //   @(posedge clk);
+    // reset_tcdm_req(0);
+
     repeat (50)
       @(posedge clk);
 
@@ -351,8 +375,15 @@ module tb_cachepool;
       @(posedge clk);
     reset_tcdm_req(0);
 
+    // repeat (50)
+    //   @(posedge clk);
+
+    // send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
+    // $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000400, 5'h00);
+    //   @(posedge clk);
+    // reset_tcdm_req(0);
     
-    repeat (100)
+    repeat (200)
       @(posedge clk);
 
     /**

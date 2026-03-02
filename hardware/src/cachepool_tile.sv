@@ -613,6 +613,7 @@ module cachepool_tile
 
   typedef struct packed {
     tcdm_addr_t             addr;
+    logic [CoreIDWidth-1:0] core_id;
     logic                   valid;
   } coherence_evict_t;
 
@@ -1116,8 +1117,8 @@ module cachepool_tile
 
   hpdcache_coherence_rsp_t    [NumL0CacheCtrl-1:0] l1_l0_coherence_rsp_hpd;
   coherence_rsp_t             [NumL0CacheCtrl-1:0] l1_l0_coherence_rsp_tcdm;
-  hpdcache_coherence_evict_t  [NumL0CacheCtrl-1:0] l0_l1_coherence_evict_hpd;
-  coherence_evict_t           [NumL0CacheCtrl-1:0] l0_l1_coherence_evict_tcdm, l0_l1_coherence_evict_xbar;
+  // hpdcache_coherence_evict_t  [NumL0CacheCtrl-1:0] l0_l1_coherence_evict_hpd;
+  coherence_evict_t           [NumL0CacheCtrl-1:0] l0_l1_coherence_evict, l0_l1_coherence_evict_tcdm, l0_l1_coherence_evict_xbar;
   logic                       [NumL1CacheCtrl-1:0] l0_l1_coherence_evict_ready, l0_l1_coherence_evict_xbar_ready;
 
   cache_dir_fwd_t [NumL1CacheCtrl-1:0] l0_fwd_rx, inv_ack_fwd_int, l1_l0_fwd_int;
@@ -1769,7 +1770,18 @@ module cachepool_tile
     .dynamic_offset_i    (dynamic_offset)
   );
 
-  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_signal_translation
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : coherence_signal_translation
+    logic [$clog2(NumL1CacheCtrl)-1:0]  c_id;
+    always_comb begin
+      case (cb)
+        0: c_id = 2'b00;
+        1: c_id = 2'b01;
+        2: c_id = 2'b10;
+        3: c_id = 2'b11;
+        default: c_id = '0;
+      endcase
+    end
+  
     // assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_tcdm[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
     // assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_tcdm[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
     // assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_tcdm[cb].req_id;
@@ -1781,8 +1793,9 @@ module cachepool_tile
     assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_xbar[cb].is_inv_ack_cnt;
     assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_xbar[cb].inv_ack_cnt;
 
-    assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict_hpd[cb].addr_tag;
-    assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict_hpd[cb].valid;
+    assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict[cb].addr;
+    assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict[cb].valid;
+    assign l0_l1_coherence_evict_tcdm[cb].core_id     = c_id;
   end
 
   // for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : l1_l0_fwd_unmerge
@@ -2131,7 +2144,8 @@ module cachepool_tile
       .inv_ack_cnt_t        (inv_ack_cnt_t),
       .hpdcache_coherence_rsp_t (hpdcache_coherence_rsp_t),
       // .hpdcache_coherence_req_t (hpdcache_coherence_req_t),
-      .hpdcache_coherence_evict_t (hpdcache_coherence_evict_t)
+      // .hpdcache_coherence_evict_t (hpdcache_coherence_evict_t)
+      .coherence_evict_t    (coherence_evict_t)
     ) i_l0_cache (
       .clk_i                              (clk_i),
       .rst_ni                             (rst_ni),
@@ -2169,7 +2183,8 @@ module cachepool_tile
       .coherence_rsp_i                    (l1_l0_coherence_rsp_hpd[i]),
       .coherence_rsp_valid_i              (l1_l0_coherence_rsp_xbar_valid[i]),
       .coherence_rsp_ready_o              (l1_l0_coherence_rsp_xbar_ready[i]),
-      .coherence_evict_o                  (l0_l1_coherence_evict_hpd[i]),
+      .coherence_evict_o                  (l0_l1_coherence_evict[i]),
+      // .coherence_evict_o                  (l0_l1_coherence_evict_tcdm[i]),
       .coherence_evict_ready_i            (l0_l1_coherence_evict_ready[i]),
       // .coherence_req_o                    (/*  */),
       // .coherence_req_valid_o              (/*  */),

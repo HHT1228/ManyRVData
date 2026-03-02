@@ -355,7 +355,7 @@ module cahcepool_dir_ctrl
   always_comb begin
     if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
       busy_d = 1'b0;
-    end else if ((upstream_req_valid_i || fwd_rx_valid_i) && !upstream_req_fake_read_i) begin
+    end else if ((upstream_req_valid_i || fwd_rx_valid_i || upstream_req_evict_i.valid) && !upstream_req_fake_read_i) begin
       busy_d = 1'b1;
     end else begin
       busy_d = busy_q;
@@ -381,12 +381,12 @@ module cahcepool_dir_ctrl
 
     // Fwd is sink with higher priority than req
     if (!busy) begin
-      if (fwd_rx_valid_i) begin
+      if (upstream_req_evict_i.valid) begin
+        upstream_req_evict_ready_o  = 1'b1;
+      end else if (fwd_rx_valid_i) begin
         fwd_rx_ready_o              = 1'b1;
       end else if (upstream_req_valid_i) begin
         upstream_req_ready_o        = 1'b1;
-      end else if (upstream_req_evict_i.valid) begin
-        upstream_req_evict_ready_o  = 1'b1;
       end
     end
   end
@@ -645,6 +645,7 @@ module cahcepool_dir_ctrl
   // ---- Inputs this FSM needs
   dir_op_t                       op;
   logic [$clog2(NumCores)-1:0]   req_sid;       // requester core id (for READ/WRITE)
+  logic [$clog2(NumCores)-1:0]   evict_sid;     // evictor core id (for EVICT)
   reqid_t                        req_tid;       // request transaction id
   // logic [$clog2(NumCores)-1:0]   evict_id;    // evictor id (for Put*/Evict*)
 
@@ -696,47 +697,49 @@ module cahcepool_dir_ctrl
     // req_tid = upstream_req_meta_i.req_id;
     // req_sid = upstream_req_meta_q.core_id;
     // req_tid = upstream_req_meta_q.req_id;
-    req_sid = upstream_req_meta_d.core_id;
-    req_tid = upstream_req_meta_d.req_id;
+    req_sid   = upstream_req_meta_d.core_id;
+    req_tid   = upstream_req_meta_d.req_id;
+    evict_sid = upstream_req_evict_d.core_id;
     op_decoded = 1'b0;
 
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
     // if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
-    if(upstream_req_valid_d && busy && !upstream_req_fake_read_d) begin
+    if (busy && upstream_req_evict_d.valid) begin
+      // req_sid = upstream_req_evict_d.core_id;
+      case (curr_line_state)
+        DIR_LINE_INVALID: begin
+          op = OP_EVICT_S; // evictor is non-owner
+        end
+        DIR_LINE_SHARED: begin
+          op = OP_EVICT_S; // evictor is non-owner
+        end
+        DIR_LINE_EXCLUSIVE: begin
+          if (curr_sharer_list[req_sid]) begin
+            op = OP_EVICT_E_OWNER; // evictor is owner
+          end else begin
+            op = OP_EVICT_E_NONOWNER; // evictor is non-owner
+          end
+        end
+        DIR_LINE_MODIFIED: begin
+          if (curr_sharer_list[req_sid]) begin
+            op = OP_EVICT_M_OWNER; // evictor is owner
+          end else begin
+            op = OP_EVICT_M_NONOWNER; // evictor is non-owner
+          end
+        end
+        default: begin
+          op = OP_NONE;
+        end
+      endcase
+      op_decoded = 1'b1;
+      // end else if (upstream_req_write_i) begin
+      // end else if (upstream_req_write_q) begin
+    end else if(upstream_req_valid_d && busy && !upstream_req_fake_read_d) begin
       // if (upstream_req_is_evict_q) begin
       // if (upstream_req_evict_q.valid) begin
       // TODO: evict need to be out of this scope, separate from req?
-      if (upstream_req_evict_d.valid) begin
-        case (curr_line_state)
-          DIR_LINE_INVALID: begin
-            op = OP_EVICT_S; // evictor is non-owner
-          end
-          DIR_LINE_SHARED: begin
-            op = OP_EVICT_S; // evictor is non-owner
-          end
-          DIR_LINE_EXCLUSIVE: begin
-            if (curr_sharer_list[req_sid]) begin
-              op = OP_EVICT_E_OWNER; // evictor is owner
-            end else begin
-              op = OP_EVICT_E_NONOWNER; // evictor is non-owner
-            end
-          end
-          DIR_LINE_MODIFIED: begin
-            if (curr_sharer_list[req_sid]) begin
-              op = OP_EVICT_M_OWNER; // evictor is owner
-            end else begin
-              op = OP_EVICT_M_NONOWNER; // evictor is non-owner
-            end
-          end
-          default: begin
-            op = OP_NONE;
-          end
-        endcase
-        op_decoded = 1'b1;
-      // end else if (upstream_req_write_i) begin
-      // end else if (upstream_req_write_q) begin
-      end else if (upstream_req_write_d) begin
+      if (upstream_req_write_d) begin
         op      = OP_WRITE;
         op_decoded = 1'b1;
       // end else if (!upstream_req_write_i) begin
@@ -1008,7 +1011,7 @@ module cahcepool_dir_ctrl
 
     // if(act.send_evict_ack) begin
     if(act_q.send_evict_ack) begin
-      coherence_rsp_d.core_id         = req_sid;
+      coherence_rsp_d.core_id         = evict_sid;
       coherence_rsp_d.req_id          = req_tid;
       // coherence_rsp_d.addr            = upstream_req_addr_d;
       coherence_rsp_d.addr = ((upstream_req_addr_d & ~lo_mask) << NumMemSelBits) | (AddrWidth'(upstream_req_meta_d.lost_bits) << dynamic_offset_i) | (upstream_req_addr_d & lo_mask);
@@ -1140,7 +1143,7 @@ module cahcepool_dir_ctrl
             act.send_inv_to_sharers = 1'b1;
             act.update_l2_data      = 1'b1;
             // inv_ack_count           = count_set_bits(sharers_q);
-            inv_ack_count           = count_set_bits(current_sharers) - 1; // exclude requester from ack count
+            inv_ack_count           = current_sharers[req_sid] ? count_set_bits(current_sharers) - 1 : count_set_bits(current_sharers); // exclude requester from ack count
             sharers_d               = '0;
             sharers_d               = set_bit(sharers_d, req_sid);
             act.update_sharers      = 1'b1;
@@ -1154,7 +1157,8 @@ module cahcepool_dir_ctrl
           // Evictions remove bit; S->I if last sharer leaves
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_M_OWNER: begin
             // sharers_d          = clr_bit(sharers_d, evict_id);
-            sharers_d          = clr_bit(sharers_d, req_sid);
+            // sharers_d          = clr_bit(sharers_d, req_sid);
+            sharers_d          = clr_bit(sharers_d, evict_sid);
             act.update_sharers = 1'b1;
             act.send_evict_ack = 1'b1;
             state_d            = (sharers_d == '0) ? DIR_LINE_INVALID : DIR_LINE_SHARED;
