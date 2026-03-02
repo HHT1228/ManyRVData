@@ -89,6 +89,7 @@ module coherence_interco
   cache_dir_fwd_t           [NumL0CacheCtrl-1:0] l1_l2_fwd_int;
   logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_valid_int;
   coherence_evict_t         [NumL0CacheCtrl-1:0] l1_l2_evict_int;
+  logic                     [NumL0CacheCtrl-1:0] l1_l2_evict_valid_int;
   coherence_down_payload_t  [NumL0CacheCtrl-1:0] l1_l2_fwd_payload, l1_l2_evict_payload;
   tcdm_req_coherence_t      [NumL0CacheCtrl-1:0] l1_l2_fwd_tcdm_int, l1_l2_evict_tcdm_int;
   tcdm_req_coherence_t      [NumL0CacheCtrl-1:0] l1_l2_coherence_tcdm;
@@ -117,6 +118,7 @@ module coherence_interco
   logic                     [NumL0CacheCtrl-1:0] l2_l1_fwd_gnt, l2_l1_rsp_gnt;
   logic                     [NumL0CacheCtrl-1:0] l2_l1_fwd_empty, l2_l1_rsp_empty;
   logic                     [NumL1CacheCtrl-1:0] l2_l1_fwd_fifo_full, l2_l1_rsp_fifo_full;
+  logic                     [NumL1CacheCtrl-1:0] l2_l1_fwd_fifo_ready, l2_l1_rsp_fifo_ready;
 
   logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_valid;
 
@@ -125,7 +127,7 @@ module coherence_interco
   logic                     [NumL0CacheCtrl-1:0] inter_l1_fwd_xbar_valid, inter_l1_fwd_xbar_ready;
   sel_t                     [NumL0CacheCtrl-1:0] inter_l1_fwd_sel;
 
-  // logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_ready;
+  logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_ready;
   
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : doownward_pre_xbar
     /*****************************
@@ -135,25 +137,61 @@ module coherence_interco
     // INV_ACK is inter-L1 traffic
     assign l1_l2_fwd_valid[i] = l1_l2_fwd_valid_i[i] && (l1_l2_fwd_i[i].fwd_msg_type != INV_ACK);
 
-    fifo_v3 #(
+    // fifo_v3 #(
+    //   .FALL_THROUGH(1'b0),
+    //   .DATA_WIDTH($bits(cache_dir_fwd_t)+1),  // +1 for valid bit
+    //   .DEPTH(8)
+    // ) i_l1_l2_fwd_fifo (
+    //   .clk_i      (clk_i),
+    //   .rst_ni     (rst_ni),
+    //   .flush_i    (1'b0),
+    //   .testmode_i (1'b0),
+    //   .full_o     (l1_l2_fwd_fifo_full[i]),
+    //   .empty_o    (l1_l2_fwd_empty[i]),
+    //   .usage_o    (),
+    //   .data_i     ({l1_l2_fwd_valid[i], l1_l2_fwd_i[i]}),
+    //   .push_i     (l1_l2_fwd_valid[i]),
+    //   .data_o     ({l1_l2_fwd_valid_int[i], l1_l2_fwd_int[i]}),
+    //   .pop_i      (l1_l2_fwd_gnt[i] && !l1_l2_fwd_empty[i])
+    // );
+
+    stream_fifo #(
       .FALL_THROUGH(1'b0),
-      .DATA_WIDTH($bits(cache_dir_fwd_t)+1),  // +1 for valid bit
+      .DATA_WIDTH($bits(cache_dir_fwd_t)),
       .DEPTH(8)
     ) i_l1_l2_fwd_fifo (
       .clk_i      (clk_i),
       .rst_ni     (rst_ni),
       .flush_i    (1'b0),
       .testmode_i (1'b0),
-      .full_o     (l1_l2_fwd_fifo_full[i]),
-      .empty_o    (l1_l2_fwd_empty[i]),
       .usage_o    (),
-      .data_i     ({l1_l2_fwd_valid[i], l1_l2_fwd_i[i]}),
-      .push_i     (l1_l2_fwd_valid[i]),
-      .data_o     ({l1_l2_fwd_valid_int[i], l1_l2_fwd_int[i]}),
-      .pop_i      (l1_l2_fwd_gnt[i] && !l1_l2_fwd_empty[i])
+      .data_i     (l1_l2_fwd_i[i]),
+      .valid_i    (l1_l2_fwd_valid[i]),
+      .ready_o    (l1_l2_fwd_ready[i]),
+      .data_o     (l1_l2_fwd_int[i]),
+      .valid_o    (l1_l2_fwd_valid_int[i]),
+      .ready_i    (l1_l2_fwd_gnt[i])
     );
 
-    fifo_v3 #(
+    // fifo_v3 #(
+    //   .FALL_THROUGH(1'b0),
+    //   .DATA_WIDTH($bits(coherence_evict_t)),
+    //   .DEPTH(8)
+    // ) i_l1_l2_evict_fifo (
+    //   .clk_i      (clk_i),
+    //   .rst_ni     (rst_ni),
+    //   .flush_i    (1'b0),
+    //   .testmode_i (1'b0),
+    //   .full_o     (l1_l2_evict_fifo_full[i]),
+    //   .empty_o    (l1_l2_evict_empty[i]),
+    //   .usage_o    (),
+    //   .data_i     (l1_l2_evict_i[i]),
+    //   .push_i     (l1_l2_evict_i[i].valid),
+    //   .data_o     (l1_l2_evict_int[i]),
+    //   .pop_i      (l1_l2_evict_gnt[i] && !l1_l2_evict_empty[i])
+    // );
+
+    stream_fifo #(
       .FALL_THROUGH(1'b0),
       .DATA_WIDTH($bits(coherence_evict_t)),
       .DEPTH(8)
@@ -162,13 +200,13 @@ module coherence_interco
       .rst_ni     (rst_ni),
       .flush_i    (1'b0),
       .testmode_i (1'b0),
-      .full_o     (l1_l2_evict_fifo_full[i]),
-      .empty_o    (l1_l2_evict_empty[i]),
       .usage_o    (),
       .data_i     (l1_l2_evict_i[i]),
-      .push_i     (l1_l2_evict_i[i].valid),
+      .valid_i    (l1_l2_evict_i[i].valid),
+      .ready_o    (l1_l2_evict_ready_o[i]),
       .data_o     (l1_l2_evict_int[i]),
-      .pop_i      (l1_l2_evict_gnt[i] && !l1_l2_evict_empty[i])
+      .valid_o    (l1_l2_evict_valid_int[i]),
+      .ready_i    (l1_l2_evict_gnt[i])
     );
 
     assign l1_l2_fwd_payload[i].fwd = l1_l2_fwd_int[i];
@@ -183,7 +221,8 @@ module coherence_interco
 
     assign l1_l2_evict_tcdm_int[i].q.data = l1_l2_evict_payload[i];
     assign l1_l2_evict_tcdm_int[i].q.addr = l1_l2_evict_int[i].addr;
-    assign l1_l2_evict_tcdm_int[i].q_valid = l1_l2_evict_int[i].valid;
+    // assign l1_l2_evict_tcdm_int[i].q_valid = l1_l2_evict_int[i].valid;
+    assign l1_l2_evict_tcdm_int[i].q_valid = l1_l2_evict_valid_int[i];
     assign l1_l2_evict_tcdm_int[i].q.user.is_fwd = 1'b0;
 
     rr_arb_tree #(
@@ -237,43 +276,81 @@ module coherence_interco
   end
 
   for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : upward_pre_xbar
-    assign l2_l1_fwd_ready_o[i] = ~l2_l1_fwd_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
-    assign l2_l1_rsp_ready_o[i] = ~l2_l1_rsp_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
+    // assign l2_l1_fwd_ready_o[i] = ~l2_l1_fwd_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
+    // assign l2_l1_rsp_ready_o[i] = ~l2_l1_rsp_fifo_full[i] && l2_l1_ready_tcdm_xbar[i];
+    assign l2_l1_fwd_ready_o[i] = l2_l1_fwd_fifo_ready[i] && l2_l1_ready_tcdm_xbar[i];
+    assign l2_l1_rsp_ready_o[i] = l2_l1_rsp_fifo_ready[i] && l2_l1_ready_tcdm_xbar[i];
 
-    fifo_v3 #(
+    // fifo_v3 #(
+    //   .FALL_THROUGH(1'b0),
+    //   .DATA_WIDTH($bits(cache_dir_fwd_t)+1),  // +1 for valid bit
+    //   .DEPTH(8)
+    // ) i_l2_l1_fwd_fifo (
+    //   .clk_i      (clk_i),
+    //   .rst_ni     (rst_ni),
+    //   .flush_i    (1'b0),
+    //   .testmode_i (1'b0),
+    //   .full_o     (l2_l1_fwd_fifo_full[i]),
+    //   .empty_o    (l2_l1_fwd_empty[i]),
+    //   .usage_o    (),
+    //   .data_i     ({l2_l1_fwd_valid_i[i], l2_l1_fwd_i[i]}),
+    //   .push_i     (l2_l1_fwd_valid_i[i]),
+    //   .data_o     ({l2_l1_fwd_valid_int[i], l2_l1_fwd_int[i]}),
+    //   .pop_i      (l2_l1_fwd_gnt[i] && !l2_l1_fwd_empty[i])
+    // );
+
+    stream_fifo #(
       .FALL_THROUGH(1'b0),
-      .DATA_WIDTH($bits(cache_dir_fwd_t)+1),  // +1 for valid bit
+      .DATA_WIDTH($bits(cache_dir_fwd_t)),
       .DEPTH(8)
     ) i_l2_l1_fwd_fifo (
       .clk_i      (clk_i),
       .rst_ni     (rst_ni),
       .flush_i    (1'b0),
       .testmode_i (1'b0),
-      .full_o     (l2_l1_fwd_fifo_full[i]),
-      .empty_o    (l2_l1_fwd_empty[i]),
       .usage_o    (),
-      .data_i     ({l2_l1_fwd_valid_i[i], l2_l1_fwd_i[i]}),
-      .push_i     (l2_l1_fwd_valid_i[i]),
-      .data_o     ({l2_l1_fwd_valid_int[i], l2_l1_fwd_int[i]}),
-      .pop_i      (l2_l1_fwd_gnt[i] && !l2_l1_fwd_empty[i])
+      .data_i     (l2_l1_fwd_i[i]),
+      .valid_i    (l2_l1_fwd_valid_i[i]),
+      .ready_o    (l2_l1_fwd_fifo_ready[i]),
+      .data_o     (l2_l1_fwd_int[i]),
+      .valid_o    (l2_l1_fwd_valid_int[i]),
+      .ready_i    (l2_l1_fwd_gnt[i])
     );
 
-    fifo_v3 #(
+    // fifo_v3 #(
+    //   .FALL_THROUGH(1'b0),
+    //   .DATA_WIDTH($bits(coherence_rsp_t)+1),  // +1 for valid bit
+    //   .DEPTH(8)
+    // ) i_l2_l1_rsp_fifo (
+    //   .clk_i      (clk_i),
+    //   .rst_ni     (rst_ni),
+    //   .flush_i    (1'b0),
+    //   .testmode_i (1'b0),
+    //   .full_o     (l2_l1_rsp_fifo_full[i]),
+    //   .empty_o    (l2_l1_rsp_empty[i]),
+    //   .usage_o    (),
+    //   .data_i     ({l2_l1_rsp_valid_i[i], l2_l1_rsp_i[i]}),
+    //   .push_i     (l2_l1_rsp_valid_i[i]),
+    //   .data_o     ({l2_l1_rsp_valid_int[i], l2_l1_rsp_int[i]}),
+    //   .pop_i      (l2_l1_rsp_gnt[i] && !l2_l1_rsp_empty[i])
+    // );
+
+    stream_fifo #(
       .FALL_THROUGH(1'b0),
-      .DATA_WIDTH($bits(coherence_rsp_t)+1),  // +1 for valid bit
+      .DATA_WIDTH($bits(coherence_rsp_t)),
       .DEPTH(8)
     ) i_l2_l1_rsp_fifo (
       .clk_i      (clk_i),
       .rst_ni     (rst_ni),
       .flush_i    (1'b0),
       .testmode_i (1'b0),
-      .full_o     (l2_l1_rsp_fifo_full[i]),
-      .empty_o    (l2_l1_rsp_empty[i]),
       .usage_o    (),
-      .data_i     ({l2_l1_rsp_valid_i[i], l2_l1_rsp_i[i]}),
-      .push_i     (l2_l1_rsp_valid_i[i]),
-      .data_o     ({l2_l1_rsp_valid_int[i], l2_l1_rsp_int[i]}),
-      .pop_i      (l2_l1_rsp_gnt[i] && !l2_l1_rsp_empty[i])
+      .data_i     (l2_l1_rsp_i[i]),
+      .valid_i    (l2_l1_rsp_valid_i[i]),
+      .ready_o    (l2_l1_rsp_fifo_ready[i]),
+      .data_o     (l2_l1_rsp_int[i]),
+      .valid_o    (l2_l1_rsp_valid_int[i]),
+      .ready_i    (l2_l1_rsp_gnt[i])
     );
 
     assign l2_l1_fwd_payload[i].fwd = l2_l1_fwd_int[i];
@@ -471,7 +548,8 @@ module coherence_interco
       if (inter_l1_fwd_xbar_valid[i]) begin
         l1_l2_fwd_ready_o[i] = inter_l1_fwd_ready[i];
       end else begin
-        l1_l2_fwd_ready_o[i] = !l1_l2_fwd_fifo_full[i];
+        // l1_l2_fwd_ready_o[i] = !l1_l2_fwd_fifo_full[i];
+        l1_l2_fwd_ready_o[i] = l1_l2_fwd_ready[i];
       end
     end
   end

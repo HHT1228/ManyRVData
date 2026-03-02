@@ -1982,13 +1982,14 @@ module cachepool_tile
   hpdcache_req_t  l0_cache_req_coal_buf   [NumL0CacheCtrl];
   logic           l0_cache_req_coal_valid_buf [NumL0CacheCtrl];
   logic           l0_cache_req_coal_ready_buf [NumL0CacheCtrl];
+  // logic           l0_cache_req_coal_ready [NumL0CacheCtrl];
   logic           [NumL0CacheCtrl-1:0] inv_fifo_full, coal_fifo_full, inv_fifo_empty, coal_fifo_empty;
   
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_inv_cmo
     assign l0_cache_req_valid_final[cb][0] = hpd_l0_cache_req_valid_coal[cb][0];
     assign l0_cache_req_final[cb][0]    = l0_cache_req_coal[cb][0];
 
-    assign hpd_l0_cache_req_ready_coal[cb][1] = l0_cache_req_coal_ready_buf[cb];
+    // assign hpd_l0_cache_req_ready_coal[cb][1] = l0_cache_req_coal_ready_buf[cb];
     assign hpd_l0_cache_req_ready_coal[cb][0] = l0_cache_req_ready_final[cb][0];
 
     always_comb begin
@@ -2011,40 +2012,68 @@ module cachepool_tile
       end
     end
 
-    fifo_v3 #(
-      .FALL_THROUGH(1'b1),
-      .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
-      .DEPTH(8)
-    ) i_l1_inv_fifo (
-      .clk_i      (clk_i),
-      .rst_ni     (rst_ni),
-      .flush_i    (1'b0),
-      .testmode_i (1'b0),
-      .full_o     (inv_fifo_full[cb]),
-      .empty_o    (inv_fifo_empty[cb]),
-      .usage_o    (),
-      .data_i     ({l0_cache_req_inv_valid[cb][1], l0_cache_req_inv[cb][1]}),
-      .push_i     (l0_cache_req_inv_valid[cb][1] && !inv_fifo_full[cb]),
-      .data_o     ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_inv_buf[cb]}),
-      .pop_i      (l0_cache_req_inv_ready_buf[cb] && !inv_fifo_empty[cb])
+    // fifo_v3 #(
+    //   .FALL_THROUGH(1'b1),
+    //   .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
+    //   .DEPTH(8)
+    // ) i_l1_inv_fifo (
+    //   .clk_i      (clk_i),
+    //   .rst_ni     (rst_ni),
+    //   .flush_i    (1'b0),
+    //   .testmode_i (1'b0),
+    //   .full_o     (inv_fifo_full[cb]),
+    //   .empty_o    (inv_fifo_empty[cb]),
+    //   .usage_o    (),
+    //   .data_i     ({l0_cache_req_inv_valid[cb][1], l0_cache_req_inv[cb][1]}),
+    //   .push_i     (l0_cache_req_inv_valid[cb][1] && !inv_fifo_full[cb]),
+    //   .data_o     ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_inv_buf[cb]}),
+    //   .pop_i      (l0_cache_req_inv_ready_buf[cb] && !inv_fifo_empty[cb])
+    // );
+
+    spill_register #(
+      .T      (hpdcache_req_t ),
+      .Bypass (1'b0)
+    ) i_l1_inv_spill (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .valid_i (l0_cache_req_inv_valid[cb][1]),
+      .ready_o (),
+      .data_i  (l0_cache_req_inv[cb][1]),
+      .valid_o (l0_cache_req_inv_valid_buf[cb]),
+      .ready_i (l0_cache_req_inv_ready_buf[cb]),
+      .data_o  (l0_cache_req_inv_buf[cb])
     );
 
-    fifo_v3 #(
-      .FALL_THROUGH(1'b1),
-      .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
-      .DEPTH(8)
-    ) i_l1_coal_fifo (
-      .clk_i      (clk_i),
-      .rst_ni     (rst_ni),
-      .flush_i    (1'b0),
-      .testmode_i (1'b0),
-      .full_o     (coal_fifo_full[cb]),
-      .empty_o    (coal_fifo_empty[cb]),
-      .usage_o    (),
-      .data_i     ({hpd_l0_cache_req_valid_coal[cb][1], l0_cache_req_coal[cb][1]}),
-      .push_i     (hpd_l0_cache_req_valid_coal[cb][1] && !coal_fifo_full[cb]),
-      .data_o     ({l0_cache_req_coal_valid_buf[cb], l0_cache_req_coal_buf[cb]}),
-      .pop_i      (l0_cache_req_coal_ready_buf[cb] && !coal_fifo_empty[cb])
+    // fifo_v3 #(
+    //   .FALL_THROUGH(1'b1),
+    //   .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
+    //   .DEPTH(8)
+    // ) i_l1_coal_fifo (
+    //   .clk_i      (clk_i),
+    //   .rst_ni     (rst_ni),
+    //   .flush_i    (1'b0),
+    //   .testmode_i (1'b0),
+    //   .full_o     (coal_fifo_full[cb]),
+    //   .empty_o    (coal_fifo_empty[cb]),
+    //   .usage_o    (),
+    //   .data_i     ({hpd_l0_cache_req_valid_coal[cb][1], l0_cache_req_coal[cb][1]}),
+    //   .push_i     (hpd_l0_cache_req_valid_coal[cb][1] && !coal_fifo_full[cb]),
+    //   .data_o     ({l0_cache_req_coal_valid_buf[cb], l0_cache_req_coal_buf[cb]}),
+    //   .pop_i      (l0_cache_req_coal_ready_buf[cb] && !coal_fifo_empty[cb])
+    // );
+
+    spill_register #(
+      .T      (hpdcache_req_t ),
+      .Bypass (1'b0)
+    ) i_l1_coal_spill (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .valid_i (hpd_l0_cache_req_valid_coal[cb][1]),
+      .ready_o (hpd_l0_cache_req_ready_coal[cb][1]),
+      .data_i  (l0_cache_req_coal[cb][1]),
+      .valid_o (l0_cache_req_coal_valid_buf[cb]),
+      .ready_i (l0_cache_req_coal_ready_buf[cb]),
+      .data_o  (l0_cache_req_coal_buf[cb])
     );
 
     rr_arb_tree #(
@@ -2056,8 +2085,8 @@ module cachepool_tile
       .rst_ni  (rst_ni),
       .flush_i (1'b0),
       .rr_i    (1'b1),
-      .req_i   ({(l0_cache_req_inv_valid_buf[cb] && !inv_fifo_empty[cb]), (l0_cache_req_coal_valid_buf[cb] && !coal_fifo_empty[cb])}),  // valid_i
-      // .req_i   ({l0_cache_req_inv_valid[cb][1], hpd_l0_cache_req_valid_coal[cb][1]}),  // valid_i
+      // .req_i   ({(l0_cache_req_inv_valid_buf[cb] && !inv_fifo_empty[cb]), (l0_cache_req_coal_valid_buf[cb] && !coal_fifo_empty[cb])}),  // valid_i
+      .req_i   ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_coal_valid_buf[cb]}),  // valid_i
       .gnt_o   ({l0_cache_req_inv_ready_buf[cb], l0_cache_req_coal_ready_buf[cb]}),  // ready_o
       .data_i  ({l0_cache_req_inv_buf[cb], l0_cache_req_coal_buf[cb]}),
       .req_o   (l0_cache_req_valid_final[cb][1]),                 // valid_o
