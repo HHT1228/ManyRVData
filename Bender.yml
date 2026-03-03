@@ -35,8 +35,8 @@ sources:
   - hardware/src/asymmetric_fifo.sv
   - hardware/src/cachepool_strbreq_handler.sv
   - hardware/src/coherence_pkg.sv
-  # Level 1
   - hardware/src/cachepool_pkg.sv
+  # Level 1
   - hardware/src/coherence_fwd_interco.sv
   - hardware/src/coherence_interco.sv
   - hardware/src/cachepool_dir_ctrl.sv

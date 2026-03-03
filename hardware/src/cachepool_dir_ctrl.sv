@@ -163,7 +163,7 @@ module cahcepool_dir_ctrl
   // tcdm_bank_addr_t                    tag_bank_waddr;
   // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
   tag_data_t [SetAssociativity-1:0]   tag_bank_rdata, tag_bank_wdata;
-  logic                               tag_bank_write_req;
+  logic                               tag_bank_write_req, tag_bank_write_req_q, tag_bank_rdata_valid;
 
   tag_data_t                          curr_line_meta, curr_line_meta_q;
   // logic      [SetAssociativity-1:0]   way_hit;
@@ -213,12 +213,15 @@ module cahcepool_dir_ctrl
   sharer_list_t                       receivers, receivers_q;
   logic [CoreIDWidth-1:0]             new_owner, new_owner_q;
 
+  logic                               req_stall;
+
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
   `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
   `FF(receivers_q, receivers, '0, clk_i, rst_ni)
   `FF(new_owner_q, new_owner, '0, clk_i, rst_ni)
   `FF(inv_ack_count_q, inv_ack_count, '0, clk_i, rst_ni)
+  `FF(tag_bank_write_req_q, tag_bank_write_req, 1'b0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -230,6 +233,7 @@ module cahcepool_dir_ctrl
 
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
+  assign tag_bank_rdata_valid = tag_bank_gnt_q && !tag_bank_write_req_q;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if(!rst_ni) begin
@@ -352,18 +356,43 @@ module cahcepool_dir_ctrl
   //   end
   // end
 
+  // always_comb begin
+  //   if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
+  //     busy_d = 1'b0;
+  //   end else if ((upstream_req_valid_i || fwd_rx_valid_i || upstream_req_evict_i.valid) && !upstream_req_fake_read_i) begin
+  //     busy_d = 1'b1;
+  //   end else begin
+  //     busy_d = busy_q;
+  //   end
+  // end
+
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     busy_q <= 1'b0;
+  //   end else begin
+  //     busy_q <= busy_d;
+  //   end
+  // end
+
   always_comb begin
-    if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
+    busy_d = busy_q;
+    if (req_stall) begin
       busy_d = 1'b0;
+      if (fwd_rx_valid_i && (fwd_rx_i.fwd_msg_type == GET_ACK)) begin
+        busy_d = 1'b1;
+      end else if (op_decoded) begin
+        busy_d = 1'b1;
+      end
     end else if ((upstream_req_valid_i || fwd_rx_valid_i || upstream_req_evict_i.valid) && !upstream_req_fake_read_i) begin
       busy_d = 1'b1;
-    end else begin
-      busy_d = busy_q;
     end
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
+      busy_q <= 1'b0;
+    // end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
+    end else if (upstream_resp_valid_o) begin
       busy_q <= 1'b0;
     end else begin
       busy_q <= busy_d;
@@ -373,6 +402,7 @@ module cahcepool_dir_ctrl
   assign busy = busy_q;
 
   // assign upstream_req_ready_o = !busy;
+  assign req_stall = (next_coherence_meta_q.line_state == DIR_LINE_ESA);
 
   always_comb begin : dir_ctrl_ready
     fwd_rx_ready_o              = 1'b0;
@@ -385,7 +415,7 @@ module cahcepool_dir_ctrl
         upstream_req_evict_ready_o  = 1'b1;
       end else if (fwd_rx_valid_i) begin
         fwd_rx_ready_o              = 1'b1;
-      end else if (upstream_req_valid_i) begin
+      end else if (upstream_req_valid_i && !req_stall) begin
         upstream_req_ready_o        = 1'b1;
       end
     end
@@ -418,13 +448,13 @@ module cahcepool_dir_ctrl
       //   tag_bank_rvalid_d = 1'b1;
       //   tag_bank_addr_d   = downstream_req_addr_q[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
       // end else 
-      if (fwd_rx_valid_i) begin
+      if (fwd_rx_valid_i && fwd_rx_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = fwd_rx_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
-      end else if (upstream_req_valid_i) begin
+      end else if (upstream_req_valid_i && upstream_req_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
-      end else if (upstream_req_evict_i.valid) begin
+      end else if (upstream_req_evict_i.valid && upstream_req_evict_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = upstream_req_evict_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
       end
@@ -608,7 +638,7 @@ module cahcepool_dir_ctrl
       if (!curr_line_hit &&
           (local_tag[i] == upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits]) &&
           (upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits] != '0) &&
-          tag_bank_gnt_q) begin
+          tag_bank_rdata_valid) begin
         curr_line_meta_reg = tag_bank_rdata[i];
         curr_line_hit      = 1'b1;
         way_id             = i;
@@ -705,7 +735,7 @@ module cahcepool_dir_ctrl
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
     // if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
-    if (busy && upstream_req_evict_d.valid) begin
+    if (upstream_req_evict_d.valid && tag_bank_rdata_valid) begin
       // req_sid = upstream_req_evict_d.core_id;
       case (curr_line_state)
         DIR_LINE_INVALID: begin
@@ -735,7 +765,7 @@ module cahcepool_dir_ctrl
       op_decoded = 1'b1;
       // end else if (upstream_req_write_i) begin
       // end else if (upstream_req_write_q) begin
-    end else if(upstream_req_valid_d && busy && !upstream_req_fake_read_d) begin
+    end else if(upstream_req_valid_d && !upstream_req_fake_read_d && tag_bank_rdata_valid) begin
       // if (upstream_req_is_evict_q) begin
       // if (upstream_req_evict_q.valid) begin
       // TODO: evict need to be out of this scope, separate from req?
@@ -751,7 +781,7 @@ module cahcepool_dir_ctrl
         op      = OP_NONE;    // default
       end
     // end else if (fwd_rx_valid_i) begin
-    end else if (busy && fwd_rx_valid_d) begin
+    end else if (fwd_rx_valid_d && tag_bank_rdata_valid) begin
       case (fwd_msg_type)
         GET_ACK: begin
         // 2'b11: begin
@@ -1087,8 +1117,10 @@ module cahcepool_dir_ctrl
   dir_line_state_t current_state;
   sharer_list_t    current_sharers;
   // assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
-  assign current_state   = tag_bank_gnt_q ? curr_line_state : state_q;
-  assign current_sharers = tag_bank_gnt_q ? curr_sharer_list : sharers_q;
+  // assign current_state   = tag_bank_gnt_q ? curr_line_state : state_q;
+  // assign current_sharers = tag_bank_gnt_q ? curr_sharer_list : sharers_q;
+  assign current_state   = tag_bank_rdata_valid ? curr_line_state : state_q;
+  assign current_sharers = tag_bank_rdata_valid ? curr_sharer_list : sharers_q;
   always_comb begin
     // Defaults: hold
     state_d       = state_q;

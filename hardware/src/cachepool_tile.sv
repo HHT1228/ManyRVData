@@ -1749,9 +1749,9 @@ module cachepool_tile
     .l1_l2_evict_xbar_o  (l0_l1_coherence_evict_xbar),
     .l1_l2_evict_xbar_ready_i (l0_l1_coherence_evict_xbar_ready),
 
-    // .l2_l1_fwd_i        ('0),
-    // .l2_l1_fwd_valid_i  (l1_l0_fwd_valid),
-    // .l2_l1_fwd_ready_o  (l1_l0_fwd_ready),
+    .l2_l1_fwd_i        ('0),
+    .l2_l1_fwd_valid_i  ('0),
+    .l2_l1_fwd_ready_o  (/*unused*/),
 
     // TODO: naming confusing, actualy inter-L1
     .l2_l1_fwd_xbar_o       (inv_ack_fwd),

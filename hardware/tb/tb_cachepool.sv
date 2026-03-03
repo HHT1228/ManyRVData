@@ -8,7 +8,7 @@ import "DPI-C" context function byte read_section(input longint address, inout b
 import "DPI-C" function int fesvr_tick();
 import "DPI-C" function int get_entry_point();
 
-`define MANUAL_DEBUG
+// `define MANUAL_DEBUG
 
 `define wait_for(signal) \
   do \
@@ -502,35 +502,34 @@ module tb_cachepool;
       @(posedge clk);
     reset_tcdm_req(0);
 
+    repeat (200)
+      @(posedge clk);
 
-    // send_snitch_write_req(32'h8000A000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h20);
-    // $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000A000, 5'h15);
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
+    // Intense R/W test (single-core)
+    send_snitch_read_req(32'h80004000, 4'hF, 2'h0, 5'h00);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80004000, 5'h00);
+      @(posedge clk);
+    reset_tcdm_req(0);
 
-    // repeat (50)
-    //   @(posedge clk);
+      @(posedge clk);
+    send_snitch_write_req(32'h80004000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h01);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80004000, 5'h01);
+      @(posedge clk);
+    reset_tcdm_req(0);
 
-    // send_snitch_read_req(32'h8000A000, 4'hF, 2'h1, 5'h21);
-    // $display("[TB] Core %0d read on address %x with id %x", 2'h1, 32'h8000A000, 5'h16);
-    //   @(posedge clk);
-    // reset_tcdm_req(1);
+      @(posedge clk);
+    send_snitch_read_req(32'h80004000, 4'hF, 2'h0, 5'h02);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80004000, 5'h02);
+      @(posedge clk);
+    reset_tcdm_req(0);
 
-    // repeat (50)
-    //   @(posedge clk);
+    repeat (50)
+      @(posedge clk);
 
-    // send_snitch_write_req(32'h8000A000, 32'hCAFEBABE, 4'hF, 2'h0, 5'h22);
-    // $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000A000, 5'h17);
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
-
-    // repeat (50)
-    //   @(posedge clk);
-
-    // send_snitch_read_req(32'h8000A000, 4'hF, 2'h1, 5'h23);
-    // $display("[TB] Core %0d read on address %x with id %x", 2'h1, 32'h8000A000, 5'h18);
-    //   @(posedge clk);
-    // reset_tcdm_req(1);
+    send_snitch_read_req(32'h80004000, 4'hF, 2'h0, 5'h03);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80004000, 5'h03);
+      @(posedge clk);
+    reset_tcdm_req(0);
 
     repeat (100)
       @(posedge clk);
