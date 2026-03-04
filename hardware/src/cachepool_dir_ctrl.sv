@@ -139,18 +139,18 @@ module cahcepool_dir_ctrl
     BOTH = 2'b10
   } pseudo_port_t;
 
-  typedef enum logic [2:0] {
-    DIR_LINE_INVALID      = 3'b000,
-    DIR_LINE_SHARED       = 3'b001,
-    DIR_LINE_EXCLUSIVE    = 3'b010,
-    DIR_LINE_MODIFIED     = 3'b011,
-    DIR_LINE_ESA          = 3'b100    // substate
-  } dir_line_state_t;
+  // typedef enum logic [2:0] {
+  //   DIR_LINE_INVALID      = 3'b000,
+  //   DIR_LINE_SHARED       = 3'b001,
+  //   DIR_LINE_EXCLUSIVE    = 3'b010,
+  //   DIR_LINE_MODIFIED     = 3'b011,
+  //   DIR_LINE_ESA          = 3'b100    // substate
+  // } dir_line_state_t;
 
-  typedef struct packed {
-    dir_line_state_t      line_state;
-    sharer_list_t         sharers;
-  } coherence_meta_t;
+  // typedef struct packed {
+  //   dir_line_state_t      line_state;
+  //   sharer_list_t         sharers;
+  // } coherence_meta_t;
   /**
   * Internal signals
   */
@@ -1204,12 +1204,22 @@ module cahcepool_dir_ctrl
       DIR_LINE_EXCLUSIVE: begin
         unique case (op)
           OP_READ: begin
-            // Another reader arrives: probe owner first; go ESA
-            act.send_probe_owner = 1'b1;
-            pending_req_d        = req_sid;
-            state_d              = DIR_LINE_ESA;
-            act.update_state     = 1'b1;
-            receivers            = current_sharers;
+            if (current_sharers[req_sid]) begin
+              // The only owner read on this line
+              // This can happen because L1 is *non-allocate* write-thru
+              act.send_excl_data   = 1'b1;
+              // act.send_probe_owner = 1'b0;
+              state_d              = DIR_LINE_EXCLUSIVE;
+              // act.update_state     = 1'b0;
+              // receivers            = current_sharers;
+            end else begin
+              // Another reader arrives: probe owner first; go ESA
+              act.send_probe_owner = 1'b1;
+              pending_req_d        = req_sid;
+              state_d              = DIR_LINE_ESA;
+              act.update_state     = 1'b1;
+              receivers            = current_sharers;
+            end
           end
           OP_WRITE: begin
             // Writer arrives: invalidate current owner; serialize WT; new owner=req

@@ -3,6 +3,7 @@
 // `define CACHE_DIRECT  // bypass directory controller
 
 module cachepool_l2_wrapper
+  import cachepool_pkg::*;
   import coherence_pkg::*; 
   #(
   /*************************
@@ -168,6 +169,13 @@ module cachepool_l2_wrapper
 
   localparam NumSelBits = $clog2(NumL1CacheCtrl);
   localparam NumWordPerLine = 1;
+  
+  parameter int unsigned SRAMBeWidth        = ($bits(tag_data_t) + 32'd8 - 32'd1) / 32'd8;
+  parameter int unsigned CoherenceMetaBytes = ($bits(coherence_meta_t) + 32'd8 - 32'd1) / 32'd8;
+
+  typedef logic [SRAMBeWidth-1:0]       sram_be_t; 
+  
+  sram_be_t     [NumTagBankPerCtrl-1:0] meta_bank_be;
 
   refill_req_t     cache_refill_req;
   burst_req_t      cache_refill_burst;
@@ -502,57 +510,63 @@ module cachepool_l2_wrapper
 
   // TODO: arbitration logic between dir ctrl and cache ctrl for tag bank access
 
+  // assign cache_meta_be = is_cache_meta ? {{CoherenceMetaBytes{1'b0}}, {SRAMBeWidth-CoherenceMetaBytes {1'b1}}} : {SRAMBeWidth{1'b1}};
+
   for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
-    // tc_sram_impl #(
+    assign meta_bank_be[j] = is_cache_meta[j] ? {{CoherenceMetaBytes{1'b0}}, {SRAMBeWidth-CoherenceMetaBytes {1'b1}}} : {SRAMBeWidth{1'b1}};
+
+    tc_sram_impl #(
+      .NumWords  (L1CacheWayEntry/BankFactor),
+      .DataWidth ($bits(tag_data_t)           ),
+      // .ByteWidth ($bits(tag_data_t)           ),
+      .ByteWidth (32'd8                       ),
+      .NumPorts  (1                           ),
+      .Latency   (1                           ),
+      .SimInit   ("zeros"                     ),
+      .impl_in_t (impl_in_t                   )
+    ) i_meta_bank (
+      .clk_i  (clk_i                   ),
+      .rst_ni (rst_ni                  ),
+      .impl_i ('0                      ),
+      .impl_o (/* unsed */             ),
+      // .req_i  (l1_tag_bank_req  [j]),
+      // .we_i   (l1_tag_bank_we   [j]),
+      // .addr_i (l1_tag_bank_addr [j]),
+      // .wdata_i(l1_tag_bank_wdata[j]),
+      // .be_i   (l1_tag_bank_be   [j]),
+      // .rdata_o(l1_tag_bank_rdata[j])
+      .req_i  (tag_bank_req  [j]),
+      .we_i   (tag_bank_we   [j]),
+      .addr_i (tag_bank_addr [j]),
+      .wdata_i(tag_bank_wdata[j]),
+      // .be_i   (tag_bank_be   [j]),
+      .be_i   (meta_bank_be[j]  ),
+      .rdata_o(tag_bank_rdata[j])
+    );
+
+    // tc_sram_meta_impl #(
     //   .NumWords  (L1CacheWayEntry/BankFactor),
     //   .DataWidth ($bits(tag_data_t)           ),
     //   .ByteWidth ($bits(tag_data_t)           ),
     //   .NumPorts  (1                           ),
     //   .Latency   (1                           ),
     //   .SimInit   ("zeros"                     ),
-    //   .impl_in_t (impl_in_t                   )
+    //   .impl_in_t (impl_in_t                   ),
+    //   .NumBitsCacheMeta (29)                          // TODO: remove hardcoding
     // ) i_meta_bank (
     //   .clk_i  (clk_i                   ),
     //   .rst_ni (rst_ni                  ),
     //   .impl_i ('0                      ),
     //   .impl_o (/* unsed */             ),
-    //   // .req_i  (l1_tag_bank_req  [j]),
-    //   // .we_i   (l1_tag_bank_we   [j]),
-    //   // .addr_i (l1_tag_bank_addr [j]),
-    //   // .wdata_i(l1_tag_bank_wdata[j]),
-    //   // .be_i   (l1_tag_bank_be   [j]),
-    //   // .rdata_o(l1_tag_bank_rdata[j])
     //   .req_i  (tag_bank_req  [j]),
     //   .we_i   (tag_bank_we   [j]),
     //   .addr_i (tag_bank_addr [j]),
     //   .wdata_i(tag_bank_wdata[j]),
     //   .be_i   (tag_bank_be   [j]),
+    //   // .is_cache_meta_i (1'b0),
+    //   .is_cache_meta_i (is_cache_meta[j]),
     //   .rdata_o(tag_bank_rdata[j])
     // );
-
-    tc_sram_meta_impl #(
-      .NumWords  (L1CacheWayEntry/BankFactor),
-      .DataWidth ($bits(tag_data_t)           ),
-      .ByteWidth ($bits(tag_data_t)           ),
-      .NumPorts  (1                           ),
-      .Latency   (1                           ),
-      .SimInit   ("zeros"                     ),
-      .impl_in_t (impl_in_t                   ),
-      .NumBitsCacheMeta (29)                          // TODO: remove hardcoding
-    ) i_meta_bank (
-      .clk_i  (clk_i                   ),
-      .rst_ni (rst_ni                  ),
-      .impl_i ('0                      ),
-      .impl_o (/* unsed */             ),
-      .req_i  (tag_bank_req  [j]),
-      .we_i   (tag_bank_we   [j]),
-      .addr_i (tag_bank_addr [j]),
-      .wdata_i(tag_bank_wdata[j]),
-      .be_i   (tag_bank_be   [j]),
-      // .is_cache_meta_i (1'b0),
-      .is_cache_meta_i (is_cache_meta[j]),
-      .rdata_o(tag_bank_rdata[j])
-    );
   end
 
   // TODO: Should we use a single large bank or multiple narrow ones?

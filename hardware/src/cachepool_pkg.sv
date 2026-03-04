@@ -237,6 +237,22 @@ package cachepool_pkg;
     logic                   is_fwd;
   } coherence_tcdm_user_t;
 
+  typedef enum logic [2:0] {
+    DIR_LINE_INVALID      = 3'b000,
+    DIR_LINE_SHARED       = 3'b001,
+    DIR_LINE_EXCLUSIVE    = 3'b010,
+    DIR_LINE_MODIFIED     = 3'b011,
+    DIR_LINE_ESA          = 3'b100    // substate
+  } dir_line_state_t;
+
+
+  typedef logic [NumCores-1:0] sharer_list_t;
+
+  typedef struct packed {
+    dir_line_state_t      line_state;
+    sharer_list_t         sharers;
+  } coherence_meta_t;
+
   // typedef struct packed {
   //   tcdm_addr_t                addr;
   //   logic [CoreIDWidth-1:0] core_id;

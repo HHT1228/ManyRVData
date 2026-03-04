@@ -550,7 +550,7 @@ module cachepool_tile
   `TCDM_TYPEDEF_RSP_T(tcdm_rsp_cacheline_t, tcdm_rsp_chan_cacheline_t)
 
   // typedef logic [L1LineWidth/DataWidth-1:0] l1_wstrb_t;
-  typedef logic [NumCores-1:0]                   sharer_list_t;
+  // typedef logic [NumCores-1:0]                   sharer_list_t;
   // TODO: coherence req/rsp translation and interconnect
   typedef logic [$clog2(NrCores)-1:0] inv_ack_cnt_t;
 
