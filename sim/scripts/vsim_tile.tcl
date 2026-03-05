@@ -70,7 +70,7 @@ for {set c 0} {$c < 4} {incr c} {
 for {set c 0} {$c < 4} {incr c} {
 	onerror {resume}
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mshr	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_miss_handler_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group miss_handler	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_miss_handler_i/*
 
 	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/*
 

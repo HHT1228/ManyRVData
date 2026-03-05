@@ -281,14 +281,14 @@ module cachepool_tile
       victimSel: hpdcache_pkg::HPDCACHE_VICTIM_PLRU,
       dataWaysPerRamWord: 2,
       dataSetsPerRam: 32,
-      dataRamByteEnable: 1'b1,
+      dataRamByteEnable: 1'b1,    // Should always be 1, wmask SRAM not supported for backend
       accessWords: 4,
       mshrSets: 4,
       mshrWays: 4,
       mshrWaysPerRamWord: 1,
       mshrSetsPerRam: 1,
-      mshrRamByteEnable: 1'b1,
-      mshrUseRegbank: 1,
+      mshrRamByteEnable: 1'b1,    // Should always be 1, wmask SRAM not supported for backend
+      mshrUseRegbank: 0,
       cbufEntries: 2,
       refillCoreRspFeedthrough: 1'b1,
       refillFifoDepth: 2,
@@ -1221,15 +1221,17 @@ module cachepool_tile
       end
 
       // Upstream request user for coalescer
-      assign l0_cache_req_user[cb][j].core_id = l0_cache_req_coreid[cb][j];
-      assign l0_cache_req_user[cb][j].is_amo = (l0_cache_req_amo[cb][j] != AMONone);
-      assign l0_cache_req_user[cb][j].req_id  = l0_cache_req_reqid[cb][j];
+      assign l0_cache_req_user[cb][j].core_id         = l0_cache_req_coreid[cb][j];
+      assign l0_cache_req_user[cb][j].is_amo          = (l0_cache_req_amo[cb][j] != AMONone);
+      assign l0_cache_req_user[cb][j].req_id          = l0_cache_req_reqid[cb][j];
       // assign l0_cache_req_user[cb][j].is_fpu = (j != NrTCDMPortsPerCore-1);  // channel 4 is snitch, not fpu
-      assign l0_cache_req_user[cb][j].is_fpu = l0_cache_req_is_fpu[cb][j];
+      assign l0_cache_req_user[cb][j].is_fpu          = l0_cache_req_is_fpu[cb][j];
+      assign l0_cache_req_user[cb][j].data_exclusive  = 1'b0; // not used here
+      assign l0_cache_req_user[cb][j].lost_bits       = '0; // not used here
 
       // Upstream request info for coalescer
-      assign l0_cache_req_info[cb][j].user = l0_cache_req_user[cb][j];
-      assign l0_cache_req_info[cb][j].write = l0_cache_req_write[cb][j];
+      assign l0_cache_req_info[cb][j].user    = l0_cache_req_user[cb][j];
+      assign l0_cache_req_info[cb][j].write   = l0_cache_req_write[cb][j];
     end
   end
 
@@ -1257,6 +1259,8 @@ module cachepool_tile
     assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-2:ReqIdWidth+1];
     assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].tid[tidWidth-1]; // extended bit
     assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth-1:0];
+    assign l0_cache_rsp_downstream_user[cb].data_exclusive = 1'b0; // not used here
+    assign l0_cache_rsp_downstream_user[cb].lost_bits = '0; // not used here
     assign l0_cache_rsp_downstream_info[cb].user    = l0_cache_rsp_downstream_user[cb];
     // hpdcache_rsp_t has no field to track AMO or OP
     assign l0_cache_rsp_downstream_info[cb].write   = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth];  // unreliable method
@@ -1313,6 +1317,13 @@ module cachepool_tile
     // Extract user for channel 0 to 3
     for (genvar j = 0; j < NrTCDMPortsPerCore - 1; j++) begin : gen_l0_cache_rsp_upstream_info
       assign l0_core_rsp_user[cb][j] = l0_core_rsp_info[cb][j].user;
+      // assign l0_core_rsp_user[cb][j].core_id  = l0_core_rsp_info[cb][j].user.core_id;
+      // assign l0_core_rsp_user[cb][j].is_amo   = l0_core_rsp_info[cb][j].user.is_amo;
+      // assign l0_core_rsp_user[cb][j].req_id   = l0_core_rsp_info[cb][j].user.req_id;
+      // assign l0_core_rsp_user[cb][j].is_fpu   = l0_core_rsp_info[cb][j].user.is_fpu;
+
+      // assign l0_core_rsp_user[cb][j].data_exclusive = 1'b0; // not used here
+      // assign l0_core_rsp_user[cb][j].lost_bits      = '0;   // not used here
     end
     // assign l0_core_rsp_user[cb][0] = l0_core_rsp_info[cb][0].user;
 
@@ -1346,6 +1357,8 @@ module cachepool_tile
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = 1'b0; // FIXME
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].req_id   = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth-1:0];
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_amo   = 1'b0; // amo handled by HPDcache
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].data_exclusive = 1'b0; // not used here
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].lost_bits      = '0;   // not used here
     assign l0_core_rsp_write[cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth]; // extended bit
     assign l0_core_rsp_info [cb][NrTCDMPortsPerCore-1].user     = l0_core_rsp_user [cb][NrTCDMPortsPerCore-1];
     assign l0_core_rsp_info [cb][NrTCDMPortsPerCore-1].write    = l0_core_rsp_write[cb][NrTCDMPortsPerCore-1];

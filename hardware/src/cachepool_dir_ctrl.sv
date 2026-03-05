@@ -6,6 +6,7 @@ module cahcepool_dir_ctrl
   import cachepool_pkg::*;
   import coherence_pkg::*;
   import hpdcache_pkg::*;
+  import insitu_cache_pkg::*;
   #(
   
   parameter int unsigned AddrWidth  = 32,
@@ -163,7 +164,7 @@ module cahcepool_dir_ctrl
   // tcdm_bank_addr_t                    tag_bank_waddr;
   // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
   tag_data_t [SetAssociativity-1:0]   tag_bank_rdata, tag_bank_wdata;
-  logic                               tag_bank_write_req, tag_bank_write_req_q, tag_bank_rdata_valid;
+  logic      [SetAssociativity-1:0]   tag_bank_write_req, tag_bank_write_req_q, tag_bank_rdata_valid;
 
   tag_data_t                          curr_line_meta, curr_line_meta_q;
   // logic      [SetAssociativity-1:0]   way_hit;
@@ -221,7 +222,7 @@ module cahcepool_dir_ctrl
   `FF(receivers_q, receivers, '0, clk_i, rst_ni)
   `FF(new_owner_q, new_owner, '0, clk_i, rst_ni)
   `FF(inv_ack_count_q, inv_ack_count, '0, clk_i, rst_ni)
-  `FF(tag_bank_write_req_q, tag_bank_write_req, 1'b0, clk_i, rst_ni)
+  `FF(tag_bank_write_req_q, tag_bank_write_req, '0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -499,7 +500,7 @@ module cahcepool_dir_ctrl
       .upstream_read_data_o        (tag_bank_rdata[i]),
 
       .upstream_write_addr_i       ({1'b0, tag_bank_addr_d}),
-      .upstream_write_req_i        (tag_bank_write_req),
+      .upstream_write_req_i        (tag_bank_write_req[i]),
       // .upstream_write_req_i        ('0),
       .upstream_write_data_i       (tag_bank_wdata[i]),
 
@@ -603,12 +604,33 @@ module cahcepool_dir_ctrl
   // end
 
   // way-selection
+  // TODO: move typedef and signals to the top
+  typedef logic [$clog2(SetAssociativity)-1:0] l2_way_ptr_t;
   tag_data_t curr_line_meta_reg;
   logic      curr_line_hit;
-  logic [$clog2(SetAssociativity)-1:0] way_id, way_id_q;
+  l2_way_ptr_t way_id, way_id_q;
   cache_tag_t [SetAssociativity-1:0] local_tag;
 
-  always_comb begin
+  cache_status_t           [SetAssociativity-1:0]  bank_read_dir_status;
+  l2_way_ptr_t             [SetAssociativity-1:0]  bank_read_dir_LRU;
+
+  for (genvar i = 0; i < SetAssociativity; i++) begin
+    // assign bank_read_dir_status[i] = tag_bank_rdata[i][NumActualTagBits-1 -: $bits(cache_status_t)];
+    always_comb begin
+      // TODO: dangerous hardcoding
+      case (tag_bank_rdata[i][NumActualTagBits-1 -: $bits(cache_status_t)])
+        2'b00:    bank_read_dir_status[i] = INVALID;
+        2'b01:    bank_read_dir_status[i] = VALID;
+        2'b10:    bank_read_dir_status[i] = READ_PEND;
+        2'b11:    bank_read_dir_status[i] = WRITE_PEND;
+        default:  bank_read_dir_status[i] = INVALID;
+      endcase
+    end
+    assign bank_read_dir_LRU[i]    = tag_bank_rdata[i][NumLRUBits-1 : 0];
+  end
+
+  // FIXME: way cannot default to 0, need to select proper victim
+  always_comb begin : way_selection
     curr_line_meta_reg = '0;      // default: no match -> zero meta
     curr_line_hit      = 1'b0;
     way_id             = '0;
@@ -642,6 +664,16 @@ module cahcepool_dir_ctrl
         curr_line_meta_reg = tag_bank_rdata[i];
         curr_line_hit      = 1'b1;
         way_id             = i;
+      end
+    end
+
+    for (int j = 0; j < SetAssociativity; j++)  begin
+      if (bank_read_dir_status[j] == VALID || bank_read_dir_status[j] == INVALID) begin
+        if (bank_read_dir_status[way_id] == VALID || bank_read_dir_status[way_id] == INVALID) begin
+            way_id = bank_read_dir_LRU[j] < bank_read_dir_LRU[way_id]? j: way_id;
+        end else begin
+            way_id = j;
+        end
       end
     end
   end
@@ -1093,12 +1125,13 @@ module cahcepool_dir_ctrl
   
   always_comb begin : act_write_to_tag_bank
     // tag_bank_waddr = '0;
-    tag_bank_write_req = 1'b0;
+    // tag_bank_write_req = 1'b0;
+    tag_bank_write_req = '0;
     tag_bank_wdata = '0;
     // if(act.update_sharers || act.update_state) begin
     if(act_q.update_sharers || act_q.update_state) begin
       // tag_bank_waddr = tag_bank_addr_d;
-      tag_bank_write_req = 1'b1;
+      tag_bank_write_req[way_id] = 1'b1;
       // tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
       tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
     end

@@ -8,7 +8,7 @@ import "DPI-C" context function byte read_section(input longint address, inout b
 import "DPI-C" function int fesvr_tick();
 import "DPI-C" function int get_entry_point();
 
-// `define MANUAL_DEBUG
+`define MANUAL_DEBUG
 
 `define wait_for(signal) \
   do \
@@ -321,6 +321,15 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
 
+    // Same set diff way @L2
+    send_snitch_read_req(32'h8001_0400, 4'hF, 2'h0, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80010400, 5'h01);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (50)
+      @(posedge clk);
+
     send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
     $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80000400, 5'h00);
       @(posedge clk);
@@ -505,7 +514,9 @@ module tb_cachepool;
     repeat (200)
       @(posedge clk);
 
-    // Intense R/W test (single-core)
+    /** 
+    Continuous R/W test (single-core) 
+    **/
     send_snitch_read_req(32'h80004000, 4'hF, 2'h0, 5'h00);
     $display("[TB] Core %0d read on address %x with id %x", 2'h0, 32'h80004000, 5'h00);
       @(posedge clk);
@@ -533,6 +544,31 @@ module tb_cachepool;
 
     repeat (100)
       @(posedge clk);
+
+    /* Write collision */
+    // Simultaneous write to same addr
+    $display("[TB] Simultaneous write to same address");
+    send_snitch_write_req(32'h80005000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
+
+    // Simultaneous write to same set
+
+    /* Read collision */
+
+    /* RW collision */
+    // Write + read conflicts to single addr
+    // Write + read conflicts to addr in same set
+
+    /* Cacheline RW collision */
+    // Read cacheline while it is being updated
+
+    /* Flush collision */
+    // Flush the cache while other core is accessing its contents
+
+    /* Evict collision */
+    // FIXME: EVICTION NOT YET IMPLEMENTED
+
+    /* RAW Spin lock */
+    /* RAW Spin lock wait */
 
     $display("[TB] TB Finished");
 		$stop;

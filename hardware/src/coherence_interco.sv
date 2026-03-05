@@ -18,6 +18,7 @@
 module coherence_interco
   import coherence_pkg::*; 
   import hpdcache_pkg::*; 
+  import reqrsp_pkg::*;
 #(
   parameter int unsigned NumL0CacheCtrl = 4,
   parameter int unsigned NumL1CacheCtrl = 4,
@@ -219,11 +220,23 @@ module coherence_interco
     assign l1_l2_fwd_tcdm_int[i].q_valid = l1_l2_fwd_valid_int[i];
     assign l1_l2_fwd_tcdm_int[i].q.user.is_fwd = 1'b1;
 
+    assign l1_l2_fwd_tcdm_int[i].q.user.core_id = l1_l2_fwd_int[i].core_id;
+    assign l1_l2_fwd_tcdm_int[i].q.user.req_id  = '0; // not used here
+    assign l1_l2_fwd_tcdm_int[i].q.amo          = AMONone; // not used here
+    assign l1_l2_fwd_tcdm_int[i].q.strb         = '0; // not used here
+    assign l1_l2_fwd_tcdm_int[i].q.write        = 1'b0; // not used here
+
     assign l1_l2_evict_tcdm_int[i].q.data = l1_l2_evict_payload[i];
     assign l1_l2_evict_tcdm_int[i].q.addr = l1_l2_evict_int[i].addr;
     // assign l1_l2_evict_tcdm_int[i].q_valid = l1_l2_evict_int[i].valid;
     assign l1_l2_evict_tcdm_int[i].q_valid = l1_l2_evict_valid_int[i];
     assign l1_l2_evict_tcdm_int[i].q.user.is_fwd = 1'b0;
+
+    assign l1_l2_evict_tcdm_int[i].q.amo = AMONone; // not used here
+    assign l1_l2_evict_tcdm_int[i].q.strb = '0; // not used here
+    assign l1_l2_evict_tcdm_int[i].q.user.core_id = l1_l2_evict_int[i].core_id;
+    assign l1_l2_evict_tcdm_int[i].q.user.req_id = '0;
+    assign l1_l2_evict_tcdm_int[i].q.write = 1'b0; // not used here
 
     rr_arb_tree #(
       .NumIn     (2),
@@ -252,6 +265,11 @@ module coherence_interco
       l1_l2_evict_xbar_o[i] = '0;
       l2_l1_fwd_tcdm_int[i].q_ready = 1'b0;
       l2_l1_rsp_tcdm_int[i].q_ready = 1'b0;
+
+      l2_l1_rsp_tcdm_int[i].p.write = 1'b0; // not used here
+      l2_l1_fwd_tcdm_int[i].p.user.core_id = '0; // not used here
+      l2_l1_fwd_tcdm_int[i].p.user.req_id = '0; // not used here
+      l2_l1_fwd_tcdm_int[i].p.write = 1'b0; // not used here
       
       if (l1_l2_coherence_tcdm_xbar[i].q_valid) begin
         if (l1_l2_coherence_tcdm_xbar[i].q.user.is_fwd) begin
