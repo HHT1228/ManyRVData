@@ -393,7 +393,7 @@ module cahcepool_dir_ctrl
     if (!rst_ni) begin
       busy_q <= 1'b0;
     // end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
-    end else if (upstream_resp_valid_o) begin
+    end else if (upstream_resp_valid_o || coherence_rsp_valid_o) begin
       busy_q <= 1'b0;
     end else begin
       busy_q <= busy_d;
