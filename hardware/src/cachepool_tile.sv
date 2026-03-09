@@ -288,7 +288,7 @@ module cachepool_tile
       mshrWaysPerRamWord: 1,
       mshrSetsPerRam: 1,
       mshrRamByteEnable: 1'b1,    // Should always be 1, wmask SRAM not supported for backend
-      mshrUseRegbank: 0,
+      mshrUseRegbank: 1'b1,
       cbufEntries: 2,
       refillCoreRspFeedthrough: 1'b1,
       refillFifoDepth: 2,

@@ -88,7 +88,7 @@ module coherence_fwd_interco
     .clk_i   (clk_i),
     .rst_ni  (rst_ni),
     .flush_i (1'b0),
-    .rr_i    (),
+    .rr_i    ('0),
     .req_i   (l2_l1_fwd_valid_int),     // valid_i
     // .req_i   (l2_l1_fwd_valid_int_d),  // registered valid for better timing
     .gnt_o   (l2_l1_fwd_ready_int),     // ready_o

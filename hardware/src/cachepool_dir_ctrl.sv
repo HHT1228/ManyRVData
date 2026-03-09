@@ -215,6 +215,7 @@ module cahcepool_dir_ctrl
   logic [CoreIDWidth-1:0]             new_owner, new_owner_q;
 
   logic                               req_stall;
+  logic                               evict_dir_write;
 
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
@@ -234,7 +235,7 @@ module cahcepool_dir_ctrl
 
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
-  assign tag_bank_rdata_valid = tag_bank_gnt_q && !tag_bank_write_req_q;
+  assign tag_bank_rdata_valid = tag_bank_gnt_q && !(|(tag_bank_write_req_q));
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if(!rst_ni) begin
@@ -608,9 +609,8 @@ module cahcepool_dir_ctrl
   typedef logic [$clog2(SetAssociativity)-1:0] l2_way_ptr_t;
   tag_data_t curr_line_meta_reg;
   logic      curr_line_hit;
-  l2_way_ptr_t way_id, way_id_q;
+  l2_way_ptr_t way_id, way_id_q, way_id_d;
   cache_tag_t [SetAssociativity-1:0] local_tag;
-
   cache_status_t           [SetAssociativity-1:0]  bank_read_dir_status;
   l2_way_ptr_t             [SetAssociativity-1:0]  bank_read_dir_LRU;
 
@@ -660,25 +660,44 @@ module cahcepool_dir_ctrl
       if (!curr_line_hit &&
           (local_tag[i] == upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits]) &&
           (upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits] != '0) &&
-          tag_bank_rdata_valid) begin
+          |(tag_bank_rdata_valid)) begin
         curr_line_meta_reg = tag_bank_rdata[i];
         curr_line_hit      = 1'b1;
         way_id             = i;
       end
     end
 
-    for (int j = 0; j < SetAssociativity; j++)  begin
-      if (bank_read_dir_status[j] == VALID || bank_read_dir_status[j] == INVALID) begin
-        if (bank_read_dir_status[way_id] == VALID || bank_read_dir_status[way_id] == INVALID) begin
-            way_id = bank_read_dir_LRU[j] < bank_read_dir_LRU[way_id]? j: way_id;
-        end else begin
-            way_id = j;
+    if (!curr_line_hit) begin
+      for (int j = 0; j < SetAssociativity; j++)  begin
+        if (bank_read_dir_status[j] == VALID || bank_read_dir_status[j] == INVALID) begin
+          if (bank_read_dir_status[way_id] == VALID || bank_read_dir_status[way_id] == INVALID) begin
+              way_id = bank_read_dir_LRU[j] < bank_read_dir_LRU[way_id]? j: way_id;
+          end else begin
+              way_id = j;
+          end
         end
-      end
+      end      
     end
   end
 
-  // `FF(way_id_q, way_id, '0, clk_i, rst_ni)
+  always_comb begin
+    way_id_d = way_id_q;
+    if (|(tag_bank_rdata_valid)) begin
+      way_id_d = way_id;
+    end
+  end
+
+  `FF(way_id_q, way_id_d, '0, clk_i, rst_ni)
+
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     way_id_q <= '0;
+  //   end else if (tag_bank_gnt && tag_bank_write_req) begin
+  //     way_id_q <= way_id;
+  //   end else begin
+  //     way_id_q <= way_id_d;
+  //   end
+  // end
 
   // drive the external name that other logic expects
   assign curr_line_meta = curr_line_meta_reg;
@@ -710,6 +729,9 @@ module cahcepool_dir_ctrl
   logic [$clog2(NumCores)-1:0]   evict_sid;     // evictor core id (for EVICT)
   reqid_t                        req_tid;       // request transaction id
   // logic [$clog2(NumCores)-1:0]   evict_id;    // evictor id (for Put*/Evict*)
+
+  // assign op_d = op_decoded ? op : op_q;
+  // `FF(op_q, op_d, OP_NONE, clk_i, rst_ni)
 
   // ---- Per-line state
   dir_line_state_t  state_q, state_d;
@@ -767,7 +789,7 @@ module cahcepool_dir_ctrl
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
     // if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
-    if (upstream_req_evict_d.valid && tag_bank_rdata_valid) begin
+    if (upstream_req_evict_d.valid && |(tag_bank_rdata_valid)) begin
       // req_sid = upstream_req_evict_d.core_id;
       case (curr_line_state)
         DIR_LINE_INVALID: begin
@@ -797,7 +819,7 @@ module cahcepool_dir_ctrl
       op_decoded = 1'b1;
       // end else if (upstream_req_write_i) begin
       // end else if (upstream_req_write_q) begin
-    end else if(upstream_req_valid_d && !upstream_req_fake_read_d && tag_bank_rdata_valid) begin
+    end else if(upstream_req_valid_d && !upstream_req_fake_read_d && |(tag_bank_rdata_valid)) begin
       // if (upstream_req_is_evict_q) begin
       // if (upstream_req_evict_q.valid) begin
       // TODO: evict need to be out of this scope, separate from req?
@@ -813,7 +835,7 @@ module cahcepool_dir_ctrl
         op      = OP_NONE;    // default
       end
     // end else if (fwd_rx_valid_i) begin
-    end else if (fwd_rx_valid_d && tag_bank_rdata_valid) begin
+    end else if (fwd_rx_valid_d && |(tag_bank_rdata_valid)) begin
       case (fwd_msg_type)
         GET_ACK: begin
         // 2'b11: begin
@@ -1131,9 +1153,10 @@ module cahcepool_dir_ctrl
     // if(act.update_sharers || act.update_state) begin
     if(act_q.update_sharers || act_q.update_state) begin
       // tag_bank_waddr = tag_bank_addr_d;
-      tag_bank_write_req[way_id] = 1'b1;
+      tag_bank_write_req[way_id_d] = 1'b1;
       // tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta[(TagWidth - $bits(next_coherence_meta)) - 1:0]};
-      tag_bank_wdata[way_id] = {next_coherence_meta, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
+      tag_bank_wdata[way_id_d] = {next_coherence_meta, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - 1:0]};
+      // tag_bank_wdata[way_id_d] = {next_coherence_meta, INVALID, curr_line_meta_q[(TagWidth - $bits(next_coherence_meta_q)) - $bits(cache_status_t) - 1:0]};
     end
   end
 
@@ -1152,8 +1175,8 @@ module cahcepool_dir_ctrl
   // assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   // assign current_state   = tag_bank_gnt_q ? curr_line_state : state_q;
   // assign current_sharers = tag_bank_gnt_q ? curr_sharer_list : sharers_q;
-  assign current_state   = tag_bank_rdata_valid ? curr_line_state : state_q;
-  assign current_sharers = tag_bank_rdata_valid ? curr_sharer_list : sharers_q;
+  assign current_state   = |(tag_bank_rdata_valid) ? curr_line_state : state_q;
+  assign current_sharers = |(tag_bank_rdata_valid) ? curr_sharer_list : sharers_q;
   always_comb begin
     // Defaults: hold
     state_d       = state_q;

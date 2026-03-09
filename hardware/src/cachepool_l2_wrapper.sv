@@ -523,6 +523,7 @@ module cachepool_l2_wrapper
       .NumPorts  (1                           ),
       .Latency   (1                           ),
       .SimInit   ("zeros"                     ),
+      // .PrintSimCfg(1),
       .impl_in_t (impl_in_t                   )
     ) i_meta_bank (
       .clk_i  (clk_i                   ),
@@ -577,6 +578,7 @@ module cachepool_l2_wrapper
       .ByteWidth  (CacheLineWidth), // L2 write granularity of cacheline, may require changes later
       .NumPorts   (1          ),
       .Latency    (1          ),
+      // .PrintSimCfg(1),
       .SimInit    ("zeros"    )
     ) i_data_bank (
       .clk_i  (clk_i                       ),

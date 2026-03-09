@@ -549,6 +549,15 @@ module tb_cachepool;
     // Simultaneous write to same addr
     $display("[TB] Simultaneous write to same address");
     send_snitch_write_req(32'h80005000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80005000, 5'h00);
+    send_snitch_write_req(32'h80005000, 32'hCAFEBABE, 4'hF, 2'h1, 5'h01);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h1, 32'h80005000, 5'h01);
+      @(posedge clk);
+    reset_tcdm_req(0);
+    reset_tcdm_req(1);
+
+    repeat (50)
+      @(posedge clk);
 
     // Simultaneous write to same set
 
