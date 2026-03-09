@@ -40,6 +40,9 @@ module tb_cachepool;
   localparam int unsigned TCDMAddrWidth     = 32;
   localparam int unsigned NarrowDataWidth   = 32;
 
+  localparam int unsigned NumCores  = 4;
+  localparam int unsigned SetAssociativity = 4;
+
   typedef logic [TCDMAddrWidth-1:0]     tcdm_addr_t;
   typedef logic [NarrowDataWidth-1:0]   data_t;
   typedef logic [NarrowDataWidth/8-1:0] strb_t;
@@ -556,12 +559,61 @@ module tb_cachepool;
     reset_tcdm_req(0);
     reset_tcdm_req(1);
 
+    repeat (200)
+      @(posedge clk);
+
+    // Simultaneous write to same L1 set
+    $display("[TB] Simultaneous write to same L2 set");
+    send_snitch_write_req(32'h8000_0400, 32'hDEADBEEF, 4'hF, 2'h2, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h2, 32'h8000_0400, 5'h00);
+    send_snitch_write_req(32'h8001_0400, 32'hBEEFCAFE, 4'hF, 2'h3, 5'h01);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h3, 32'h8001_0400, 5'h01);
+      @(posedge clk); 
+    reset_tcdm_req(2);
+    reset_tcdm_req(3);
+
+    repeat (200)
+      @(posedge clk);
+
+    /* Read collision */
+    $display("[TB] Colliding read");
+    // Make data shared in all L1s
+    for (int core_id = 0; core_id < NumCores; core_id++) begin
+      send_snitch_read_req(32'h8000_6000, 4'hF, core_id, 5'h00 + core_id);
+      $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6000, 5'h00 + core_id);
+        @(posedge clk);
+      reset_tcdm_req(core_id);
+    end
+
     repeat (50)
       @(posedge clk);
 
-    // Simultaneous write to same set
+    // overwrite data in all but one cache by reading in other data to the same cache entry
+    for (int core_id = 0; core_id < NumCores-1; core_id++) begin
+      // send_snitch_read_req(32'h8000_6001, 4'hF, core_id, 5'h10 + core_id);
+      // $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6001, 5'h10 + core_id);
+      //   @(posedge clk);
+      // reset_tcdm_req(core_id);
+      for (int set_id = 1; set_id <= SetAssociativity; set_id++) begin
+        send_snitch_read_req(32'h8000_6000 + (set_id * 32'h10000), 4'hF, core_id, 5'h10 + set_id + (core_id * SetAssociativity));
+        $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6000 + (set_id * 32'h10000), 5'h10 + set_id + (core_id * SetAssociativity));
+          @(posedge clk);
+        reset_tcdm_req(core_id);
+      end
+    end
 
-    /* Read collision */
+    // write in one core while the others read
+    send_snitch_write_req(32'h8000_6000, 32'hDEADBEEF, 4'h3, 2'h0, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000_6000, 5'h00);
+
+    for (int core_id = 1; core_id < NumCores; core_id++) begin
+      send_snitch_read_req(32'h8000_6000, 4'hC, core_id, 5'h10 + core_id);
+      $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6000, 5'h10 + core_id);
+    end
+      @(posedge clk);
+    for (int core_id = 0; core_id < NumCores; core_id++) begin
+      reset_tcdm_req(core_id);
+    end
 
     /* RW collision */
     // Write + read conflicts to single addr
@@ -578,6 +630,9 @@ module tb_cachepool;
 
     /* RAW Spin lock */
     /* RAW Spin lock wait */
+
+    repeat (1000)
+      @(posedge clk);
 
     $display("[TB] TB Finished");
 		$stop;

@@ -650,7 +650,6 @@ module cahcepool_dir_ctrl
     assign bank_read_dir_LRU[i]    = tag_bank_rdata[i][NumLRUBits-1 : 0];
   end
 
-  // FIXME: way cannot default to 0, need to select proper victim
   always_comb begin : way_selection
     curr_line_meta_reg = '0;      // default: no match -> zero meta
     curr_line_hit      = 1'b0;
@@ -1293,6 +1292,7 @@ module cahcepool_dir_ctrl
               act.send_excl_data   = 1'b1;
               // act.send_probe_owner = 1'b0;
               state_d              = DIR_LINE_EXCLUSIVE;
+              sharers_d            = current_sharers; // no change
               // act.update_state     = 1'b0;
               // receivers            = current_sharers;
             end else begin
@@ -1313,8 +1313,15 @@ module cahcepool_dir_ctrl
             act.update_sharers    = 1'b1;
             state_d               = DIR_LINE_MODIFIED;
             act.update_state      = 1'b1;
-            receivers         = current_sharers;
-            new_owner             = req_sid;
+            // receivers         = current_sharers;
+            // new_owner             = req_sid;
+            if (!current_sharers[req_sid]) begin
+              act.send_inv_ack_cnt  = 1'b1;
+              inv_ack_count         = count_set_bits(current_sharers);
+              act.send_inv_to_owner = 1'b1;
+              receivers             = current_sharers;
+              new_owner             = req_sid;
+            end
           end
           OP_GETACK: begin
             // No outstanding probe → ignore
@@ -1383,6 +1390,7 @@ module cahcepool_dir_ctrl
               // TODO: this transition might be redudant
               // Keep L1 L2 consistent or tolerate E/M inconsistency?
               state_d              = DIR_LINE_EXCLUSIVE;
+              sharers_d            = current_sharers; // no change
               act.update_state     = 1'b1;
             end else begin
               act.send_probe_owner = 1'b1;
@@ -1402,7 +1410,14 @@ module cahcepool_dir_ctrl
             state_d               = DIR_LINE_MODIFIED;
             // receivers         = current_sharers;
             // new_owner             = req_sid;
-            // FIXME: invalidation to other sharers
+            // FIXME: invalidation to other owner
+            if (!current_sharers[req_sid]) begin
+              act.send_inv_ack_cnt  = 1'b1;
+              inv_ack_count         = count_set_bits(current_sharers);
+              act.send_inv_to_owner = 1'b1;
+              receivers             = current_sharers;
+              new_owner             = req_sid;
+            end
           end
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
             act.send_evict_ack = 1'b1;

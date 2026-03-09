@@ -1954,6 +1954,7 @@ module cachepool_tile
     .l2_l1_fwd_ready_i  (l1_l0_fwd_xbar_ready)
   );
 
+  // TODO: spill reg is unsafe for intense traffics
   for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_fwd_arb
     spill_register #(
       .T      (cache_dir_fwd_t ),
@@ -2056,18 +2057,36 @@ module cachepool_tile
     //   .pop_i      (l0_cache_req_inv_ready_buf[cb] && !inv_fifo_empty[cb])
     // );
 
-    spill_register #(
-      .T      (hpdcache_req_t ),
-      .Bypass (1'b0)
-    ) i_l1_inv_spill (
-      .clk_i   (clk_i),
-      .rst_ni  (rst_ni),
-      .valid_i (l0_cache_req_inv_valid[cb][1]),
-      .ready_o (),
-      .data_i  (l0_cache_req_inv[cb][1]),
-      .valid_o (l0_cache_req_inv_valid_buf[cb]),
-      .ready_i (l0_cache_req_inv_ready_buf[cb]),
-      .data_o  (l0_cache_req_inv_buf[cb])
+    // spill_register #(
+    //   .T      (hpdcache_req_t ),
+    //   .Bypass (1'b0)
+    // ) i_l1_inv_spill (
+    //   .clk_i   (clk_i),
+    //   .rst_ni  (rst_ni),
+    //   .valid_i (l0_cache_req_inv_valid[cb][1]),
+    //   .ready_o (),
+    //   .data_i  (l0_cache_req_inv[cb][1]),
+    //   .valid_o (l0_cache_req_inv_valid_buf[cb]),
+    //   .ready_i (l0_cache_req_inv_ready_buf[cb]),
+    //   .data_o  (l0_cache_req_inv_buf[cb])
+    // );
+
+    stream_fifo #(
+      .FALL_THROUGH(1'b1),
+      .DATA_WIDTH($bits(hpdcache_req_t)),
+      .DEPTH(8)
+    ) i_l1_inv_fifo (
+      .clk_i      (clk_i),
+      .rst_ni     (rst_ni),
+      .flush_i    (1'b0),
+      .testmode_i (1'b0),
+      .usage_o    (),
+      .data_i     (l0_cache_req_inv[cb][1]),
+      .valid_i    (l0_cache_req_inv_valid[cb][1]),
+      .ready_o    (),
+      .data_o     (l0_cache_req_inv_buf[cb]),
+      .valid_o    (l0_cache_req_inv_valid_buf[cb]),
+      .ready_i    (l0_cache_req_inv_ready_buf[cb])
     );
 
     // fifo_v3 #(
@@ -2088,18 +2107,36 @@ module cachepool_tile
     //   .pop_i      (l0_cache_req_coal_ready_buf[cb] && !coal_fifo_empty[cb])
     // );
 
-    spill_register #(
-      .T      (hpdcache_req_t ),
-      .Bypass (1'b0)
-    ) i_l1_coal_spill (
-      .clk_i   (clk_i),
-      .rst_ni  (rst_ni),
-      .valid_i (hpd_l0_cache_req_valid_coal[cb][1]),
-      .ready_o (hpd_l0_cache_req_ready_coal[cb][1]),
-      .data_i  (l0_cache_req_coal[cb][1]),
-      .valid_o (l0_cache_req_coal_valid_buf[cb]),
-      .ready_i (l0_cache_req_coal_ready_buf[cb]),
-      .data_o  (l0_cache_req_coal_buf[cb])
+    // spill_register #(
+    //   .T      (hpdcache_req_t ),
+    //   .Bypass (1'b0)
+    // ) i_l1_coal_spill (
+    //   .clk_i   (clk_i),
+    //   .rst_ni  (rst_ni),
+    //   .valid_i (hpd_l0_cache_req_valid_coal[cb][1]),
+    //   .ready_o (hpd_l0_cache_req_ready_coal[cb][1]),
+    //   .data_i  (l0_cache_req_coal[cb][1]),
+    //   .valid_o (l0_cache_req_coal_valid_buf[cb]),
+    //   .ready_i (l0_cache_req_coal_ready_buf[cb]),
+    //   .data_o  (l0_cache_req_coal_buf[cb])
+    // );
+
+    stream_fifo #(
+      .FALL_THROUGH(1'b1),
+      .DATA_WIDTH($bits(hpdcache_req_t)),
+      .DEPTH(8)
+    ) i_l1_coal_fifo (
+      .clk_i      (clk_i),
+      .rst_ni     (rst_ni),
+      .flush_i    (1'b0),
+      .testmode_i (1'b0),
+      .usage_o    (),
+      .data_i     (l0_cache_req_coal[cb][1]),
+      .valid_i    (hpd_l0_cache_req_valid_coal[cb][1]),
+      .ready_o    (hpd_l0_cache_req_ready_coal[cb][1]),
+      .data_o     (l0_cache_req_coal_buf[cb]),
+      .valid_o    (l0_cache_req_coal_valid_buf[cb]),
+      .ready_i    (l0_cache_req_coal_ready_buf[cb])
     );
 
     rr_arb_tree #(
