@@ -197,6 +197,8 @@ module cahcepool_dir_ctrl
 
   logic                               tag_bank_gnt, tag_bank_gnt_q;
   logic                               upstream_req_fake_read_q, upstream_req_fake_read_d;
+  logic                               fake_read_in_progress_q, fake_read_in_progress_d;
+  logic                               send_fake_read;
 
   // cache_dir_fwd_t                     fwd_tx_q, fwd_tx_d;
   dir_ctrl_fwd_t                      fwd_tx_q, fwd_tx_d;
@@ -376,6 +378,24 @@ module cahcepool_dir_ctrl
   //   end
   // end
 
+  assign send_fake_read = upstream_req_fake_read_i && upstream_req_valid_i && upstream_req_ready_o;
+  always_comb begin
+    fake_read_in_progress_d = fake_read_in_progress_q;
+    if (send_fake_read) begin
+      fake_read_in_progress_d = 1'b1;
+    end
+  end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      fake_read_in_progress_q <= 1'b0;
+    end else if (downstream_resp_valid_i) begin
+      fake_read_in_progress_q <= 1'b0;
+    end else begin
+      fake_read_in_progress_q <= fake_read_in_progress_d;
+    end
+  end
+
   always_comb begin
     busy_d = busy_q;
     if (req_stall) begin
@@ -394,7 +414,7 @@ module cahcepool_dir_ctrl
     if (!rst_ni) begin
       busy_q <= 1'b0;
     // end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
-    end else if (upstream_resp_valid_o || coherence_rsp_valid_o) begin
+    end else if ((upstream_resp_valid_o && !fake_read_in_progress_q) || coherence_rsp_valid_o) begin
       busy_q <= 1'b0;
     end else begin
       busy_q <= busy_d;
@@ -514,9 +534,10 @@ module cahcepool_dir_ctrl
       .downstream_write_req_o      (tag_bank_write_req_int),
       .downstream_write_data_o     (tag_bank_wdata_int),
 
-      // .bank_gnt_i                  (&(l1_data_bank_gnt_i[i]))
-      .bank_gnt_i                  ('1)   // FIXME: this blocks outgoing requests
+      // FIXME
       // .bank_gnt_i                  (&(dir_tag_bank_gnt_i[i]))
+      .bank_gnt_i                  ('1)
+      // .bank_gnt_i                  (tag_bank_gnt)
 
     );
 
@@ -972,11 +993,17 @@ module cahcepool_dir_ctrl
     end
   end
 
-  assign downstream_req_valid_o = upstream_req_fake_read_i ? upstream_req_valid_i : downstream_req_valid_d;
-  assign downstream_req_addr_o  = upstream_req_fake_read_i ? upstream_req_addr_i : downstream_req_addr_d;
-  assign downstream_req_meta_o  = upstream_req_fake_read_i ? upstream_req_meta_i : downstream_req_meta_d;
-  assign downstream_req_write_o = upstream_req_fake_read_i ? upstream_req_write_i : downstream_req_write_d;
-  assign downstream_req_wdata_o = upstream_req_fake_read_i ? upstream_req_wdata_i : downstream_req_wdata_d;
+  // assign downstream_req_valid_o = upstream_req_fake_read_i ? upstream_req_valid_i : downstream_req_valid_d;
+  // assign downstream_req_addr_o  = upstream_req_fake_read_i ? upstream_req_addr_i : downstream_req_addr_d;
+  // assign downstream_req_meta_o  = upstream_req_fake_read_i ? upstream_req_meta_i : downstream_req_meta_d;
+  // assign downstream_req_write_o = upstream_req_fake_read_i ? upstream_req_write_i : downstream_req_write_d;
+  // assign downstream_req_wdata_o = upstream_req_fake_read_i ? upstream_req_wdata_i : downstream_req_wdata_d;
+
+  assign downstream_req_valid_o = send_fake_read ? upstream_req_valid_i : downstream_req_valid_d;
+  assign downstream_req_addr_o  = send_fake_read ? upstream_req_addr_i : downstream_req_addr_d;
+  assign downstream_req_meta_o  = send_fake_read ? upstream_req_meta_i : downstream_req_meta_d;
+  assign downstream_req_write_o = send_fake_read ? upstream_req_write_i : downstream_req_write_d;
+  assign downstream_req_wdata_o = send_fake_read ? upstream_req_wdata_i : downstream_req_wdata_d;
 
   always_comb begin
     case (next_coherence_meta.line_state)
@@ -1375,6 +1402,7 @@ module cahcepool_dir_ctrl
             state_d               = DIR_LINE_MODIFIED;
             // receivers         = current_sharers;
             // new_owner             = req_sid;
+            // FIXME: invalidation to other sharers
           end
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
             act.send_evict_ack = 1'b1;

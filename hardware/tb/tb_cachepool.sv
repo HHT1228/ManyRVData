@@ -445,7 +445,7 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
 
-    send_snitch_write_req(32'h800053d0, 32'hCAFEBABE, 4'hF, 2'h3, 5'h04);
+    send_snitch_write_req(32'h800053d0, 32'hBEEFCAFE, 4'hF, 2'h3, 5'h04);
     $display("[TB] Core %0d write on address %x with id %x", 2'h3, 32'h800053d0, 5'h04);
     $display("[TB] L1 write miss on S cacheline expected.");
       @(posedge clk);
@@ -496,7 +496,7 @@ module tb_cachepool;
     repeat (50)
       @(posedge clk);
 
-    send_snitch_write_req(32'h80008000, 32'hCAFEBABE, 4'hF, 2'h0, 5'h13);
+    send_snitch_write_req(32'h80008000, 32'hBEEFCAFE, 4'hF, 2'h0, 5'h13);
     $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80008000, 5'h13);
     $display("[TB] L1 write hit on S cacheline expected.");
       @(posedge clk);
@@ -550,7 +550,7 @@ module tb_cachepool;
     $display("[TB] Simultaneous write to same address");
     send_snitch_write_req(32'h80005000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
     $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h80005000, 5'h00);
-    send_snitch_write_req(32'h80005000, 32'hCAFEBABE, 4'hF, 2'h1, 5'h01);
+    send_snitch_write_req(32'h80005000, 32'hBEEFCAFE, 4'hF, 2'h1, 5'h01);
     $display("[TB] Core %0d write on address %x with id %x", 2'h1, 32'h80005000, 5'h01);
       @(posedge clk);
     reset_tcdm_req(0);
