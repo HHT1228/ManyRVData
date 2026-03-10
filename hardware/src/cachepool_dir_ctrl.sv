@@ -261,7 +261,9 @@ module cahcepool_dir_ctrl
       upstream_req_fake_read_q  <= upstream_req_fake_read_d;
       upstream_req_wdata_q      <= upstream_req_wdata_d;
 
-      upstream_req_evict_q      <= '0;
+      upstream_req_evict_q.valid    <= '0;
+      upstream_req_evict_q.addr     <= upstream_req_evict_d.addr;
+      upstream_req_evict_q.core_id  <= upstream_req_evict_d.core_id;
 
       fwd_rx_q                  <= fwd_rx_d;
       fwd_rx_valid_q            <= 1'b0;
@@ -414,7 +416,8 @@ module cahcepool_dir_ctrl
     if (!rst_ni) begin
       busy_q <= 1'b0;
     // end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
-    end else if ((upstream_resp_valid_o && !fake_read_in_progress_q) || coherence_rsp_valid_o) begin
+    end else if ((upstream_resp_valid_o && !fake_read_in_progress_q) || 
+                 (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt)) begin
       busy_q <= 1'b0;
     end else begin
       busy_q <= busy_d;

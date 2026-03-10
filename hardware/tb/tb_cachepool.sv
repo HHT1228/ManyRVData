@@ -562,15 +562,41 @@ module tb_cachepool;
     repeat (200)
       @(posedge clk);
 
-    // Simultaneous write to same L1 set
+    // Simultaneous read from same addr
+    $display("[TB] Simultaneous read from same address");
+    send_snitch_read_req(32'h80005000, 4'hF, 2'h2, 5'h00);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h2, 32'h80005000, 5'h00, $time);
+    send_snitch_read_req(32'h80005000, 4'hF, 2'h3, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h3, 32'h80005000, 5'h01, $time);
+      @(posedge clk);
+    reset_tcdm_req(2);
+    reset_tcdm_req(3);
+
+    repeat (200)
+      @(posedge clk);
+
+    // Simultaneous write to same L2 set
     $display("[TB] Simultaneous write to same L2 set");
     send_snitch_write_req(32'h8000_0400, 32'hDEADBEEF, 4'hF, 2'h2, 5'h00);
-    $display("[TB] Core %0d write on address %x with id %x", 2'h2, 32'h8000_0400, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h2, 32'h8000_0400, 5'h00, $time);
     send_snitch_write_req(32'h8001_0400, 32'hBEEFCAFE, 4'hF, 2'h3, 5'h01);
-    $display("[TB] Core %0d write on address %x with id %x", 2'h3, 32'h8001_0400, 5'h01);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h3, 32'h8001_0400, 5'h01, $time);
       @(posedge clk); 
     reset_tcdm_req(2);
     reset_tcdm_req(3);
+
+      repeat (200)
+      @(posedge clk);
+
+    // Simultaneous read from addr in same L2 set
+    // $display("[TB] Simultaneous read from addr in same L2 set");
+    // send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
+    // $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h0, 32'h8000_0400, 5'h00, $time);
+    // send_snitch_read_req(32'h8001_0400, 4'hF, 2'h1, 5'h01);
+    // $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, 32'h8001_0400, 5'h01, $time);
+    //   @(posedge clk);
+    // reset_tcdm_req(0);
+    // reset_tcdm_req(1);
 
     repeat (200)
       @(posedge clk);
@@ -615,8 +641,22 @@ module tb_cachepool;
       reset_tcdm_req(core_id);
     end
 
+    repeat (500)
+      @(posedge clk);
+
     /* RW collision */
     // Write + read conflicts to single addr
+    send_snitch_write_req(32'h8000_7000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000_7000, 5'h00);
+    send_snitch_read_req(32'h8000_7000, 4'hF, 2'h1, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x", 2'h1, 32'h8000_7000, 5'h01);
+      @(posedge clk);
+    reset_tcdm_req(0);
+    reset_tcdm_req(1);
+
+    repeat (100)
+      @(posedge clk);
+
     // Write + read conflicts to addr in same set
 
     /* Cacheline RW collision */

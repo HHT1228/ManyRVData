@@ -1064,6 +1064,7 @@ module cachepool_tile
   hpdcache_req_t l0_cache_req_coal  [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   hpdcache_req_t l0_cache_req_inv   [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic l0_cache_req_inv_valid      [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
+  logic l0_cache_req_inv_valid_q    [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic l0_cache_req_ready_final    [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic l0_cache_req_valid_final    [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
   logic l0_cache_req_inv_ready      [NumL0CacheCtrl][HPDCACHE_NREQUESTERS];
@@ -2019,8 +2020,10 @@ module cachepool_tile
     // assign hpd_l0_cache_req_ready_coal[cb][1] = l0_cache_req_coal_ready_buf[cb];
     assign hpd_l0_cache_req_ready_coal[cb][0] = l0_cache_req_ready_final[cb][0];
 
+    // FIXME: deassert inv_valid after handshake to avoid multiple-push to the FIFO
     always_comb begin
       l0_cache_req_inv_valid[cb][1] = '0;
+      // l0_cache_req_inv_valid[cb][1] = l0_cache_req_inv_valid_q[cb][1];
       l0_cache_req_inv[cb][1] = '0;
       // if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
       if (l0_fwd_rx_valid[cb] && l0_fwd_rx[cb].fwd_msg_type == INV) begin
@@ -2038,6 +2041,16 @@ module cachepool_tile
         l0_cache_req_inv_valid[cb][1] = 1'b1;
       end
     end
+
+    // always_ff @(posedge clk_i or negedge rst_ni) begin
+    //   if (!rst_ni) begin
+    //     l0_cache_req_inv_valid_q[cb][1] <= 1'b0;
+    //   end else if (l0_cache_req_inv_valid[cb][1] && l0_cache_req_inv_ready[cb][1]) begin
+    //     l0_cache_req_inv_valid_q[cb][1] <= 1'b0;
+    //   end else begin
+    //     l0_cache_req_inv_valid_q[cb][1] <= l0_cache_req_inv_valid[cb][1];
+    //   end
+    // end
 
     // fifo_v3 #(
     //   .FALL_THROUGH(1'b1),
@@ -2064,30 +2077,33 @@ module cachepool_tile
     //   .clk_i   (clk_i),
     //   .rst_ni  (rst_ni),
     //   .valid_i (l0_cache_req_inv_valid[cb][1]),
-    //   .ready_o (),
+    //   .ready_o (l0_cache_req_inv_ready[cb][1]),
     //   .data_i  (l0_cache_req_inv[cb][1]),
     //   .valid_o (l0_cache_req_inv_valid_buf[cb]),
     //   .ready_i (l0_cache_req_inv_ready_buf[cb]),
     //   .data_o  (l0_cache_req_inv_buf[cb])
     // );
 
-    stream_fifo #(
-      .FALL_THROUGH(1'b1),
-      .DATA_WIDTH($bits(hpdcache_req_t)),
-      .DEPTH(8)
-    ) i_l1_inv_fifo (
-      .clk_i      (clk_i),
-      .rst_ni     (rst_ni),
-      .flush_i    (1'b0),
-      .testmode_i (1'b0),
-      .usage_o    (),
-      .data_i     (l0_cache_req_inv[cb][1]),
-      .valid_i    (l0_cache_req_inv_valid[cb][1]),
-      .ready_o    (),
-      .data_o     (l0_cache_req_inv_buf[cb]),
-      .valid_o    (l0_cache_req_inv_valid_buf[cb]),
-      .ready_i    (l0_cache_req_inv_ready_buf[cb])
-    );
+    // stream_fifo #(
+    //   .FALL_THROUGH(1'b1),
+    //   .DATA_WIDTH($bits(hpdcache_req_t)),
+    //   .DEPTH(8)
+    // ) i_l1_inv_fifo (
+    //   .clk_i      (clk_i),
+    //   .rst_ni     (rst_ni),
+    //   .flush_i    (1'b0),
+    //   .testmode_i (1'b0),
+    //   .usage_o    (),
+    //   .data_i     (l0_cache_req_inv[cb][1]),
+    //   .valid_i    (l0_cache_req_inv_valid[cb][1]),
+    //   .ready_o    (l0_cache_req_inv_ready[cb][1]),
+    //   .data_o     (l0_cache_req_inv_buf[cb]),
+    //   .valid_o    (l0_cache_req_inv_valid_buf[cb]),
+    //   .ready_i    (l0_cache_req_inv_ready_buf[cb])
+    // );
+
+    assign l0_cache_req_inv_buf[cb] = l0_cache_req_inv[cb][1];
+    assign l0_cache_req_inv_valid_buf[cb] = l0_cache_req_inv_valid[cb][1];
 
     // fifo_v3 #(
     //   .FALL_THROUGH(1'b1),
@@ -3033,7 +3049,7 @@ module cachepool_tile
   // --------------------
   // Debug Assertions
   // --------------------
-  // for (genvar i = 0; i < NrCores * NrTCDMPortsPerCore; i++) begin : gen_debug_assertions
+  for (genvar i = 0; i < NrCores * NrTCDMPortsPerCore; i++) begin : gen_debug_assertions
     // always @(posedge clk_i) begin
     //   assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D0) begin
     //     $info("Access to 0x800033D0 detected from port %0d at time %0t", i, $time);
@@ -3085,7 +3101,15 @@ module cachepool_tile
     //     // No action
     //   end
     // end
-  // end
+
+    always @(posedge clk_i) begin
+      assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr <= (32'h8000328C + 16 * 'h4) && tcdm_req[i].q.addr >= (32'h800033D0 - 16 * 'h4)) && tcdm_req[i].q.write) begin
+        $info("Write to region of interest detected from port %0d at time %0t", i, $time);
+      end else begin
+        // No action
+      end
+    end
+  end
 
   popcount #(
     .INPUT_WIDTH ( NrTCDMPortsCores )
