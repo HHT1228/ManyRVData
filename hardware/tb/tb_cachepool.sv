@@ -42,6 +42,7 @@ module tb_cachepool;
 
   localparam int unsigned NumCores  = 4;
   localparam int unsigned SetAssociativity = 4;
+  localparam int unsigned clWords = 4;
 
   typedef logic [TCDMAddrWidth-1:0]     tcdm_addr_t;
   typedef logic [NarrowDataWidth-1:0]   data_t;
@@ -577,10 +578,10 @@ module tb_cachepool;
 
     // Simultaneous write to same L2 set
     $display("[TB] Simultaneous write to same L2 set");
-    send_snitch_write_req(32'h8000_0400, 32'hDEADBEEF, 4'hF, 2'h2, 5'h00);
-    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h2, 32'h8000_0400, 5'h00, $time);
-    send_snitch_write_req(32'h8001_0400, 32'hBEEFCAFE, 4'hF, 2'h3, 5'h01);
-    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h3, 32'h8001_0400, 5'h01, $time);
+    send_snitch_write_req(32'h8000_0400, 32'hDEADBEEF, 4'hF, 2'h2, 5'h10);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h2, 32'h8000_0400, 5'h10, $time);
+    send_snitch_write_req(32'h8001_0400, 32'hBEEFCAFE, 4'hF, 2'h3, 5'h11);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h3, 32'h8001_0400, 5'h11, $time);
       @(posedge clk); 
     reset_tcdm_req(2);
     reset_tcdm_req(3);
@@ -589,14 +590,14 @@ module tb_cachepool;
       @(posedge clk);
 
     // Simultaneous read from addr in same L2 set
-    // $display("[TB] Simultaneous read from addr in same L2 set");
-    // send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h00);
-    // $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h0, 32'h8000_0400, 5'h00, $time);
-    // send_snitch_read_req(32'h8001_0400, 4'hF, 2'h1, 5'h01);
-    // $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, 32'h8001_0400, 5'h01, $time);
-    //   @(posedge clk);
-    // reset_tcdm_req(0);
-    // reset_tcdm_req(1);
+    $display("[TB] Simultaneous read from addr in same L2 set");
+    send_snitch_read_req(32'h8000_0400, 4'hF, 2'h0, 5'h12);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h0, 32'h8000_0400, 5'h12, $time);
+    send_snitch_read_req(32'h8001_0400, 4'hF, 2'h1, 5'h13);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, 32'h8001_0400, 5'h13, $time);
+      @(posedge clk);
+    reset_tcdm_req(0);
+    reset_tcdm_req(1);
 
     repeat (200)
       @(posedge clk);
@@ -646,6 +647,7 @@ module tb_cachepool;
 
     /* RW collision */
     // Write + read conflicts to single addr
+    $display("[TB] Write-read conflict on same address");
     send_snitch_write_req(32'h8000_7000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
     $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000_7000, 5'h00);
     send_snitch_read_req(32'h8000_7000, 4'hF, 2'h1, 5'h01);
@@ -654,19 +656,77 @@ module tb_cachepool;
     reset_tcdm_req(0);
     reset_tcdm_req(1);
 
-    repeat (100)
+    repeat (200)
       @(posedge clk);
 
     // Write + read conflicts to addr in same set
+    $display("[TB] Write-read conflict on addresses in same L2 set");
+    send_snitch_write_req(32'h8000_8000, 32'hDEADBEEF, 4'hF, 2'h2, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h2, 32'h8000_8000, 5'h00, $time);
+    send_snitch_read_req(32'h8001_8000, 4'hF, 2'h1, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, 32'h8001_8000, 5'h01, $time);
+      @(posedge clk);
+    reset_tcdm_req(2);
+    reset_tcdm_req(1);
+
+    repeat (200)
+      @(posedge clk);
 
     /* Cacheline RW collision */
     // Read cacheline while it is being updated
+    $display("[TB] Read while cacheline is being updated");
+    // write data in one core
+    send_snitch_write_req(32'h8000_9000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h10);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h0, 32'h8000_9000, 5'h10, $time);
+      @(posedge clk);
+    reset_tcdm_req(0);
+    send_snitch_write_req((32'h8000_9000 + 16), 32'hBEEFCAFE, 4'hF, 2'h0, 5'h11);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h0, (32'h8000_9000 + 16), 5'h11, $time);
+      @(posedge clk);
+    reset_tcdm_req(0);
+    send_snitch_write_req((32'h8000_9000 + 32), 32'hCAFEDEAD, 4'hF, 2'h0, 5'h12);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h0, (32'h8000_9000 + 32), 5'h12, $time);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
+    repeat (100)
+      @(posedge clk);
+
+    // read data in other cores
+    // FIXME: word offset incorrect
+    send_snitch_read_req(32'h8000_9000, 4'hF, 2'h1, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, 32'h8000_9000, 5'h01, $time);
+      @(posedge clk);
+    reset_tcdm_req(1);
+    send_snitch_read_req((32'h8000_9000 + 16), 4'hF, 2'h1, 5'h02);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, (32'h8000_9000 + 16), 5'h02, $time);
+      @(posedge clk);
+    reset_tcdm_req(1);
+    send_snitch_read_req((32'h8000_9000 + 32), 4'hF, 2'h1, 5'h03);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, (32'h8000_9000 + 32), 5'h03, $time);
+      @(posedge clk);
+    reset_tcdm_req(1);
+
+    repeat (100)
+      @(posedge clk);
+
+    // write to one part of cacheline while reading another part
+    send_snitch_write_req((32'h8000_9000 + 16), 32'hDEADCAFE, 4'hF, 2'h0, 5'h10);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h0, (32'h8000_9000 + 16), 5'h10, $time);
+    send_snitch_read_req(32'h8000_9000, 4'hF, 2'h1, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, 32'h8000_9000, 5'h01, $time);
+    send_snitch_read_req((32'h8000_9000 + 32), 4'hF, 2'h2, 5'h03);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h2, (32'h8000_9000 + 32), 5'h03, $time);
+      @(posedge clk);
+    reset_tcdm_req(0);
+    reset_tcdm_req(1);
+    reset_tcdm_req(2);
+
 
     /* Flush collision */
     // Flush the cache while other core is accessing its contents
 
     /* Evict collision */
-    // FIXME: EVICTION NOT YET IMPLEMENTED
 
     /* RAW Spin lock */
     /* RAW Spin lock wait */

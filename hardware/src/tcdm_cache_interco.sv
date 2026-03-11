@@ -132,17 +132,35 @@ module tcdm_cache_interco #(
   // --------
 
   for (genvar port = 0; port < NumCore; port++) begin : gen_cache_interco_reg
-    spill_register #(
-      .T      (tcdm_req_chan_t          )
+    // spill_register #(
+    //   .T      (tcdm_req_chan_t          )
+    // ) i_tcdm_req_reg (
+    //   .clk_i  (clk_i                    ),
+    //   .rst_ni (rst_ni                   ),
+    //   .data_i (core_req_i[port].q       ),
+    //   .valid_i(core_req_i[port].q_valid ),
+    //   .ready_o(core_rsp_o[port].q_ready ),
+    //   .data_o (core_req[port]           ),
+    //   .valid_o(core_req_valid[port]     ),
+    //   .ready_i(core_req_ready[port]     )
+    // );
+
+    stream_fifo_optimal_wrap #(
+      // .DATA_WIDTH($bits(tcdm_req_chan_t)),
+      .type_t         (tcdm_req_chan_t          ),
+      .Depth(4)
     ) i_tcdm_req_reg (
-      .clk_i  (clk_i                    ),
-      .rst_ni (rst_ni                   ),
-      .data_i (core_req_i[port].q       ),
-      .valid_i(core_req_i[port].q_valid ),
-      .ready_o(core_rsp_o[port].q_ready ),
-      .data_o (core_req[port]           ),
-      .valid_o(core_req_valid[port]     ),
-      .ready_i(core_req_ready[port]     )
+      .clk_i      (clk_i),
+      .rst_ni     (rst_ni),
+      .flush_i    (1'b0),
+      .testmode_i (1'b0),
+      .usage_o    (),
+      .data_i     (core_req_i[port].q       ),
+      .valid_i    (core_req_i[port].q_valid ),
+      .ready_o    (core_rsp_o[port].q_ready ),
+      .data_o     (core_req[port]           ),
+      .valid_o    (core_req_valid[port]     ),
+      .ready_i    (core_req_ready[port]     )
     );
 
     fall_through_register #(
