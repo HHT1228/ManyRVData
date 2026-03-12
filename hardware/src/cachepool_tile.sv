@@ -272,15 +272,15 @@ module cachepool_tile
       nRequesters: HPDCACHE_NREQUESTERS,
       paWidth: 32,
       wordWidth: L0WordWidth,       // HPD safety bypassed to achieve 128b word size, need to be careful
-      sets: 16,
+      sets: 64,
       ways: 4,
       clWords: 4,
       reqWords: 1,
       reqTransIdWidth: tidWidth + numWordOffsetBits,
       reqSrcIdWidth: 1, // track the requester port of HPDcache
       victimSel: hpdcache_pkg::HPDCACHE_VICTIM_PLRU,
-      dataWaysPerRamWord: 2,
-      dataSetsPerRam: 32,
+      dataWaysPerRamWord: 1,
+      dataSetsPerRam: 64,
       dataRamByteEnable: 1'b1,    // Should always be 1, wmask SRAM not supported for backend
       accessWords: 4,
       mshrSets: 4,
@@ -2020,7 +2020,6 @@ module cachepool_tile
     // assign hpd_l0_cache_req_ready_coal[cb][1] = l0_cache_req_coal_ready_buf[cb];
     assign hpd_l0_cache_req_ready_coal[cb][0] = l0_cache_req_ready_final[cb][0];
 
-    // FIXME: deassert inv_valid after handshake to avoid multiple-push to the FIFO
     always_comb begin
       l0_cache_req_inv_valid[cb][1] = '0;
       // l0_cache_req_inv_valid[cb][1] = l0_cache_req_inv_valid_q[cb][1];

@@ -23,6 +23,9 @@ for {set c 0}  {$c < 4} {incr c} {
 	# add wave -noupdate -group tile[$1] -group cache[$c] -group coalescer  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_par_coalescer_for_spatz/gen_extend_window/i_par_coalescer_extend_window/i_par_coalescer/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group controller			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group core			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/i_insitu_cache_core/*
+	add wave -noupdate -group tile[$1] -group cache[$c] -group core			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/i_insitu_cache_core/NumCacheEntry
+	add wave -noupdate -group tile[$1] -group cache[$c] -group core			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/i_insitu_cache_core/SetAssociativity
+	add wave -noupdate -group tile[$1] -group cache[$c] -group core			  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/i_insitu_cache_core/CacheLineWidth
 	add wave -noupdate -group tile[$1] -group cache[$c] -group core	-group decoder		  /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/i_insitu_cache_core/i_insitu_cache_decoder/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl0	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[0]/i_access_ctrl_for_meta/*
 	add wave -noupdate -group tile[$1] -group cache[$c] -group meta_ctrl1	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l1_controller/i_insitu_cache_tcdm_wrapper/gen_cache_banks[1]/i_access_ctrl_for_meta/*
@@ -43,6 +46,10 @@ for {set c 0}  {$c < 4} {incr c} {
 	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_tag_arb   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_tag_bank_req_arb/*
 
 	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_ctrl   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/*
+
+	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_ctrl   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/NumCacheEntry
+	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_ctrl   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/SetAssociativity
+	add wave -noupdate -group tile[$1] -group cache[$c] -group dir_ctrl   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/CacheLineWidth
 
 	for {set d 0} {$d < 4} {incr d} {		
 		add wave -noupdate -group tile[$1] -group cache[$c] -group tag_access[$d] -group tag_access_ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l1_cache_ctrl[$c]/i_l2_cache/i_l2_directory_ctrl/gen_tag_bank_access[$d]/i_access_ctrl_tag_bank/*
@@ -126,7 +133,7 @@ for {set c 0} {$c < 4} {incr c} {
 for {set c 0} {$c < 4} {incr c} {
 	onerror {resume}
 
-	add wave -noupdate -group tile[$1] -group inv_cmo -group l1_inv_fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l1_inv_fifo/*
+	# add wave -noupdate -group tile[$1] -group inv_cmo -group l1_inv_fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l1_inv_fifo/*
 	add wave -noupdate -group tile[$1] -group inv_cmo -group l1_coal_fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l1_coal_fifo/*
 	add wave -noupdate -group tile[$1] -group inv_cmo -group l0_req_inv_arb[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l0_req_inv_arb/*
 }

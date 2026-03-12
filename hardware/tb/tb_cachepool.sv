@@ -607,7 +607,7 @@ module tb_cachepool;
     // Make data shared in all L1s
     for (int core_id = 0; core_id < NumCores; core_id++) begin
       send_snitch_read_req(32'h8000_6000, 4'hF, core_id, 5'h00 + core_id);
-      $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6000, 5'h00 + core_id);
+      $display("[TB] Core %0d read on address %x with id %x at time %t", core_id, 32'h8000_6000, 5'h00 + core_id, $time);
         @(posedge clk);
       reset_tcdm_req(core_id);
     end
@@ -617,25 +617,24 @@ module tb_cachepool;
 
     // overwrite data in all but one cache by reading in other data to the same cache entry
     for (int core_id = 0; core_id < NumCores-1; core_id++) begin
-      // send_snitch_read_req(32'h8000_6001, 4'hF, core_id, 5'h10 + core_id);
-      // $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6001, 5'h10 + core_id);
-      //   @(posedge clk);
-      // reset_tcdm_req(core_id);
       for (int set_id = 1; set_id <= SetAssociativity; set_id++) begin
         send_snitch_read_req(32'h8000_6000 + (set_id * 32'h10000), 4'hF, core_id, 5'h10 + set_id + (core_id * SetAssociativity));
-        $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6000 + (set_id * 32'h10000), 5'h10 + set_id + (core_id * SetAssociativity));
+        $display("[TB] Core %0d read on address %x with id %x at time %t", core_id, 32'h8000_6000 + (set_id * 32'h10000), 5'h10 + set_id + (core_id * SetAssociativity), $time);
           @(posedge clk);
         reset_tcdm_req(core_id);
       end
     end
 
+    repeat (50)
+      @(posedge clk);
+
     // write in one core while the others read
     send_snitch_write_req(32'h8000_6000, 32'hDEADBEEF, 4'h3, 2'h0, 5'h00);
-    $display("[TB] Core %0d write on address %x with id %x", 2'h0, 32'h8000_6000, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h0, 32'h8000_6000, 5'h00, $time);
 
     for (int core_id = 1; core_id < NumCores; core_id++) begin
       send_snitch_read_req(32'h8000_6000, 4'hC, core_id, 5'h10 + core_id);
-      $display("[TB] Core %0d read on address %x with id %x", core_id, 32'h8000_6000, 5'h10 + core_id);
+      $display("[TB] Core %0d read on address %x with id %x at time %t", core_id, 32'h8000_6000, 5'h10 + core_id, $time);
     end
       @(posedge clk);
     for (int core_id = 0; core_id < NumCores; core_id++) begin
@@ -693,7 +692,6 @@ module tb_cachepool;
       @(posedge clk);
 
     // read data in other cores
-    // FIXME: word offset incorrect
     send_snitch_read_req(32'h8000_9000, 4'hF, 2'h1, 5'h01);
     $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h1, 32'h8000_9000, 5'h01, $time);
       @(posedge clk);
@@ -722,11 +720,6 @@ module tb_cachepool;
     reset_tcdm_req(1);
     reset_tcdm_req(2);
 
-
-    /* Flush collision */
-    // Flush the cache while other core is accessing its contents
-
-    /* Evict collision */
 
     /* RAW Spin lock */
     /* RAW Spin lock wait */

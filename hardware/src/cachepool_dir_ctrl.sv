@@ -40,7 +40,11 @@ module cahcepool_dir_ctrl
   // parameter type l0_line_state_t  = logic
   parameter type coherence_rsp_t    = logic,
   parameter type coherence_evict_t  = logic,
-  parameter type inv_ack_cnt_t      = logic [$clog2(NumCores)-1:0]
+  parameter type inv_ack_cnt_t      = logic [$clog2(NumCores)-1:0],
+
+  // Dependent parameters, do not overwrite
+  localparam int unsigned CacheBankDepth    = NumCacheEntry/SetAssociativity,
+  localparam type cache_bank_depth_ptr_t    = logic [$clog2(CacheBankDepth)-1:0]
 
 ) (
   input logic clk_i,
@@ -121,7 +125,7 @@ module cahcepool_dir_ctrl
   /**
   * Local parameters
   */
-  localparam int unsigned CacheBankDepth    = NumCacheEntry/SetAssociativity;
+  // localparam int unsigned CacheBankDepth    = NumCacheEntry/SetAssociativity;
   localparam int unsigned NumLRUBits        = $clog2(SetAssociativity);
   localparam int unsigned NumActualTagBits  = AddrWidth - $clog2(CacheLineWidth/8) - $clog2(CacheBankDepth);
   localparam int unsigned NumMemSelBits     = $clog2(NumL0CacheCtrl);
@@ -160,7 +164,8 @@ module cahcepool_dir_ctrl
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
   logic                               busy, busy_q, busy_d; // Does not accept new req when busy
 
-  tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
+  // tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
+  cache_bank_depth_ptr_t              tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
   // tcdm_bank_addr_t                    tag_bank_waddr;
   // tag_data_t [NumTagBankPerCtrl-1:0]  tag_bank_rdata;
   tag_data_t [SetAssociativity-1:0]   tag_bank_rdata, tag_bank_wdata;
@@ -468,7 +473,7 @@ module cahcepool_dir_ctrl
     tag_bank_rvalid_d = tag_bank_rvalid_q;
     tag_bank_addr_d   = tag_bank_addr_q;
 
-    if (!upstream_req_fake_read_i && !busy) begin
+    if (!busy) begin
       // if (downstream_resp_valid_i) begin
       //   tag_bank_rvalid_d = 1'b1;
       //   tag_bank_addr_d   = downstream_req_addr_q[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
@@ -476,9 +481,10 @@ module cahcepool_dir_ctrl
       if (fwd_rx_valid_i && fwd_rx_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = fwd_rx_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
-      end else if (upstream_req_valid_i && upstream_req_ready_o) begin
+      end else if (!upstream_req_fake_read_i && upstream_req_valid_i && upstream_req_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+        // tag_bank_addr_d  = upstream_req_addr_i[(8 + 6) : 6];
       end else if (upstream_req_evict_i.valid && upstream_req_evict_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = upstream_req_evict_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
@@ -500,7 +506,8 @@ module cahcepool_dir_ctrl
   end
 
   for (genvar i = 0; i < SetAssociativity; i++) begin: gen_tag_bank_access
-    tcdm_bank_addr_t tag_bank_addr_int, tag_bank_waddr_int;
+    // tcdm_bank_addr_t tag_bank_addr_int, tag_bank_waddr_int;
+    cache_bank_depth_ptr_t tag_bank_addr_int, tag_bank_waddr_int;
     logic tag_bank_read_valid_int;
     logic tag_bank_read_ready_int;
     logic tag_bank_write_req_int;
@@ -518,22 +525,26 @@ module cahcepool_dir_ctrl
 
       // .upstream_read_addr_i        (tag_bank_addr),
       // .upstream_read_valid_i       (upstream_req_valid_i && !busy && !upstream_req_fake_read_i),
-      .upstream_read_addr_i        ({1'b0, tag_bank_addr_d}),
+      // .upstream_read_addr_i        ({1'b0, tag_bank_addr_d}),
+      .upstream_read_addr_i        (tag_bank_addr_d),
       .upstream_read_valid_i       (tag_bank_rvalid_d),
       .upstream_read_ready_o       (tag_bank_rready[i]),
       .upstream_read_data_o        (tag_bank_rdata[i]),
 
-      .upstream_write_addr_i       ({1'b0, tag_bank_addr_d}),
+      // .upstream_write_addr_i       ({1'b0, tag_bank_addr_d}),
+      .upstream_write_addr_i       (tag_bank_addr_d),
       .upstream_write_req_i        (tag_bank_write_req[i]),
       // .upstream_write_req_i        ('0),
       .upstream_write_data_i       (tag_bank_wdata[i]),
 
-      .downstream_read_addr_o      ({rport_size_matcher_int, tag_bank_addr_int}),
+      // .downstream_read_addr_o      ({rport_size_matcher_int, tag_bank_addr_int}),
+      .downstream_read_addr_o      (tag_bank_addr_int),
       .downstream_read_valid_o     (tag_bank_read_valid_int),
       .downstream_read_ready_i     (tag_bank_read_ready_int),
       .downstream_read_data_i      (tag_bank_rdata_int),
 
-      .downstream_write_addr_o     ({wport_size_matcher_int, tag_bank_waddr_int}),
+      // .downstream_write_addr_o     ({wport_size_matcher_int, tag_bank_waddr_int}),
+      .downstream_write_addr_o     (tag_bank_waddr_int),
       .downstream_write_req_o      (tag_bank_write_req_int),
       .downstream_write_data_o     (tag_bank_wdata_int),
 
@@ -554,12 +565,14 @@ module cahcepool_dir_ctrl
       .clk_i              (clk_i),
       .rst_ni             (rst_ni),
 
-      .read_addr_i        ({1'b0, tag_bank_addr_int}),
+      // .read_addr_i        ({1'b0, tag_bank_addr_int}),
+      .read_addr_i        (tag_bank_addr_int),
       .read_valid_i       (tag_bank_read_valid_int),
       .read_ready_o       (tag_bank_read_ready_int),
       .read_data_o        (tag_bank_rdata_int),
 
-      .write_addr_i       ({1'b0, tag_bank_waddr_int}),
+      // .write_addr_i       ({1'b0, tag_bank_waddr_int}),
+      .write_addr_i       (tag_bank_waddr_int),
       .write_req_i        (tag_bank_write_req_int),
       .write_data_i       (tag_bank_wdata_int),
 
@@ -842,7 +855,7 @@ module cahcepool_dir_ctrl
       op_decoded = 1'b1;
       // end else if (upstream_req_write_i) begin
       // end else if (upstream_req_write_q) begin
-    end else if(upstream_req_valid_d && !upstream_req_fake_read_d && |(tag_bank_rdata_valid)) begin
+    end else if(upstream_req_valid_d && !upstream_req_fake_read_d && |(tag_bank_rdata_valid) && !req_stall) begin
       // if (upstream_req_is_evict_q) begin
       // if (upstream_req_evict_q.valid) begin
       // TODO: evict need to be out of this scope, separate from req?
@@ -1254,6 +1267,7 @@ module cahcepool_dir_ctrl
             act.send_sh_data   = 1'b1;
             sharers_d          = set_bit(sharers_d, req_sid);
             act.update_sharers = 1'b1;     // stay S
+            state_d            = DIR_LINE_SHARED;
           end
           OP_WRITE: begin
             // Upgrade: invalidate all sharers, serialize WT, owner=req
