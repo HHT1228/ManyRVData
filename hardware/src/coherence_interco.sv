@@ -273,7 +273,14 @@ module coherence_interco
       
       if (l1_l2_coherence_tcdm_xbar[i].q_valid) begin
         if (l1_l2_coherence_tcdm_xbar[i].q.user.is_fwd) begin
-          l1_l2_fwd_xbar_o[i] = l1_l2_coherence_tcdm_xbar[i].q.data.fwd;
+          // l1_l2_fwd_xbar_o[i] = l1_l2_coherence_tcdm_xbar[i].q.data.fwd;
+          l1_l2_fwd_xbar_o[i].addr          = l1_l2_coherence_tcdm_xbar[i].q.addr;  // scrambled address
+          l1_l2_fwd_xbar_o[i].fwd_msg_type  = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.fwd_msg_type;
+          l1_l2_fwd_xbar_o[i].line_state    = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.line_state;
+          l1_l2_fwd_xbar_o[i].new_owner     = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.new_owner;
+          l1_l2_fwd_xbar_o[i].core_id       = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.core_id;
+          l1_l2_fwd_xbar_o[i].num_inv_ack   = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.num_inv_ack;
+
           l1_l2_fwd_xbar_valid_o[i] = 1'b1;
           l1_l2_evict_xbar_o[i] = '0;
 
@@ -283,7 +290,11 @@ module coherence_interco
         end else begin
           l1_l2_fwd_xbar_o[i] = '0;
           l1_l2_fwd_xbar_valid_o[i] = 1'b0;
-          l1_l2_evict_xbar_o[i] = l1_l2_coherence_tcdm_xbar[i].q.data.evict;
+          // l1_l2_evict_xbar_o[i] = l1_l2_coherence_tcdm_xbar[i].q.data.evict;
+          l1_l2_evict_xbar_o[i].addr    = l1_l2_coherence_tcdm_xbar[i].q.addr; // scrambled address
+          l1_l2_evict_xbar_o[i].core_id = l1_l2_coherence_tcdm_xbar[i].q.data.evict.core_id;
+          l1_l2_evict_xbar_o[i].valid   = l1_l2_coherence_tcdm_xbar[i].q.data.evict.valid;
+
 
           // l1_l2_evict_xbar_valid_o[i] = 1'b1;
           l2_l1_fwd_tcdm_int[i].q_ready = 1'b0;
@@ -507,7 +518,7 @@ module coherence_interco
     .core_rsp_o       (l2_l1_coherence_tcdm_xbar),
     .mem_req_o        (l1_l2_coherence_tcdm_xbar),
     .mem_rsp_ready_o  (l2_l1_ready_tcdm_xbar),
-    .mem_rsp_i        (l2_l1_coherence_tcdm)        // FIXME: not deasserting, causing blockage
+    .mem_rsp_i        (l2_l1_coherence_tcdm)
   );
 
   // Inter-L1 fwd message

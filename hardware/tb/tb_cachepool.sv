@@ -8,7 +8,7 @@ import "DPI-C" context function byte read_section(input longint address, inout b
 import "DPI-C" function int fesvr_tick();
 import "DPI-C" function int get_entry_point();
 
-`define MANUAL_DEBUG
+// `define MANUAL_DEBUG
 
 `define wait_for(signal) \
   do \
