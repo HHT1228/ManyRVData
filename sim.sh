@@ -12,25 +12,28 @@ case "$cmd" in
     rebuild)
         make clean init generate config=cachepool_fpu_128 vsim
         ;;
+    rebuild_sw)
+        make clean.sw sw config=cachepool_fpu_128
+        ;;
     fdotp_single_core)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b-single_M1024
         ;;
     fdotp_single_core_large)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b-single_M8192
         ;;
-    fdotp_small)
+    fdotp_1k)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b_M1024
         ;;
-    fdotp_large)
+    fdotp_8k)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b_M8192
         ;;
-    fdotp_xlarge)
+    fdotp_32k)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b_M32768
         ;;
-    idopt_small)
+    idopt_1024)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-idotp-32b_M1024
         ;;
-    idopt_xlarge)
+    idopt_32k)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-idotp-32b_M32768
         ;;
     ls)
@@ -38,6 +41,24 @@ case "$cmd" in
         ;;
     ls_single)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-load-store-single_M8
+        ;;
+    fmatmul_32)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fmatmul-32b_M32_N32_K32
+        ;;
+    fmatmul_64)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fmatmul-32b_M64_N64_K64
+        ;;
+    fmatmul_128)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fmatmul-32b_M128_N128_K128
+        ;;
+    gemv_128)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-gemv-col_M128_N128_K32
+        ;;
+    gemv_256)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-gemv-col_M256_N128_K32
+        ;;
+    gemv_512)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-gemv-col_M512_N128_K32
         ;;
     *)
         echo "Unknown command: $cmd"

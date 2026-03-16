@@ -720,6 +720,19 @@ module tb_cachepool;
     reset_tcdm_req(1);
     reset_tcdm_req(2);
 
+    repeat (500)
+      @(posedge clk);
+
+    /* L1 WBUF hit test */
+    $display("[TB] L1 WBUF hit test");
+    send_snitch_write_req(32'h8000_a000, 32'hDEADBEEF, 4'hF, 2'h0, 5'h00);
+    $display("[TB] Core %0d write on address %x with id %x at time %t", 2'h0, 32'h8000_a000, 5'h00, $time);
+      @(posedge clk);
+    send_snitch_read_req(32'h8000_a000, 4'hF, 2'h0, 5'h01);
+    $display("[TB] Core %0d read on address %x with id %x at time %t", 2'h0, 32'h8000_a000, 5'h01, $time);
+      @(posedge clk);
+    reset_tcdm_req(0);
+
 
     /* RAW Spin lock */
     /* RAW Spin lock wait */

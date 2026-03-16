@@ -137,6 +137,8 @@ int main() {
 
   if (cid == 0) {
     if (fp_check(result[0], dotp_result*measure_iter)) {
+      // printf("Expected: %x, Got: %x\n", 0, 0);
+      // printf("Testing. Why can't I print?\n");
       printf("Check Failed!\n");
     }
   }
