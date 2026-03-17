@@ -10,7 +10,7 @@ shift  # shift so $@ now contains only extra args for the command
 
 case "$cmd" in
     rebuild)
-        make clean init generate config=cachepool_fpu_128 vsim
+        make clean init generate config=cachepool_fpu_512 vsim
         ;;
     rebuild_sw)
         make clean.sw sw config=cachepool_fpu_128
