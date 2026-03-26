@@ -13,7 +13,7 @@ case "$cmd" in
         make clean init generate config=cachepool_fpu_512 vsim
         ;;
     rebuild_sw)
-        make clean.sw sw config=cachepool_fpu_128
+        make clean.sw sw config=cachepool_fpu_512
         ;;
     fdotp_single_core)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b-single_M1024

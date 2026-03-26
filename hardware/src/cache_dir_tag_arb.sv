@@ -60,6 +60,7 @@ module cache_dir_tag_arb #(
   logic               [NumTagBankPerCtrl-1:0] cache_req_gnt, dir_req_gnt;
   // logic               [NumTagBankPerCtrl/2-1:0] cache_req_gnt, dir_req_gnt;
   logic               [NumTagBankPerCtrl-1:0] cache_tag_bank_gnt_q;
+  logic               [NumTagBankPerCtrl-1:0] merge_req;
 
   for(genvar i = 0; i < NumTagBankPerCtrl; i++) begin
     assign cache_req_pack[i].req    = cache_tag_bank_req_i[i];
@@ -81,6 +82,7 @@ module cache_dir_tag_arb #(
     assign tag_bank_be_o[i]     = final_req_pack[i].be;
 
     // assign req_valid[i] = dir_tag_bank_req_i[i] || [i];
+    assign merge_req[i] = (cache_req_pack[i] == dir_req_pack[i]);
 
     rr_arb_tree #(
       .NumIn     (2),
@@ -100,8 +102,10 @@ module cache_dir_tag_arb #(
       .idx_o   ()
     );
     assign is_cache_meta_o[i] = !dir_tag_bank_req_i[i];
+    // assign cache_tag_bank_gnt_o[i] = merge_req[i] ? 1'b1 : cache_req_gnt[i];
     assign cache_tag_bank_gnt_o[i] = cache_req_gnt[i];
     // assign cache_tag_bank_gnt_o[i] = 1'b1;
+    // assign dir_tag_bank_gnt_o[i]   = merge_req[i] ? 1'b1 : dir_req_gnt[i];
     assign dir_tag_bank_gnt_o[i]   = dir_req_gnt[i];
     // assign dir_tag_bank_gnt_o[i]   = 1'b1;
   end

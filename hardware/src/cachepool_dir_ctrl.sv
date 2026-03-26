@@ -163,6 +163,7 @@ module cahcepool_dir_ctrl
   // tcdm_bank_addr_t tag_bank_addr_r, tag_bank_addr_w;
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
   logic                               busy, busy_q, busy_d; // Does not accept new req when busy
+  logic                               free_coherence, free_coherence_q;
 
   // tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
   cache_bank_depth_ptr_t              tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
@@ -220,6 +221,7 @@ module cahcepool_dir_ctrl
 
   sharer_list_t                       receivers, receivers_q;
   logic [CoreIDWidth-1:0]             new_owner, new_owner_q;
+  logic                               need_inv_ack, need_inv_ack_q;
 
   logic                               req_stall;
   logic                               evict_dir_write;
@@ -231,6 +233,8 @@ module cahcepool_dir_ctrl
   `FF(new_owner_q, new_owner, '0, clk_i, rst_ni)
   `FF(inv_ack_count_q, inv_ack_count, '0, clk_i, rst_ni)
   `FF(tag_bank_write_req_q, tag_bank_write_req, '0, clk_i, rst_ni)
+  `FF(free_coherence_q, free_coherence, 1'b0, clk_i, rst_ni)
+  `FF(need_inv_ack_q, need_inv_ack, 1'b0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -403,6 +407,28 @@ module cahcepool_dir_ctrl
     end
   end
 
+  logic evict_busy, evict_busy_q, evict_busy_d;
+
+  always_comb begin : evict_busy_comb
+    evict_busy_d = evict_busy_q;
+    // if (fwd_rx_i.fwd_msg_type != INV_ACK) begin
+    if (upstream_req_evict_i.valid && upstream_req_evict_ready_o) begin
+      evict_busy_d = 1'b1;
+    end
+  end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin : evict_busy_ff
+    if (!rst_ni) begin
+      evict_busy_q <= 1'b0;
+    end else if (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) begin
+      evict_busy_q <= 1'b0;
+    end else begin
+      evict_busy_q <= evict_busy_d;
+    end
+  end
+
+  assign evict_busy = evict_busy_d;
+
   always_comb begin
     busy_d = busy_q;
     if (req_stall) begin
@@ -422,7 +448,8 @@ module cahcepool_dir_ctrl
       busy_q <= 1'b0;
     // end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
     end else if ((upstream_resp_valid_o && !fake_read_in_progress_q) || 
-                 (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt)) begin
+                 (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) || 
+                 free_coherence_q) begin
       busy_q <= 1'b0;
     end else begin
       busy_q <= busy_d;
@@ -825,7 +852,7 @@ module cahcepool_dir_ctrl
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
     // if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
-    if (upstream_req_evict_d.valid && |(tag_bank_rdata_valid)) begin
+    if (upstream_req_evict_d.valid && |(tag_bank_rdata_valid) && evict_busy) begin
       // req_sid = upstream_req_evict_d.core_id;
       case (curr_line_state)
         DIR_LINE_INVALID: begin
@@ -1074,6 +1101,7 @@ module cahcepool_dir_ctrl
       fwd_tx_valid_d          = 1'b1;
       fwd_tx_d.receivers      = receivers_q;
       fwd_tx_d.new_owner      = new_owner_q;
+      fwd_tx_d.need_inv_ack   = need_inv_ack_q;
       // fwd_tx_d.num_inv_ack    = 0;
     // end else if(act.send_probe_owner) begin
     end else if(act_q.send_probe_owner) begin
@@ -1085,6 +1113,7 @@ module cahcepool_dir_ctrl
       fwd_tx_valid_d          = 1'b1;
       fwd_tx_d.receivers      = receivers_q;
       fwd_tx_d.new_owner      = '0;
+      fwd_tx_d.need_inv_ack   = need_inv_ack_q;
       // fwd_tx_d.num_inv_ack    = 0;
     end
     // else begin
@@ -1228,6 +1257,8 @@ module cahcepool_dir_ctrl
     inv_ack_count = '0;
     receivers = '0;
     new_owner     = '0;
+    free_coherence = 1'b0;
+    need_inv_ack   = 1'b0;
 
     // unique case (state_q)
     unique case (current_state)
@@ -1254,7 +1285,13 @@ module cahcepool_dir_ctrl
           end
           // Any eviction against I: just ack
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_E_NONOWNER: begin
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
           end
           default: ;
         endcase
@@ -1275,6 +1312,7 @@ module cahcepool_dir_ctrl
             act.update_l2_data      = 1'b1;
             // inv_ack_count           = count_set_bits(sharers_q);
             inv_ack_count           = current_sharers[req_sid] ? count_set_bits(current_sharers) - 1 : count_set_bits(current_sharers); // exclude requester from ack count
+            need_inv_ack            = current_sharers[req_sid]; // only need ack if requester is currently a sharer
             sharers_d               = '0;
             sharers_d               = set_bit(sharers_d, req_sid);
             act.update_sharers      = 1'b1;
@@ -1282,7 +1320,8 @@ module cahcepool_dir_ctrl
             act.update_state        = 1'b1;
             receivers               = current_sharers & ~(1'b1 << req_sid);
             new_owner               = req_sid;
-            act.send_inv_ack_cnt    = 1'b1;
+            // act.send_inv_ack_cnt    = 1'b1;
+            act.send_inv_ack_cnt    = need_inv_ack;
             // receivers           = current_sharers;
           end
           // Evictions remove bit; S->I if last sharer leaves
@@ -1291,7 +1330,13 @@ module cahcepool_dir_ctrl
             // sharers_d          = clr_bit(sharers_d, req_sid);
             sharers_d          = clr_bit(sharers_d, evict_sid);
             act.update_sharers = 1'b1;
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
             state_d            = (sharers_d == '0) ? DIR_LINE_INVALID : DIR_LINE_SHARED;
             act.update_state   = 1'b1;
           end
@@ -1333,7 +1378,9 @@ module cahcepool_dir_ctrl
             // receivers         = current_sharers;
             // new_owner             = req_sid;
             if (!current_sharers[req_sid]) begin
-              act.send_inv_ack_cnt  = 1'b1;
+              need_inv_ack          = 1'b0;
+              // act.send_inv_ack_cnt  = 1'b1;
+              act.send_inv_ack_cnt  = need_inv_ack;
               inv_ack_count         = count_set_bits(current_sharers);
               act.send_inv_to_owner = 1'b1;
               receivers             = current_sharers;
@@ -1344,18 +1391,36 @@ module cahcepool_dir_ctrl
             // No outstanding probe → ignore
           end
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
           end
           OP_EVICT_M_OWNER: begin
             act.mem_write      = 1'b1;
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
             sharers_d          = '0;
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;
             act.update_state       = 1'b1;
           end
           OP_EVICT_E_OWNER: begin
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
             sharers_d          = '0;       // clear owner
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;
@@ -1382,15 +1447,33 @@ module cahcepool_dir_ctrl
           end
           // Evictions while waiting: Ack them; still respond to pending read once GETACK arrives
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
           end
           OP_EVICT_M_OWNER: begin
             act.mem_write  = 1'b1;
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
             // when GETACK/data arrives, we still reply to the waiting reader
           end
           OP_EVICT_E_OWNER: begin
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
           end
           default: ;
         endcase
@@ -1429,7 +1512,9 @@ module cahcepool_dir_ctrl
             // new_owner             = req_sid;
             // FIXME: invalidation to other owner
             if (!current_sharers[req_sid]) begin
-              act.send_inv_ack_cnt  = 1'b1;
+              need_inv_ack          = 1'b0;
+              // act.send_inv_ack_cnt  = 1'b1;
+              act.send_inv_ack_cnt  = need_inv_ack;
               inv_ack_count         = count_set_bits(current_sharers);
               act.send_inv_to_owner = 1'b1;
               receivers             = current_sharers;
@@ -1437,11 +1522,23 @@ module cahcepool_dir_ctrl
             end
           end
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
           end
           OP_EVICT_M_OWNER: begin
             act.mem_write  = 1'b1;
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
             sharers_d          = '0;
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;
@@ -1449,7 +1546,13 @@ module cahcepool_dir_ctrl
           end
           OP_EVICT_E_OWNER: begin
             // “Owner evicts E” is illegal in M but we just clear & Ack
-            act.send_evict_ack = 1'b1;
+            // act.send_evict_ack = 1'b1;
+            if (upstream_req_evict_q.is_replace) begin
+              act.send_evict_ack = 1'b0; // don't send ack for replace, as it doesn't expect one
+              free_coherence     = 1'b1;
+            end else begin
+              act.send_evict_ack = 1'b1; // send ack for non-replace evict, as it expects one
+            end
             sharers_d          = '0;
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_INVALID;

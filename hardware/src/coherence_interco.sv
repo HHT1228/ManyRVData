@@ -280,6 +280,7 @@ module coherence_interco
           l1_l2_fwd_xbar_o[i].new_owner     = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.new_owner;
           l1_l2_fwd_xbar_o[i].core_id       = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.core_id;
           l1_l2_fwd_xbar_o[i].num_inv_ack   = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.num_inv_ack;
+          l1_l2_fwd_xbar_o[i].need_inv_ack  = l1_l2_coherence_tcdm_xbar[i].q.data.fwd.need_inv_ack;
 
           l1_l2_fwd_xbar_valid_o[i] = 1'b1;
           l1_l2_evict_xbar_o[i] = '0;
@@ -291,9 +292,10 @@ module coherence_interco
           l1_l2_fwd_xbar_o[i] = '0;
           l1_l2_fwd_xbar_valid_o[i] = 1'b0;
           // l1_l2_evict_xbar_o[i] = l1_l2_coherence_tcdm_xbar[i].q.data.evict;
-          l1_l2_evict_xbar_o[i].addr    = l1_l2_coherence_tcdm_xbar[i].q.addr; // scrambled address
-          l1_l2_evict_xbar_o[i].core_id = l1_l2_coherence_tcdm_xbar[i].q.data.evict.core_id;
-          l1_l2_evict_xbar_o[i].valid   = l1_l2_coherence_tcdm_xbar[i].q.data.evict.valid;
+          l1_l2_evict_xbar_o[i].addr        = l1_l2_coherence_tcdm_xbar[i].q.addr; // scrambled address
+          l1_l2_evict_xbar_o[i].core_id     = l1_l2_coherence_tcdm_xbar[i].q.data.evict.core_id;
+          l1_l2_evict_xbar_o[i].valid       = l1_l2_coherence_tcdm_xbar[i].q.data.evict.valid;
+          l1_l2_evict_xbar_o[i].is_replace  = l1_l2_coherence_tcdm_xbar[i].q.data.evict.is_replace;
 
 
           // l1_l2_evict_xbar_valid_o[i] = 1'b1;
@@ -562,15 +564,16 @@ module coherence_interco
     inter_l1_fwd_sel = '0;
     inter_l1_fwd = '0;
     if (|(inv_ack_valid)) begin
-      inter_l1_fwd_valid[id_for_merge] = 1'b1;
-      inter_l1_fwd[id_for_merge].addr = l1_l2_fwd_i[id_for_merge].addr;
+      inter_l1_fwd_valid[id_for_merge]        = 1'b1;
+      inter_l1_fwd[id_for_merge].addr         = l1_l2_fwd_i[id_for_merge].addr;
       inter_l1_fwd[id_for_merge].fwd_msg_type = l1_l2_fwd_i[id_for_merge].fwd_msg_type;
-      inter_l1_fwd[id_for_merge].line_state = l1_l2_fwd_i[id_for_merge].line_state;
-      inter_l1_fwd[id_for_merge].new_owner = l1_l2_fwd_i[id_for_merge].new_owner;
-      inter_l1_fwd[id_for_merge].core_id = l1_l2_fwd_i[id_for_merge].core_id;
-      inter_l1_fwd[id_for_merge].num_inv_ack = num_inv_ack;
+      inter_l1_fwd[id_for_merge].line_state   = l1_l2_fwd_i[id_for_merge].line_state;
+      inter_l1_fwd[id_for_merge].new_owner    = l1_l2_fwd_i[id_for_merge].new_owner;
+      inter_l1_fwd[id_for_merge].core_id      = l1_l2_fwd_i[id_for_merge].core_id;
+      inter_l1_fwd[id_for_merge].num_inv_ack  = num_inv_ack;
+      inter_l1_fwd[id_for_merge].need_inv_ack = l1_l2_fwd_i[id_for_merge].need_inv_ack;
 
-      inter_l1_fwd_sel[id_for_merge] = l1_l2_fwd_i[id_for_merge].new_owner;
+      inter_l1_fwd_sel[id_for_merge]          = l1_l2_fwd_i[id_for_merge].new_owner;
     end
   end
 

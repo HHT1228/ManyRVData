@@ -99,60 +99,90 @@ module coherence_fwd_interco
     .idx_o   ()
   );
 
-  assign l2_l1_fwd_served_ready = |(l2_l1_fwd_unmerged_ready);
+  // assign l2_l1_fwd_served_ready = |(l2_l1_fwd_unmerged_ready);
+  assign l2_l1_fwd_served_ready = |(l2_l1_fwd_ready_i);
 
-  for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : fwd_unmerge
+  for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : fwd_routing
     always_comb begin
-      l2_l1_fwd_unmerged_valid[i] = 1'b0;
-      l2_l1_fwd_unmerged[i]       = '0;
-      l2_l1_fwd_sel[i]            = '0;
+      l2_l1_fwd_valid_o[i] = 1'b0;
+      l2_l1_fwd_o[i]       = '0;
+      // l2_l1_fwd_sel[i]            = '0;
       if (l2_l1_fwd_served_valid) begin
         if (l2_l1_fwd_served.receivers[i] && (l2_l1_fwd_served.fwd_msg_type == INV)) begin
-          l2_l1_fwd_unmerged_valid[i]         = 1'b1;
-          l2_l1_fwd_unmerged[i].addr          = l2_l1_fwd_served.addr;
-          l2_l1_fwd_unmerged[i].fwd_msg_type  = l2_l1_fwd_served.fwd_msg_type;
-          l2_l1_fwd_unmerged[i].line_state    = l2_l1_fwd_served.line_state;
-          l2_l1_fwd_unmerged[i].core_id       = i;
-          l2_l1_fwd_unmerged[i].new_owner     = l2_l1_fwd_served.new_owner;
-          l2_l1_fwd_sel[i]                    = i;
+          l2_l1_fwd_valid_o[i]         = 1'b1;
+          l2_l1_fwd_o[i].addr          = l2_l1_fwd_served.addr;
+          l2_l1_fwd_o[i].fwd_msg_type  = l2_l1_fwd_served.fwd_msg_type;
+          l2_l1_fwd_o[i].line_state    = l2_l1_fwd_served.line_state;
+          l2_l1_fwd_o[i].core_id       = i;
+          l2_l1_fwd_o[i].new_owner     = l2_l1_fwd_served.new_owner;
+          l2_l1_fwd_o[i].need_inv_ack  = l2_l1_fwd_served.need_inv_ack;
+          // l2_l1_fwd_sel[i]                    = i;
         end else if (l2_l1_fwd_served.receivers[i] && (l2_l1_fwd_served.fwd_msg_type == GET)) begin
-          l2_l1_fwd_unmerged_valid[i]         = 1'b1;
-          l2_l1_fwd_unmerged[i].addr          = l2_l1_fwd_served.addr;
-          l2_l1_fwd_unmerged[i].fwd_msg_type  = l2_l1_fwd_served.fwd_msg_type;
-          // l2_l1_fwd_unmerged[i].line_state    = l2_l1_fwd_served.line_state;
-          l2_l1_fwd_unmerged[i].core_id       = i;
-          // l2_l1_fwd_unmerged[i].new_owner     = '0; // not used for GET
-          l2_l1_fwd_sel[i]                    = i;
+          l2_l1_fwd_valid_o[i]         = 1'b1;
+          l2_l1_fwd_o[i].addr          = l2_l1_fwd_served.addr;
+          l2_l1_fwd_o[i].fwd_msg_type  = l2_l1_fwd_served.fwd_msg_type;
+          // l2_l1_fwd_o[i].line_state    = l2_l1_fwd_served.line_state;
+          l2_l1_fwd_o[i].core_id       = i;
+          // l2_l1_fwd_o[i].new_owner     = '0; // not used for GET
+          // l2_l1_fwd_sel[i]                    = i;
+          // l2_l1_fwd_o[i].need_inv_ack  = l2_l1_fwd_served.need_inv_ack;
         end
       end
     end
   end
 
-  // TODO: might be redundant as unmerge already does the routing
-  stream_xbar #(
-    .NumInp       (NumL0CacheCtrl),
-    .NumOut       (NumL0CacheCtrl),
-    // LockIn cannot be set when using external priority
-    .ExtPrio      (1'b0             ),
-    .AxiVldRdy    (1'b1             ),
-    .LockIn       (1'b1             ),
-    .payload_t    (cache_dir_fwd_t  )
-  ) i_l2_l1_fwd_xbar (
-    .clk_i  (clk_i            ),
-    .rst_ni (rst_ni           ),
-    .flush_i(1'b0             ),
-    // External priority flag
-    .rr_i   ('0             ),
-    // Master
-    .data_i (l2_l1_fwd_unmerged),
-    .valid_i(l2_l1_fwd_unmerged_valid),
-    .ready_o(l2_l1_fwd_unmerged_ready),
-    .sel_i  (l2_l1_fwd_sel),
-    // Slave
-    .data_o (l2_l1_fwd_o),
-    .valid_o(l2_l1_fwd_valid_o),
-    .ready_i(l2_l1_fwd_ready_i),
-    .idx_o  (/* Unused */)
-  );
+  // for (genvar i = 0; i < NumL0CacheCtrl; i++) begin : fwd_unmerge
+  //   always_comb begin
+  //     l2_l1_fwd_unmerged_valid[i] = 1'b0;
+  //     l2_l1_fwd_unmerged[i]       = '0;
+  //     l2_l1_fwd_sel[i]            = '0;
+  //     if (l2_l1_fwd_served_valid) begin
+  //       if (l2_l1_fwd_served.receivers[i] && (l2_l1_fwd_served.fwd_msg_type == INV)) begin
+  //         l2_l1_fwd_unmerged_valid[i]         = 1'b1;
+  //         l2_l1_fwd_unmerged[i].addr          = l2_l1_fwd_served.addr;
+  //         l2_l1_fwd_unmerged[i].fwd_msg_type  = l2_l1_fwd_served.fwd_msg_type;
+  //         l2_l1_fwd_unmerged[i].line_state    = l2_l1_fwd_served.line_state;
+  //         l2_l1_fwd_unmerged[i].core_id       = i;
+  //         l2_l1_fwd_unmerged[i].new_owner     = l2_l1_fwd_served.new_owner;
+  //         l2_l1_fwd_sel[i]                    = i;
+  //       end else if (l2_l1_fwd_served.receivers[i] && (l2_l1_fwd_served.fwd_msg_type == GET)) begin
+  //         l2_l1_fwd_unmerged_valid[i]         = 1'b1;
+  //         l2_l1_fwd_unmerged[i].addr          = l2_l1_fwd_served.addr;
+  //         l2_l1_fwd_unmerged[i].fwd_msg_type  = l2_l1_fwd_served.fwd_msg_type;
+  //         // l2_l1_fwd_unmerged[i].line_state    = l2_l1_fwd_served.line_state;
+  //         l2_l1_fwd_unmerged[i].core_id       = i;
+  //         // l2_l1_fwd_unmerged[i].new_owner     = '0; // not used for GET
+  //         l2_l1_fwd_sel[i]                    = i;
+  //       end
+  //     end
+  //   end
+  // end
+
+  // // TODO: might be redundant as unmerge already does the routing
+  // stream_xbar #(
+  //   .NumInp       (NumL0CacheCtrl),
+  //   .NumOut       (NumL0CacheCtrl),
+  //   // LockIn cannot be set when using external priority
+  //   .ExtPrio      (1'b0             ),
+  //   .AxiVldRdy    (1'b1             ),
+  //   .LockIn       (1'b1             ),
+  //   .payload_t    (cache_dir_fwd_t  )
+  // ) i_l2_l1_fwd_xbar (
+  //   .clk_i  (clk_i            ),
+  //   .rst_ni (rst_ni           ),
+  //   .flush_i(1'b0             ),
+  //   // External priority flag
+  //   .rr_i   ('0             ),
+  //   // Master
+  //   .data_i (l2_l1_fwd_unmerged),
+  //   .valid_i(l2_l1_fwd_unmerged_valid),
+  //   .ready_o(l2_l1_fwd_unmerged_ready),
+  //   .sel_i  (l2_l1_fwd_sel),
+  //   // Slave
+  //   .data_o (l2_l1_fwd_o),
+  //   .valid_o(l2_l1_fwd_valid_o),
+  //   .ready_i(l2_l1_fwd_ready_i),
+  //   .idx_o  (/* Unused */)
+  // );
 
 endmodule

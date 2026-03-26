@@ -563,6 +563,7 @@ module cachepool_tile
     logic [CoreIDWidth-1:0] new_owner;
     logic [CoreIDWidth-1:0] core_id;
     inv_ack_cnt_t           num_inv_ack;
+    logic                   need_inv_ack;
   } cache_dir_fwd_t;
 
   typedef struct packed {
@@ -572,6 +573,7 @@ module cachepool_tile
     hpd_coherence_state_t line_state;
     logic [CoreIDWidth-1:0] new_owner;
     sharer_list_t           receivers;
+    logic                   need_inv_ack;
   } dir_ctrl_fwd_t;
 
   typedef struct packed {
@@ -615,6 +617,7 @@ module cachepool_tile
     tcdm_addr_t             addr;
     logic [CoreIDWidth-1:0] core_id;
     logic                   valid;
+    logic                   is_replace;
   } coherence_evict_t;
 
   typedef struct packed {
@@ -624,6 +627,7 @@ module cachepool_tile
     hpdcache_tag_t          addr_tag;
     // hpdcache_req_offset_t   addr_offset;
     logic                   valid;
+    logic                   is_replace;
   } hpdcache_coherence_evict_t;
 
   typedef struct packed {
@@ -1810,6 +1814,7 @@ module cachepool_tile
     assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict[cb].addr;
     assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict[cb].valid;
     assign l0_l1_coherence_evict_tcdm[cb].core_id     = c_id;
+    assign l0_l1_coherence_evict_tcdm[cb].is_replace  = l0_l1_coherence_evict[cb].is_replace;
   end
 
   // for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : l1_l0_fwd_unmerge
@@ -3048,6 +3053,18 @@ module cachepool_tile
   // --------------------
   // Debug Assertions
   // --------------------
+  // Performance counters
+  // logic [NumL1CacheCtrl-1:0][31:0] fake_read_cnt_q, fake_read_cnt_d;
+  // for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : gen_fake_read_cnt
+  //   `FF(fake_read_cnt_q[i], fake_read_cnt_d[i], 32'h0, clk_i, rst_ni)
+  //   always_comb begin
+  //     fake_read_cnt_d[i]   = fake_read_cnt_q[i];
+  //     if (l0_l1_fake_read[i]) begin
+  //       fake_read_cnt_d[i] = fake_read_cnt_q[i] + 1;
+  //     end
+  //   end
+  // end
+
   for (genvar i = 0; i < NrCores * NrTCDMPortsPerCore; i++) begin : gen_debug_assertions
     // always @(posedge clk_i) begin
     //   assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D0) begin
