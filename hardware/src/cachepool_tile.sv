@@ -309,7 +309,7 @@ module cachepool_tile
       wtEn: 1'b1,
       wbEn: 1'b0,
 `endif
-      lowLatency: 1'b0
+      lowLatency: 1'b1
   };
 
   // localparam hpdcache_pkg::hpdcache_cfg_t HPDcacheCfg = hpdcache_pkg::hpdcacheBuildConfig(

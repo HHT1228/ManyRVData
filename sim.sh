@@ -15,6 +15,10 @@ case "$cmd" in
     rebuild_sw)
         make clean.sw sw config=cachepool_fpu_512
         ;;
+    lint)
+        rm /scratch2/msc25h24/ManyRVData/util/lint/tmp/files
+        make lint -b config=cachepool_fpu_512
+        ;;
     fdotp_single_core)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fdotp-32b-single_M1024
         ;;
@@ -59,6 +63,9 @@ case "$cmd" in
         ;;
     gemv_512)
         ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-gemv-col_M512_N128_K32
+        ;;
+    fft)
+        ./sim/bin/cachepool_cluster.vsim.gui ./software/build/CachePoolTests/test-cachepool-fft
         ;;
     *)
         echo "Unknown command: $cmd"
