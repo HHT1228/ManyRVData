@@ -258,15 +258,18 @@ module cachepool_tile
   ////////////////////////////
   localparam int unsigned NrL1PortsAsL2 = 1;
   localparam int unsigned NrL0CoaleserInputs = NrTCDMPortsPerCore - 1;
+  localparam int unsigned NrBitsCoalOffset = $clog2(NrL0CoaleserInputs);
+  localparam int unsigned ExtPorts = NrL0CoaleserInputs;
+  localparam int unsigned coalInfoWidth = ExtPorts + ExtPorts*NrBitsCoalOffset;
   localparam int unsigned NrL0L1ArbiterInputs = 2;
   // localparam int unsigned HPDCACHE_NREQUESTERS = NrTCDMPortsPerCore;
   localparam int unsigned HPDCACHE_NREQUESTERS = 2;   // Snitch + Spatz
   localparam int unsigned ReqIdWidth = $clog2(NumSpatzOutstandingLoads[0]);
-  localparam int unsigned tidWidth = CoreIDWidth + ReqIdWidth + 2;  // 2 for is_fpu and write
+  localparam int unsigned tidWidth = CoreIDWidth + ReqIdWidth + 2 + coalInfoWidth;  // 2 for is_fpu and write
   localparam int unsigned L0WordWidth = 128;
   localparam int unsigned numWordOffsetBits = $clog2(L0WordWidth/DataWidth);  // extend tid to recover word offset
   localparam int unsigned shortWordsPerCacheWord = L1LineWidth / DataWidth;
-
+  
   // TODO: Make these parameters configurable (in config.mk, cachepool_pkg.sv)
   localparam hpdcache_pkg::hpdcache_user_cfg_t HPDcacheUserCfg = '{
       nRequesters: HPDCACHE_NREQUESTERS,
@@ -456,6 +459,17 @@ module cachepool_tile
   ////////////////////////////
   // L0 HPDcache typedefs   //
   ////////////////////////////
+
+  // Spatz request coalescer types
+  typedef logic [NrBitsCoalOffset-1:0] offset_t;
+  typedef struct packed {
+    logic id; 
+    logic       [ExtPorts-1:0] hitmap; 
+    offset_t    [ExtPorts-1:0] ofsts; 
+    tcdm_meta_t [ExtPorts-1:0] infos;
+  } downstream_info_t;
+  
+  typedef logic [$clog2(NrL0CoaleserInputs)-1:0] hit_id_t;
 
   // localparam type hpdcache_mem_addr_t = logic [HPDcacheCfg.u.memAddrWidth-1:0];
   // localparam type hpdcache_mem_id_t = logic [HPDcacheCfg.u.memIdWidth-1:0];
@@ -1185,7 +1199,12 @@ module cachepool_tile
       // assign l0_cache_req[cb][j].sid  = l0_cache_req_coreid[cb][j];
       // FIXME This sid is incorrect but dosen't matter for now. sid is handled at the coalescer output side
       assign l0_cache_req[cb][j].sid = !(l0_cache_req_is_fpu[cb][j]);  // 0 for spatz, 1 for snitch 
-      assign l0_cache_req[cb][j].tid = {l0_cache_req_word_offset[cb][j], l0_cache_req_is_fpu[cb][j], l0_cache_req_coreid[cb][j], l0_cache_req_write[cb][j], l0_cache_req_reqid[cb][j]};
+      assign l0_cache_req[cb][j].tid = {l0_cache_req_word_offset[cb][j], 
+                                        l0_cache_req_is_fpu[cb][j], 
+                                        l0_cache_req_coreid[cb][j], 
+                                        l0_cache_req_write[cb][j], 
+                                        l0_cache_req_reqid[cb][j],
+                                        {coalInfoWidth{1'b0}}};
       // assign l0_cache_req[cb][j].need_rsp = !l0_cache_req_write[cb][j];
       assign l0_cache_req[cb][j].need_rsp = 1'b1;
       assign l0_cache_req[cb][j].addr_tag = cache_req[j][cb].q.addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
@@ -1241,14 +1260,14 @@ module cachepool_tile
   end
 
   // Coalescer downstream info handling
-  localparam int unsigned ExtPorts = NrL0CoaleserInputs;
-  typedef logic [1:0] offset_t;
-  typedef struct packed {
-    logic id; 
-    logic       [ExtPorts-1:0] hitmap; 
-    offset_t    [ExtPorts-1:0] ofsts; 
-    tcdm_meta_t [ExtPorts-1:0] infos;
-  } downstream_info_t;
+  // localparam int unsigned ExtPorts = NrL0CoaleserInputs;
+  // typedef logic [1:0] offset_t;
+  // typedef struct packed {
+  //   logic id; 
+  //   logic       [ExtPorts-1:0] hitmap; 
+  //   offset_t    [ExtPorts-1:0] ofsts; 
+  //   tcdm_meta_t [ExtPorts-1:0] infos;
+  // } downstream_info_t;
 
   downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_req_downstream_info_ext;
   downstream_info_t [NumL0CacheCtrl-1:0] l0_cache_rsp_downstream_info_ext;
@@ -1257,22 +1276,30 @@ module cachepool_tile
   for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin : gen_l0_cache_rsp_downstream_info_ext
     // hardcode stupid signals to make things work, hopefully
     assign l0_cache_rsp_downstream_info_ext[cb].id = 1'b0;
-    assign l0_cache_rsp_downstream_info_ext[cb].hitmap = 4'hF;
+    // assign l0_cache_rsp_downstream_info_ext[cb].hitmap = 4'hF;
+    assign l0_cache_rsp_downstream_info_ext[cb].hitmap = l0_cache_rsp_coal[cb][0].tid[ExtPorts-1:0];
+    assign l0_cache_rsp_downstream_info_ext[cb].ofsts  = l0_cache_rsp_coal[cb][0].tid[ExtPorts +: ExtPorts *  NrBitsCoalOffset];
 
     // assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth-1:0];
     // assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth]; // extended bit
-    assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-2:ReqIdWidth+1];
+    // assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-2:ReqIdWidth+1];
+    assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-1 -: CoreIDWidth];
     assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].tid[tidWidth-1]; // extended bit
-    assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth-1:0];
+    // assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth-1:0];
+    assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[coalInfoWidth +: ReqIdWidth];
     assign l0_cache_rsp_downstream_user[cb].data_exclusive = 1'b0; // not used here
     assign l0_cache_rsp_downstream_user[cb].lost_bits = '0; // not used here
     assign l0_cache_rsp_downstream_info[cb].user    = l0_cache_rsp_downstream_user[cb];
     // hpdcache_rsp_t has no field to track AMO or OP
-    assign l0_cache_rsp_downstream_info[cb].write   = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth];  // unreliable method
+    assign l0_cache_rsp_downstream_info[cb].write   = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth+coalInfoWidth];  // unreliable method
     assign l0_cache_rsp_downstream_user[cb].is_amo  = 1'b0;
+    // for (genvar j = 0; j < ExtPorts; j++) begin
+    //   assign l0_cache_rsp_downstream_info_ext[cb].infos[j] = l0_cache_rsp_downstream_info[cb];
+    //   // assign l0_cache_rsp_downstream_info_ext[cb].ofsts[j] = j;
+    //   assign l0_cache_rsp_downstream_info_ext[cb].ofsts[j] = l0_cache_rsp_coal[cb][0].tid[ExtPorts +: $bits(offset_t)];
+    // end
     for (genvar j = 0; j < ExtPorts; j++) begin
       assign l0_cache_rsp_downstream_info_ext[cb].infos[j] = l0_cache_rsp_downstream_info[cb];
-      assign l0_cache_rsp_downstream_info_ext[cb].ofsts[j] = j;
     end
   end
 
@@ -1315,7 +1342,7 @@ module cachepool_tile
       .downstream_resp_ready_o     (hpd_l0_cache_rsp_ready_coal[cb][0]),
       .downstream_resp_data_i      (l0_cache_rsp_coal[cb][0].rdata),
       .downstream_resp_info_i      (l0_cache_rsp_downstream_info_ext[cb]),
-      .downstream_resp_write_i     (l0_cache_rsp_coal[cb][0].tid[ReqIdWidth]) // unreliable method
+      .downstream_resp_write_i     (l0_cache_rsp_coal[cb][0].tid[ReqIdWidth+coalInfoWidth]) // unreliable method
     );
     
     /* Upstream rsp processing */
@@ -1357,14 +1384,16 @@ module cachepool_tile
     assign l0_core_rsp_data [cb][NrTCDMPortsPerCore-1] = l0_cache_rsp_coal[cb][1].rdata[0][bit_offset[cb] +: DataWidth];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth-1:0];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth]; // extended bit
-    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-2:ReqIdWidth+1];
+    // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-2:ReqIdWidth+1];
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-1 -: CoreIDWidth];
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].tid[tidWidth-1];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = 1'b0; // FIXME
-    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].req_id   = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth-1:0];
+    // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].req_id   = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth-1:0];
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].req_id   = l0_cache_rsp_coal[cb][1].tid[coalInfoWidth +: ReqIdWidth];
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_amo   = 1'b0; // amo handled by HPDcache
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].data_exclusive = 1'b0; // not used here
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].lost_bits      = '0;   // not used here
-    assign l0_core_rsp_write[cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth]; // extended bit
+    assign l0_core_rsp_write[cb][NrTCDMPortsPerCore-1]          = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth+coalInfoWidth]; // extended bit
     assign l0_core_rsp_info [cb][NrTCDMPortsPerCore-1].user     = l0_core_rsp_user [cb][NrTCDMPortsPerCore-1];
     assign l0_core_rsp_info [cb][NrTCDMPortsPerCore-1].write    = l0_core_rsp_write[cb][NrTCDMPortsPerCore-1];
     
@@ -1377,16 +1406,45 @@ module cachepool_tile
     // Explicit handling of fields not included in the coalescer info
     assign l0_cache_req_coal[cb][0].op = l0_cache_req[cb][0].op;  // Assume 4 requests from spatz are of the same type
     // assign l0_cache_req_coal[cb][0].be = l0_cache_req[cb][0].be;
-    assign l0_cache_req_coal[cb][0].be = 16'hFFFF; // entire word is valid TODO: remove hardcoding
+    // assign l0_cache_req_coal[cb][0].be = 16'hFFFF; // entire word is valid TODO: remove hardcoding
     // assign l0_cache_req_coal[cb][0].size = NrL0CoaleserInputs * l0_cache_req[cb][0].size;
     assign l0_cache_req_coal[cb][0].size = $clog2(coalescedDataWidth/8);
     assign l0_cache_req_coal[cb][0].need_rsp = 1'b1;
     // Meta data handling using info from coalescer
-    assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];
+    // assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];
+    
+    // FIXME: causing vsim stuck
+    logic coal_req_hit;
+    hit_id_t hit_id;
+    always_comb begin
+      coal_req_hit = 1'b0;
+      hit_id = '0;
+      l0_cache_req_coal[cb][0].be = '0;
+      for (int id = 0; id < NrL0CoaleserInputs; id++) begin
+        if (l0_cache_req_downstream_info_ext[cb].hitmap[id]) begin
+          if (!coal_req_hit) begin
+            coal_req_hit  = 1'b1;
+            hit_id        = id;
+          end
+          l0_cache_req_coal[cb][0].be = l0_cache_req_coal[cb][0].be | (4'hF << (id * (coalescedDataWidth/8)/4));
+        end
+      end
+
+      l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[hit_id];
+    end
+    // assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[hit_id];
+
     // assign l0_cache_req_coal[cb][0].sid  = {l0_cache_req_downstream_info[cb].user.is_fpu, l0_cache_req_downstream_info[cb].user.core_id};
     // assign l0_cache_req_coal[cb][0].sid  = {1'b1, l0_cache_req_downstream_info[cb].user.core_id};
     assign l0_cache_req_coal[cb][0].sid  = 1'b0;  // spatz port
-    assign l0_cache_req_coal[cb][0].tid  = hpd_l0_cache_req_valid_coal[cb][0] ? {l0_cache_req_coal[cb][0].addr_offset[2 +: numWordOffsetBits-1], l0_cache_req_downstream_info[cb].user.is_fpu, l0_cache_req_downstream_info[cb].user.core_id, l0_cache_req_downstream_info[cb].write, l0_cache_req_downstream_info[cb].user.req_id} : '0; // TODO: check
+    assign l0_cache_req_coal[cb][0].tid  = hpd_l0_cache_req_valid_coal[cb][0] ? 
+                                          {l0_cache_req_coal[cb][0].addr_offset[2 +: numWordOffsetBits-1], 
+                                           l0_cache_req_downstream_info[cb].user.is_fpu, 
+                                           l0_cache_req_downstream_info[cb].user.core_id, 
+                                           l0_cache_req_downstream_info[cb].write, 
+                                           l0_cache_req_downstream_info[cb].user.req_id,
+                                           l0_cache_req_downstream_info_ext[cb].ofsts,
+                                           l0_cache_req_downstream_info_ext[cb].hitmap} : '0; // TODO: check
     // Other fields of hpd cache handled independently
     assign l0_cache_req_coal[cb][0].phys_indexed = l0_cache_req[cb][0].phys_indexed;
     // assign l0_cache_req_coal[cb][0].pma.uncacheable = !(l0_cache_req_downstream_info[cb].user.is_amo);

@@ -420,7 +420,7 @@ module cahcepool_dir_ctrl
   always_ff @(posedge clk_i or negedge rst_ni) begin : evict_busy_ff
     if (!rst_ni) begin
       evict_busy_q <= 1'b0;
-    end else if (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) begin
+    end else if ((coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) || free_coherence) begin
       evict_busy_q <= 1'b0;
     end else begin
       evict_busy_q <= evict_busy_d;
@@ -495,10 +495,16 @@ module cahcepool_dir_ctrl
   // Read request
   logic tag_bank_rvalid, tag_bank_rvalid_q, tag_bank_rvalid_d;
   logic [SetAssociativity-1:0] tag_bank_rready;
+  logic fwd_read, req_read, evict_read;
+  logic fwd_read_q, req_read_q, evict_read_q;
 
   always_comb begin
     tag_bank_rvalid_d = tag_bank_rvalid_q;
     tag_bank_addr_d   = tag_bank_addr_q;
+
+    fwd_read    = 1'b0;
+    req_read    = 1'b0;
+    evict_read  = 1'b0;
 
     if (!busy) begin
       // if (downstream_resp_valid_i) begin
@@ -508,16 +514,24 @@ module cahcepool_dir_ctrl
       if (fwd_rx_valid_i && fwd_rx_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = fwd_rx_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+        fwd_read          = 1'b1;
       end else if (!upstream_req_fake_read_i && upstream_req_valid_i && upstream_req_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = upstream_req_addr_i[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+        req_read          = 1'b1;
         // tag_bank_addr_d  = upstream_req_addr_i[(8 + 6) : 6];
       end else if (upstream_req_evict_i.valid && upstream_req_evict_ready_o) begin
         tag_bank_rvalid_d = 1'b1;
         tag_bank_addr_d   = upstream_req_evict_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
+        evict_read        = 1'b1;
       end
     end
   end
+
+  // TODO: dangrous, non-fix latency
+  `FF(fwd_read_q, fwd_read, 1'b0, clk_i, rst_ni)
+  `FF(req_read_q, req_read, 1'b0, clk_i, rst_ni)
+  `FF(evict_read_q, evict_read, 1'b0, clk_i, rst_ni)
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
