@@ -1283,7 +1283,7 @@ module cachepool_tile
     // assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth-1:0];
     // assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].sid[CoreIDWidth]; // extended bit
     // assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-2:ReqIdWidth+1];
-    assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-1 -: CoreIDWidth];
+    assign l0_cache_rsp_downstream_user[cb].core_id = l0_cache_rsp_coal[cb][0].tid[tidWidth-2 -: CoreIDWidth];
     assign l0_cache_rsp_downstream_user[cb].is_fpu  = l0_cache_rsp_coal[cb][0].tid[tidWidth-1]; // extended bit
     // assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth-1:0];
     assign l0_cache_rsp_downstream_user[cb].req_id  = l0_cache_rsp_coal[cb][0].tid[coalInfoWidth +: ReqIdWidth];
@@ -1385,7 +1385,7 @@ module cachepool_tile
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth-1:0];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].sid[CoreIDWidth]; // extended bit
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-2:ReqIdWidth+1];
-    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-1 -: CoreIDWidth];
+    assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].core_id  = l0_cache_rsp_coal[cb][1].tid[tidWidth-2 -: CoreIDWidth];
     assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = l0_cache_rsp_coal[cb][1].tid[tidWidth-1];
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].is_fpu   = 1'b0; // FIXME
     // assign l0_core_rsp_user [cb][NrTCDMPortsPerCore-1].req_id   = l0_cache_rsp_coal[cb][1].tid[ReqIdWidth-1:0];
@@ -1413,7 +1413,6 @@ module cachepool_tile
     // Meta data handling using info from coalescer
     // assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[0];
     
-    // FIXME: causing vsim stuck
     logic coal_req_hit;
     hit_id_t hit_id;
     always_comb begin
@@ -1426,7 +1425,8 @@ module cachepool_tile
             coal_req_hit  = 1'b1;
             hit_id        = id;
           end
-          l0_cache_req_coal[cb][0].be = l0_cache_req_coal[cb][0].be | (4'hF << (id * (coalescedDataWidth/8)/4));
+          l0_cache_req_coal[cb][0].be = l0_cache_req_coal[cb][0].be | (16'h000F << (id * (coalescedDataWidth/8)/4));
+          // l0_cache_req_coal[cb][0].be = l0_cache_req_coal[cb][0].be | (16'hF000 >> ((NrL0CoaleserInputs-1-id) * (coalescedDataWidth/8)/4));
         end
       end
 
@@ -1458,7 +1458,8 @@ module cachepool_tile
     assign l0_cache_req_ready[cb][NrTCDMPortsPerCore-1] = hpd_l0_cache_req_ready_coal[cb][1];
     // assign l0_cache_req_coal[cb][1] = l0_cache_req[cb][NrTCDMPortsPerCore-1];
     assign l0_cache_req_coal[cb][1].addr_offset = l0_cache_req[cb][NrTCDMPortsPerCore-1].addr_offset;
-    assign l0_cache_req_coal[cb][1].wdata = l0_cache_req[cb][NrTCDMPortsPerCore-1].wdata;
+    // assign l0_cache_req_coal[cb][1].wdata = l0_cache_req[cb][NrTCDMPortsPerCore-1].wdata;
+    assign l0_cache_req_coal[cb][1].wdata = l0_cache_req[cb][NrTCDMPortsPerCore-1].wdata << ((l0_cache_req[cb][NrTCDMPortsPerCore-1].addr_offset % (coalescedDataWidth/8)) * 8);
     assign l0_cache_req_coal[cb][1].be = (l0_cache_req_strb[cb][NrTCDMPortsPerCore-1]) << (l0_cache_req_coal[cb][1].addr_offset % (coalescedDataWidth/8));
     assign l0_cache_req_coal[cb][1].size = $clog2(coalescedDataWidth/8);
     // assign l0_cache_req_coal[cb][1].sid = l0_cache_req[cb][NrTCDMPortsPerCore-1].sid;
@@ -3176,9 +3177,28 @@ module cachepool_tile
     //   end
     // end
 
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr <= (32'h8000328C + 16 * 'h4) && tcdm_req[i].q.addr >= (32'h800033D0 - 16 * 'h4)) && tcdm_req[i].q.write) begin
+    //     $info("Write to region of interest detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
+    // always @(posedge clk_i) begin
+    //   assert(inst_addr[0] == 32'h800006d4 ||
+    //          inst_addr[1] == 32'h800006d4 ||
+    //          inst_addr[2] == 32'h800006d4 ||
+    //          inst_addr[3] == 32'h800006d4) begin
+    //     $info("[DEBUG] Partial result 1 store at time %0t", $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
     always @(posedge clk_i) begin
-      assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr <= (32'h8000328C + 16 * 'h4) && tcdm_req[i].q.addr >= (32'h800033D0 - 16 * 'h4)) && tcdm_req[i].q.write) begin
-        $info("Write to region of interest detected from port %0d at time %0t", i, $time);
+      assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr == 32'h 800037C4) && tcdm_req[i].q.write) begin
+        $info("Write to 0x800037C4 detected from port %0d at time %0t", i, $time);
       end else begin
         // No action
       end

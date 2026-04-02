@@ -163,6 +163,7 @@ module cahcepool_dir_ctrl
   // tcdm_bank_addr_t tag_bank_addr_r, tag_bank_addr_w;
   // tag_data_t       tag_bank_rdata, tag_bank_wdata;
   logic                               busy, busy_q, busy_d; // Does not accept new req when busy
+  logic                               fwd_busy, fwd_busy_q, fwd_busy_d;
   logic                               free_coherence, free_coherence_q;
 
   // tcdm_bank_addr_t                    tag_bank_addr, tag_bank_addr_q, tag_bank_addr_d;
@@ -429,6 +430,27 @@ module cahcepool_dir_ctrl
 
   assign evict_busy = evict_busy_d;
 
+  always_comb begin : fwd_busy_comb
+    fwd_busy_d = fwd_busy_q;
+    // if (fwd_rx_i.fwd_msg_type != INV_ACK) begin
+    if (fwd_rx_valid_i && fwd_rx_ready_o) begin
+      fwd_busy_d = 1'b1;
+    end 
+  end
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin : fwd_busy_ff
+    if (!rst_ni) begin
+      fwd_busy_q <= 1'b0;
+    // end else if (fwd_tx_valid_o || free_coherence_q) begin
+    end else if (downstream_req_valid_o && downstream_req_ready_i) begin
+      fwd_busy_q <= 1'b0;
+    end else begin
+      fwd_busy_q <= fwd_busy_d;
+    end
+  end
+
+  assign fwd_busy = fwd_busy_q;
+
   always_comb begin
     busy_d = busy_q;
     if (req_stall) begin
@@ -467,7 +489,7 @@ module cahcepool_dir_ctrl
     upstream_req_evict_ready_o  = 1'b0;
 
     // Fwd is sink with higher priority than req
-    if (!busy) begin
+    if (!busy && !fwd_busy) begin
       if (upstream_req_evict_i.valid) begin
         upstream_req_evict_ready_o  = 1'b1;
       end else if (fwd_rx_valid_i) begin
@@ -809,6 +831,7 @@ module cahcepool_dir_ctrl
 
   // assign op_d = op_decoded ? op : op_q;
   // `FF(op_q, op_d, OP_NONE, clk_i, rst_ni)
+  // `FF(op_q, op, OP_NONE, clk_i, rst_ni)
 
   // ---- Per-line state
   dir_line_state_t  state_q, state_d;
@@ -912,7 +935,8 @@ module cahcepool_dir_ctrl
         op      = OP_NONE;    // default
       end
     // end else if (fwd_rx_valid_i) begin
-    end else if (fwd_rx_valid_d && |(tag_bank_rdata_valid)) begin
+    // end else if (fwd_rx_valid_d && |(tag_bank_rdata_valid)) begin
+    end else if (fwd_read_q && |(tag_bank_rdata_valid)) begin
       case (fwd_msg_type)
         GET_ACK: begin
         // 2'b11: begin

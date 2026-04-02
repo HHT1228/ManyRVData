@@ -97,26 +97,12 @@ int main() {
     // dma_memcpy_blocking(buffer,      buffer_dram,    (NFFT*2) * sizeof(float));
     // dma_memcpy_blocking(out,         buffer_dram,    (NFFT*2) * sizeof(float));
 
-    for (uint32_t i = 0; i < (NFFT*2); i++) {
-      samples[i] = samples_dram[i];
-      buffer[i]  = buffer_dram[i];
-      out[i]     = buffer_dram[i];
-    }
+    // for (uint32_t i = 0; i < (NFFT*2); i++) {
+    //   samples[i] = samples_dram[i];
+    //   buffer[i]  = buffer_dram[i];
+    //   out[i]     = buffer_dram[i];
+    // }
     
-
-  #ifdef USE_DMA
-    dma_memcpy_blocking(twiddle_p1,  twiddle_dram,   (NTWI_P1*2) * sizeof(float));
-    dma_memcpy_blocking(twiddle_p1,  twiddle_dram,   (NTWI_P1*2) * sizeof(float));
-    dma_memcpy_blocking(store_idx,   store_idx_dram, (log2_nfft2-1) * (NFFTpc >> 1) * sizeof(uint16_t));
-    dma_memcpy_blocking(core_offset, coffset_dram,   active_cores * sizeof(uint32_t));
-
-    float *p2_twi = twiddle_p2;
-    float *p2_twi_dram = twiddle_dram + (NTWI_P1<<1);
-    for (uint32_t i = 0; i < active_cores; i ++) {
-      dma_memcpy_blocking(p2_twi,    p2_twi_dram,    (NTWI_P2*2) * sizeof(float));
-      p2_twi += (NTWI_P2*2);
-    }
-  #else
 
     printf("load twi part 1\n");
     for (uint32_t i = 0; i < 2*NTWI_P1; i++) {
@@ -144,7 +130,6 @@ int main() {
       // The offset of address used to calculate the pointer
       core_offset[i]    = coffset_dram[i];
     }
-  #endif
     printf("finish copy!\n");
   }
 
@@ -152,18 +137,24 @@ int main() {
   snrt_cluster_hw_barrier();
 
   // Calculate pointers for the second butterfly onwards
-  float *src_p2 = samples + cid * NFFTpc;
-  float *buf_p2 = buffer + cid * NFFTpc;
+  // float *src_p2 = samples + cid * NFFTpc;
+  // float *buf_p2 = buffer + cid * NFFTpc;
+  float *src_p2 = samples_dram + cid * NFFTpc;
+  float *buf_p2 = buffer_dram + cid * NFFTpc;
   // Let each core has its own twiddle copy to reduce bank conflicts
   // TODO: Optimize for MemPool data layout
   float *twi_p2 = twiddle_p2 + cid * (NTWI_P2<<1);
-  float *out_p2 = out + core_offset[cid];
+  // float *out_p2 = out + core_offset[cid];
+  float *out_p2 = out_dram + core_offset[cid];
 
   uint32_t  p2_switch = 0;
 
-  float *src_p1 = samples;
-  float *buf_p1 = buffer;
+  // float *src_p1 = samples;
+  // float *buf_p1 = buffer;
+  float *src_p1 = samples_dram;
+  float *buf_p1 = buffer_dram;
   float *twi_p1 = twiddle_p1;
+  // float *twi_p1 = twiddle_dram;
   const uint32_t len = (NFFTpc >> 1);
 
   for (int iter = 0; iter < measure_iter; iter++) {
@@ -184,8 +175,10 @@ int main() {
         fft_p1(src_p1, buf_p1, twi_p1, NFFT, NTWI_P1, cid, active_cores, i, len);
         // each round will use half the twiddle than previous round
         // the first round needs re/im NFFT/2 twiddles
-        src_p1 = (i & 1) ? samples : buffer;
-        buf_p1 = (i & 1) ? buffer : samples;
+        // src_p1 = (i & 1) ? samples : buffer;
+        // buf_p1 = (i & 1) ? buffer : samples;
+        src_p1 = (i & 1) ? samples_dram : buffer_dram;
+        buf_p1 = (i & 1) ? buffer_dram : samples_dram;
         twi_p1 += (NFFT >> (i+1));
         p2_switch = (i & 1);
       }
@@ -253,14 +246,16 @@ int main() {
 
       // Verify the real part
       for (unsigned int i = 0; i < NFFT; i++) {
-        if (fp_check(out[i], gold_out_dram[2 * i])) {
+        // if (fp_check(out[i], gold_out_dram[2 * i])) {
+        if (fp_check(out_dram[i], gold_out_dram[2 * i])) {
           rerror ++;
         }
       }
 
       // Verify the imac part
       for (unsigned int i = 0; i < NFFT; i++) {
-        if (fp_check(out[i + NFFT], gold_out_dram[2 * i + 1])) {
+        // if (fp_check(out[i + NFFT], gold_out_dram[2 * i + 1])) {
+        if (fp_check(out_dram[i + NFFT], gold_out_dram[2 * i + 1])) {
           ierror ++;
         }
       }

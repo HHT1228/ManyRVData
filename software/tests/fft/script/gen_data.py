@@ -168,7 +168,7 @@ def main():
     N_TWID_P2 = int(np.log2(NFFTpc) * NFFTpc / 2)
     N_TWID_P1 = int(NFFT*(1-0.5**(np.log2(CORES))))
     # dual = param['dual']
-    dual = 0
+    # dual = 0
     
     dtype = np.float32
     idx_dtype = np.uint32
@@ -275,8 +275,8 @@ def main():
         + "// This file was generated automatically.\n\n"
     )
 
-    if dual != 0:
-        emit_str += '#define DUAL_LOAD\n'
+    # if dual != 0:
+    #     emit_str += '#define DUAL_LOAD\n'
 
     # Create the file
     # Constants
@@ -318,6 +318,7 @@ def main():
         CORES)) + ' __attribute__((section(".data"))) = {' + ', '.join(map(str, core_offsets)) + '};\n'
     emit_str += 'static float gold_out_dram[{}]'.format(
         2 * NFFT) + ' __attribute__((section(".data"))) = {' + ', '.join(map(str, gold_out_s.astype(dtype).tolist())) + '};\n'
+    emit_str += 'float out_dram[{}]'.format(2 * NFFT) + ' __attribute__((section(".data")));\n'
 
     file_path = pathlib.Path(__file__).parent.parent / 'data'
     # file = file_path / ('data_' + str(NFFT) + "_" + str(CORES) + ".h")
