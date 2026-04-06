@@ -144,6 +144,12 @@ module cahcepool_dir_ctrl
     BOTH = 2'b10
   } pseudo_port_t;
 
+  typedef struct packed {
+    core_meta_t get_meta;
+    logic       get_write;
+    word_data_t get_wdata;
+  } get_meta_t;
+
   // typedef enum logic [2:0] {
   //   DIR_LINE_INVALID      = 3'b000,
   //   DIR_LINE_SHARED       = 3'b001,
@@ -226,6 +232,9 @@ module cahcepool_dir_ctrl
 
   logic                               req_stall;
   logic                               evict_dir_write;
+
+  get_meta_t  get_info, get_ack_info;
+  logic       push_get_info, get_ack_info_valid, pop_get_ack_info;
 
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
@@ -489,7 +498,7 @@ module cahcepool_dir_ctrl
     upstream_req_evict_ready_o  = 1'b0;
 
     // Fwd is sink with higher priority than req
-    if (!busy && !fwd_busy) begin
+    if (!busy && !fwd_busy && !evict_busy_q) begin
       if (upstream_req_evict_i.valid) begin
         upstream_req_evict_ready_o  = 1'b1;
       end else if (fwd_rx_valid_i) begin
@@ -713,6 +722,7 @@ module cahcepool_dir_ctrl
   cache_tag_t [SetAssociativity-1:0] local_tag;
   cache_status_t           [SetAssociativity-1:0]  bank_read_dir_status;
   l2_way_ptr_t             [SetAssociativity-1:0]  bank_read_dir_LRU;
+  addr_t                   way_sel_addr;
 
   for (genvar i = 0; i < SetAssociativity; i++) begin
     // assign bank_read_dir_status[i] = tag_bank_rdata[i][NumActualTagBits-1 -: $bits(cache_status_t)];
@@ -728,6 +738,9 @@ module cahcepool_dir_ctrl
     end
     assign bank_read_dir_LRU[i]    = tag_bank_rdata[i][NumLRUBits-1 : 0];
   end
+
+  assign way_sel_addr = (fwd_read_q && fwd_rx_q.fwd_msg_type == GET_ACK) ? 
+                        fwd_rx_q.addr : upstream_req_addr_d;
 
   always_comb begin : way_selection
     curr_line_meta_reg = '0;      // default: no match -> zero meta
@@ -757,8 +770,8 @@ module cahcepool_dir_ctrl
       // If not already found a hit, compare and latch
       // if (!curr_line_hit && (local_tag == upstream_req_addr_i[AddrWidth-1 -: NumActualTagBits])) begin
       if (!curr_line_hit &&
-          (local_tag[i] == upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits]) &&
-          (upstream_req_addr_d[AddrWidth-1 -: NumActualTagBits] != '0) &&
+          (local_tag[i] == way_sel_addr[AddrWidth-1 -: NumActualTagBits]) &&
+          (way_sel_addr[AddrWidth-1 -: NumActualTagBits] != '0) &&
           |(tag_bank_rdata_valid)) begin
         curr_line_meta_reg = tag_bank_rdata[i];
         curr_line_hit      = 1'b1;
@@ -823,7 +836,7 @@ module cahcepool_dir_ctrl
   } dir_op_t;
 
   // ---- Inputs this FSM needs
-  dir_op_t                       op;
+  dir_op_t                       op, op_q;
   logic [$clog2(NumCores)-1:0]   req_sid;       // requester core id (for READ/WRITE)
   logic [$clog2(NumCores)-1:0]   evict_sid;     // evictor core id (for EVICT)
   reqid_t                        req_tid;       // request transaction id
@@ -831,7 +844,7 @@ module cahcepool_dir_ctrl
 
   // assign op_d = op_decoded ? op : op_q;
   // `FF(op_q, op_d, OP_NONE, clk_i, rst_ni)
-  // `FF(op_q, op, OP_NONE, clk_i, rst_ni)
+  `FF(op_q, op, OP_NONE, clk_i, rst_ni)
 
   // ---- Per-line state
   dir_line_state_t  state_q, state_d;
@@ -912,6 +925,13 @@ module cahcepool_dir_ctrl
             op = OP_EVICT_M_NONOWNER; // evictor is non-owner
           end
         end
+        DIR_LINE_ESA: begin
+          if (curr_sharer_list[evict_sid]) begin
+            op = OP_EVICT_E_OWNER; // evictor is owner
+          end else begin
+            op = OP_EVICT_E_NONOWNER; // evictor is non-owner
+          end
+        end
         default: begin
           op = OP_NONE;
         end
@@ -972,8 +992,34 @@ module cahcepool_dir_ctrl
     downstream_req_meta_d     = downstream_req_meta_q;
     downstream_req_write_d    = downstream_req_write_q;
     downstream_req_wdata_d    = downstream_req_wdata_q;
+
     // if(act.send_excl_data || act.send_sh_data) begin  // read req to L2
     if (act_q.send_excl_data || act_q.send_sh_data) begin  // read req to L2
+      downstream_req_valid_d    = 1'b1;
+      downstream_req_meta_d.data_exclusive  = act_q.send_excl_data;
+
+      if (op_q == OP_GETACK) begin
+        downstream_req_addr_d = fwd_rx_d.addr;
+        downstream_req_meta_d.core_id = get_ack_info.get_meta.core_id;
+        downstream_req_meta_d.is_amo  = get_ack_info.get_meta.is_amo;
+        downstream_req_meta_d.req_id  = get_ack_info.get_meta.req_id;
+        downstream_req_meta_d.is_fpu  = get_ack_info.get_meta.is_fpu;
+
+        downstream_req_write_d    = get_ack_info.get_write;
+        downstream_req_wdata_d    = get_ack_info.get_wdata;
+
+      end else begin
+        downstream_req_addr_d     = upstream_req_addr_d;
+        // downstream_req_meta_d     = upstream_req_meta_d;
+        downstream_req_meta_d.core_id = upstream_req_meta_d.core_id;
+        downstream_req_meta_d.is_amo  = upstream_req_meta_d.is_amo;
+        downstream_req_meta_d.req_id  = upstream_req_meta_d.req_id;
+        downstream_req_meta_d.is_fpu  = upstream_req_meta_d.is_fpu;
+
+        downstream_req_write_d    = upstream_req_write_d;
+        // downstream_req_write_d    = '0;
+        downstream_req_wdata_d    = upstream_req_wdata_d;
+      end
       // downstream_req_valid_o    = 1'b1;
       // downstream_req_valid_o    = upstream_req_valid_q || downstream_req_ready_i;
       // downstream_req_addr_o     = upstream_req_addr_q;
@@ -983,18 +1029,6 @@ module cahcepool_dir_ctrl
       // downstream_req_wdata_o    = upstream_req_wdata_i;
 
       // downstream_req_valid_d    = upstream_req_valid_d;
-      downstream_req_valid_d    = 1'b1;
-      downstream_req_addr_d     = upstream_req_addr_d;
-      // downstream_req_meta_d     = upstream_req_meta_d;
-      downstream_req_meta_d.core_id = upstream_req_meta_d.core_id;
-      downstream_req_meta_d.is_amo  = upstream_req_meta_d.is_amo;
-      downstream_req_meta_d.req_id  = upstream_req_meta_d.req_id;
-      downstream_req_meta_d.is_fpu  = upstream_req_meta_d.is_fpu;
-      downstream_req_meta_d.data_exclusive  = act_q.send_excl_data;
-
-      downstream_req_write_d    = upstream_req_write_d;
-      // downstream_req_write_d    = '0;
-      downstream_req_wdata_d    = upstream_req_wdata_d;
     // end else if (act.update_l2_data) begin            // write req to L2
     end else if (act_q.update_l2_data) begin            // write req to L2
       // downstream_req_valid_o    = 1'b1;
@@ -1049,7 +1083,7 @@ module cahcepool_dir_ctrl
     end 
   end
 
-  always_ff @(posedge clk_i or negedge rst_ni) begin
+  always_ff @(posedge clk_i or negedge rst_ni) begin : act_req_to_l2_ctrl_ff
     if (!rst_ni) begin
       downstream_req_valid_q <= 1'b0;
       downstream_req_addr_q  <= '0;
@@ -1072,6 +1106,22 @@ module cahcepool_dir_ctrl
       downstream_req_wdata_q <= downstream_req_wdata_d;
     end
   end
+
+  assign pop_get_ack_info = op == OP_GETACK;
+
+  spill_register #(
+    .T      (get_meta_t),
+    .Bypass (1'b0)
+  ) i_spill_reg_get_meta (
+    .clk_i   (clk_i),
+    .rst_ni  (rst_ni),
+    .valid_i (push_get_info),
+    .ready_o (/* unused */),
+    .data_i  (get_info),
+    .valid_o (get_ack_info_valid),
+    .ready_i (pop_get_ack_info),
+    .data_o  (get_ack_info)
+  );
 
   // assign downstream_req_valid_o = upstream_req_fake_read_i ? upstream_req_valid_i : downstream_req_valid_d;
   // assign downstream_req_addr_o  = upstream_req_fake_read_i ? upstream_req_addr_i : downstream_req_addr_d;
@@ -1128,6 +1178,8 @@ module cahcepool_dir_ctrl
   always_comb begin : act_fwd_tx
     fwd_tx_d        = fwd_tx_q;
     fwd_tx_valid_d  = fwd_tx_valid_q;
+    push_get_info   = 1'b0;
+    get_info        = '0;
 
     // if(act.send_inv_to_owner || act.send_inv_to_sharers) begin
     if(act_q.send_inv_to_owner || act_q.send_inv_to_sharers) begin
@@ -1153,6 +1205,11 @@ module cahcepool_dir_ctrl
       fwd_tx_d.new_owner      = '0;
       fwd_tx_d.need_inv_ack   = need_inv_ack_q;
       // fwd_tx_d.num_inv_ack    = 0;
+
+      get_info.get_meta   = upstream_req_meta_d;
+      get_info.get_write  = upstream_req_write_d;
+      get_info.get_wdata  = upstream_req_wdata_d;
+      push_get_info       = 1'b1;
     end
     // else begin
     //   fwd_tx_d.fwd_msg_type = INV;
@@ -1321,6 +1378,15 @@ module cahcepool_dir_ctrl
             state_d            = DIR_LINE_MODIFIED;
             act.update_state       = 1'b1;
           end
+          // OP_GETACK: begin
+          //   // Happens when line in the L1 is ISD
+          //   act.send_sh_data   = 1'b1;     // to pending_req_q
+          //   // sharers_d          = set_bit(sharers_q, pending_req_q);
+          //   sharers_d          = set_bit(current_sharers, pending_req_q);
+          //   act.update_sharers = 1'b1;
+          //   state_d            = DIR_LINE_SHARED;
+          //   act.update_state   = 1'b1;
+          // end
           // Any eviction against I: just ack
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_OWNER, OP_EVICT_E_NONOWNER: begin
             // act.send_evict_ack = 1'b1;
@@ -1400,6 +1466,7 @@ module cahcepool_dir_ctrl
               act.send_probe_owner = 1'b1;
               pending_req_d        = req_sid;
               state_d              = DIR_LINE_ESA;
+              sharers_d            = current_sharers; // no change
               act.update_state     = 1'b1;
               receivers            = current_sharers;
             end
@@ -1535,6 +1602,7 @@ module cahcepool_dir_ctrl
               pending_req_d        = req_sid;
               state_d              = DIR_LINE_ESA;
               act.update_state     = 1'b1;
+              sharers_d            = current_sharers; // no change
               receivers            = current_sharers;
             end
           end
