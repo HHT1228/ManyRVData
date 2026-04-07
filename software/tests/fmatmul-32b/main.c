@@ -23,7 +23,7 @@
 #include DATAHEADER
 #include "kernel/fmatmul.c"
 
-// #define DEBUG
+#define DEBUG
 
 #ifndef KERNEL_SIZE
 #define KERNEL_SIZE 4
@@ -51,7 +51,6 @@ int verify_matrix(float *matrix, const float *checksum,
       diff = -diff;
     if (diff > 0.01f) {
       error ++;
-      // printf("Row: %d, Result: %x, Golden reselt: %x\n", i, print_sum, print_gold);
     }
   }
   return error;

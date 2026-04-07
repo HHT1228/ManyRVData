@@ -290,14 +290,14 @@ def main():
     emit_str += 'static uint32_t active_cores = {};\n\n'.format(CORES)
 
     # L1 Data
-    emit_str += 'float samples[{}]'.format(2 * NFFT) + ' __attribute__((section(".l1_prio")));\n'
-    emit_str += 'float buffer[{}]'.format(2 * NFFT) + ' __attribute__((section(".l1_prio")));\n'
-    emit_str += 'float out[{}]'.format(2 * NFFT) + ' __attribute__((section(".l1_prio")));\n'
-    emit_str += 'float twiddle_p1[{}]'.format(2 * N_TWID_P1) + ' __attribute__((section(".l1_prio")));\n'
-    emit_str += 'float twiddle_p2[{}]'.format(2 * N_TWID_P2 * CORES) + ' __attribute__((section(".l1_prio")));\n'
-    emit_str += 'uint16_t store_idx[{}]'.format(int(np.log2(NFFTpc / 2) * NFFTpc / 2)) + ' __attribute__((section(".l1_prio")));\n'
-    emit_str += 'uint32_t core_offset[{}]'.format(CORES) + ' __attribute__((section(".l1_prio")));\n'
-    # emit_str += 'uint16_t bitrev[{}]'.format(int(NFFTpc // 2)) + ' __attribute__((section(".l1_prio")));\n\n'
+    # emit_str += 'float samples[{}]'.format(2 * NFFT) + ' __attribute__((section(".data")));\n'
+    emit_str += 'float buffer[{}]'.format(2 * NFFT) + ' __attribute__((section(".data")))  = { [0 ... ' + str(2 * NFFT - 1) + '] = 0 };\n'
+    emit_str += 'float out[{}]'.format(2 * NFFT) + ' __attribute__((section(".data")))  = { [0 ... ' + str(2 * NFFT - 1) + '] = 0 };\n'
+    # emit_str += 'float twiddle_p1[{}]'.format(2 * N_TWID_P1) + ' __attribute__((section(".data")));\n'
+    # emit_str += 'float twiddle_p2[{}]'.format(2 * N_TWID_P2 * CORES) + ' __attribute__((section(".data")));\n'
+    # emit_str += 'uint16_t store_idx[{}]'.format(int(np.log2(NFFTpc / 2) * NFFTpc / 2)) + ' __attribute__((section(".data")));\n'
+    # emit_str += 'uint32_t core_offset[{}]'.format(CORES) + ' __attribute__((section(".data")));\n'
+    # emit_str += 'uint16_t bitrev[{}]'.format(int(NFFTpc // 2)) + ' __attribute__((section(".data")));\n\n'
 
     # L2 Data
     emit_str += 'static float samples_dram[{}]'.format(2 * NFFT) + ' __attribute__((section(".data"))) = {' + ', '.join(
@@ -312,13 +312,11 @@ def main():
             map(str, twiddle_vec_reim.astype(dtype).tolist())) + '};\n'
     emit_str += 'static uint16_t store_idx_dram[{}]'.format(int(np.log2(NFFTpc / 2) * NFFTpc / 2)) + ' __attribute__((section(".data"))) = {' + ', '.join(
         map(str, np.array(store_delta).astype(idx_dtype).tolist())) + '};\n'
-    # emit_str += 'static uint16_t bitrev_dram[{}]'.format(int(
-    #     NFFTpc / 2)) + ' __attribute__((section(".data"))) = {' + ', '.join(map(str, bitrev)) + '};\n'
     emit_str += 'static uint32_t coffset_dram[{}]'.format(int(
         CORES)) + ' __attribute__((section(".data"))) = {' + ', '.join(map(str, core_offsets)) + '};\n'
     emit_str += 'static float gold_out_dram[{}]'.format(
         2 * NFFT) + ' __attribute__((section(".data"))) = {' + ', '.join(map(str, gold_out_s.astype(dtype).tolist())) + '};\n'
-    emit_str += 'float out_dram[{}]'.format(2 * NFFT) + ' __attribute__((section(".data")));\n'
+    # emit_str += 'float out_dram[{}]'.format(2 * NFFT) + ' __attribute__((section(".data")));\n'
 
     file_path = pathlib.Path(__file__).parent.parent / 'data'
     # file = file_path / ('data_' + str(NFFT) + "_" + str(CORES) + ".h")

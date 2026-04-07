@@ -3124,7 +3124,7 @@ module cachepool_tile
   //   end
   // end
 
-  for (genvar i = 0; i < NrCores * NrTCDMPortsPerCore; i++) begin : gen_debug_assertions
+  for (genvar i = 0; i < NrCores * NrTCDMPortsPerCore; i++) begin : gen_debug_assertions_tcdm
     // always @(posedge clk_i) begin
     //   assert(tcdm_req[i].q_valid && tcdm_req[i].q.addr == 32'h800033D0) begin
     //     $info("Access to 0x800033D0 detected from port %0d at time %0t", i, $time);
@@ -3196,9 +3196,35 @@ module cachepool_tile
     //   end
     // end
 
+    // always @(posedge clk_i) begin
+    //   assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr == 32'h 800037C4) && tcdm_req[i].q.write) begin
+    //     $info("Write to 0x800037C4 detected from port %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+  end
+
+  for (genvar i = 0; i < NrCores; i++) begin : gen_debug_assertions_core
     always @(posedge clk_i) begin
-      assert(tcdm_req[i].q_valid && (tcdm_req[i].q.addr == 32'h 800037C4) && tcdm_req[i].q.write) begin
-        $info("Write to 0x800037C4 detected from port %0d at time %0t", i, $time);
+      assert(inst_addr[i] == 32'h8000088c) begin
+        $info("[DEBUG] Error check by core %0d at time %0t", i, $time);
+      end else begin
+        // No action
+      end
+    end
+
+    always @(posedge clk_i) begin
+      assert(inst_addr[i] == 32'h8000088c) begin
+        $info("[DEBUG] (diff > 0.01f) triggered by core %0d at time %0t", i, $time);
+      end else begin
+        // No action
+      end
+    end
+
+    always @(posedge clk_i) begin
+      assert(inst_addr[i] == 32'h80000844) begin
+        $info("[DEBUG] Check result of core %0d at time %0t", i, $time);
       end else begin
         // No action
       end
