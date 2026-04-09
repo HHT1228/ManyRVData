@@ -347,8 +347,9 @@ module cachepool_tile
 
   // The metadata type used to restore the information from req to rsp
   typedef struct packed {
-    tcdm_user_t user;
-    logic       write;
+    tcdm_user_t       user;
+    logic             write;
+    hpdcache_req_op_t amo;
   } tcdm_meta_t;
 
   // Regbus peripherals.
@@ -1256,6 +1257,7 @@ module cachepool_tile
       // Upstream request info for coalescer
       assign l0_cache_req_info[cb][j].user    = l0_cache_req_user[cb][j];
       assign l0_cache_req_info[cb][j].write   = l0_cache_req_write[cb][j];
+      assign l0_cache_req_info[cb][j].amo     = l0_cache_req[cb][j].op;
     end
   end
 
@@ -1292,6 +1294,7 @@ module cachepool_tile
     assign l0_cache_rsp_downstream_info[cb].user    = l0_cache_rsp_downstream_user[cb];
     // hpdcache_rsp_t has no field to track AMO or OP
     assign l0_cache_rsp_downstream_info[cb].write   = l0_cache_rsp_coal[cb][0].tid[ReqIdWidth+coalInfoWidth];  // unreliable method
+    assign l0_cache_rsp_downstream_info[cb].amo     = HPDCACHE_REQ_LOAD; // not used here
     assign l0_cache_rsp_downstream_user[cb].is_amo  = 1'b0;
     // for (genvar j = 0; j < ExtPorts; j++) begin
     //   assign l0_cache_rsp_downstream_info_ext[cb].infos[j] = l0_cache_rsp_downstream_info[cb];
@@ -1403,8 +1406,9 @@ module cachepool_tile
     assign l0_cache_req_coal[cb][0].wdata = l0_cache_req_coal_wdata[cb][0];
     assign l0_cache_req_coal[cb][0].addr_tag = l0_cache_req_coal_addr[cb][0][L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
     assign l0_cache_tag_coal[cb][0] = l0_cache_req_coal_addr[cb][0][L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+
     // Explicit handling of fields not included in the coalescer info
-    assign l0_cache_req_coal[cb][0].op = l0_cache_req[cb][0].op;  // Assume 4 requests from spatz are of the same type
+    // assign l0_cache_req_coal[cb][0].op = l0_cache_req[cb][0].op;
     // assign l0_cache_req_coal[cb][0].be = l0_cache_req[cb][0].be;
     // assign l0_cache_req_coal[cb][0].be = 16'hFFFF; // entire word is valid TODO: remove hardcoding
     // assign l0_cache_req_coal[cb][0].size = NrL0CoaleserInputs * l0_cache_req[cb][0].size;
@@ -1431,8 +1435,16 @@ module cachepool_tile
       end
 
       l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[hit_id];
+
+      if (l0_cache_req_downstream_info[cb].user.is_amo) begin
+        l0_cache_req_coal[cb][0].op = l0_cache_req[cb][0].op;   // FIXME: dangerous timing
+        // l0_cache_req_coal[cb][0].op = l0_cache_req_downstream_info[cb].amo;
+      end else begin
+        l0_cache_req_coal[cb][0].op = l0_cache_req_downstream_write[cb] ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
+      end
     end
     // assign l0_cache_req_downstream_info[cb] = l0_cache_req_downstream_info_ext[cb].infos[hit_id];
+    // assign l0_cache_req_coal[cb][0].op = l0_cache_req_downstream_write[cb] ? HPDCACHE_REQ_STORE : HPDCACHE_REQ_LOAD;
 
     // assign l0_cache_req_coal[cb][0].sid  = {l0_cache_req_downstream_info[cb].user.is_fpu, l0_cache_req_downstream_info[cb].user.core_id};
     // assign l0_cache_req_coal[cb][0].sid  = {1'b1, l0_cache_req_downstream_info[cb].user.core_id};
@@ -3206,30 +3218,65 @@ module cachepool_tile
   end
 
   for (genvar i = 0; i < NrCores; i++) begin : gen_debug_assertions_core
-    always @(posedge clk_i) begin
-      assert(inst_addr[i] == 32'h8000088c) begin
-        $info("[DEBUG] Error check by core %0d at time %0t", i, $time);
-      end else begin
-        // No action
-      end
-    end
+    logic verify_matrix_hit_d, diff_hit_d, stop_kernel_hit_d;
 
-    always @(posedge clk_i) begin
-      assert(inst_addr[i] == 32'h8000088c) begin
-        $info("[DEBUG] (diff > 0.01f) triggered by core %0d at time %0t", i, $time);
-      end else begin
-        // No action
-      end
-    end
+    // always @(posedge clk_i) begin
+    //   verify_matrix_hit_d <= (inst_addr[i] == 32'h8000083c);
 
-    always @(posedge clk_i) begin
-      assert(inst_addr[i] == 32'h80000844) begin
-        $info("[DEBUG] Check result of core %0d at time %0t", i, $time);
-      end else begin
-        // No action
-      end
-    end
+    //   if ((inst_addr[i] == 32'h8000083c) && !verify_matrix_hit_d) begin
+    //     $info("[DEBUG] verify_matrix() called by core %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
+    // always @(posedge clk_i) begin
+    //   assert(inst_addr[i] == 32'h8000083c) begin
+    //     $info("[DEBUG] verify_matrix() called by core %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
+    // always @(posedge clk_i) begin
+    //   diff_hit_d <= (inst_addr[i] == 32'h80000918);
+
+    //   assert((inst_addr[i] == 32'h80000918) && !diff_hit_d) begin
+    //     $info("[DEBUG] (diff > 0.01f) triggered by core %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
+    // always @(posedge clk_i) begin
+    //   stop_kernel_hit_d <= (inst_addr[i] == 32'h80002c1c);
+
+    //   assert((inst_addr[i] == 32'h80002c1c) && !stop_kernel_hit_d) begin
+    //     $info("[DEBUG] stop_kernel() called by core %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
+
+    // always @(posedge clk_i) begin
+    //   assert(inst_addr[i] == 32'h80000848) begin
+    //     $info("[DEBUG] Check result of core %0d at time %0t", i, $time);
+    //   end else begin
+    //     // No action
+    //   end
+    // end
   end
+
+  // logic diff_hit_d;
+  // always @(posedge clk_i) begin
+  //   diff_hit_d <= (inst_addr[0] == 32'h80000918);
+
+  //   assert((inst_addr[0] == 32'h80000918) && !diff_hit_d) begin
+  //     $info("[DEBUG] (diff > 0.01f) triggered by core %0d at time %0t", 0, $time);
+  //   end else begin
+  //     // No action
+  //   end
+  // end
 
   popcount #(
     .INPUT_WIDTH ( NrTCDMPortsCores )

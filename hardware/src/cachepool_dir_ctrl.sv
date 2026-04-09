@@ -150,6 +150,13 @@ module cahcepool_dir_ctrl
     word_data_t get_wdata;
   } get_meta_t;
 
+  typedef struct packed {
+    addr_t            addr;
+    core_meta_t       meta;
+    logic             write;
+    word_data_t       wdata;
+  } pending_req_t;
+
   // typedef enum logic [2:0] {
   //   DIR_LINE_INVALID      = 3'b000,
   //   DIR_LINE_SHARED       = 3'b001,
@@ -236,6 +243,9 @@ module cahcepool_dir_ctrl
   get_meta_t  get_info, get_ack_info;
   logic       push_get_info, get_ack_info_valid, pop_get_ack_info;
 
+  pending_req_t pending_esa_req, replay_esa_req;
+  logic         push_pending_esa, pop_pending_esa, pop_pending_esa_q, pending_esa_valid;
+
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
   `FF(curr_line_meta_q, curr_line_meta, '0, clk_i, rst_ni)
@@ -286,6 +296,20 @@ module cahcepool_dir_ctrl
 
       fwd_rx_q                  <= fwd_rx_d;
       fwd_rx_valid_q            <= 1'b0;
+    end else if (upstream_req_fake_read_d && downstream_req_ready_i) begin
+      // otherwise hold current value
+      upstream_req_meta_q       <= upstream_req_meta_d;
+      upstream_req_valid_q      <= 1'b0;
+      upstream_req_is_evict_q   <= upstream_req_is_evict_d;
+      upstream_req_write_q      <= upstream_req_write_d;
+      upstream_req_addr_q       <= upstream_req_addr_d;
+      upstream_req_fake_read_q  <= 1'b0;
+      upstream_req_wdata_q      <= upstream_req_wdata_d;
+
+      upstream_req_evict_q      <= upstream_req_evict_d;
+
+      fwd_rx_q                  <= fwd_rx_d;
+      fwd_rx_valid_q            <= fwd_rx_valid_d;
     end else begin
       // otherwise hold current value
       upstream_req_meta_q       <= upstream_req_meta_d;
@@ -341,7 +365,7 @@ module cahcepool_dir_ctrl
     fwd_rx_d                  = fwd_rx_q;
     fwd_rx_valid_d            = fwd_rx_valid_q;
 
-    if (upstream_req_valid_i && upstream_req_ready_o && !upstream_req_fake_read_i) begin
+    if (upstream_req_valid_i && upstream_req_ready_o) begin
       // Update on new request
       upstream_req_meta_d       = upstream_req_meta_i;
       upstream_req_valid_d      = upstream_req_valid_i;
@@ -350,7 +374,17 @@ module cahcepool_dir_ctrl
       upstream_req_addr_d       = upstream_req_addr_i;
       upstream_req_fake_read_d  = upstream_req_fake_read_i;
       upstream_req_wdata_d      = upstream_req_wdata_i;
-    end else if (upstream_req_evict_i.valid) begin
+    end 
+    // else if (upstream_req_valid_i && upstream_req_ready_o && upstream_req_fake_read_i) begin
+    //   upstream_req_meta_d       = upstream_req_meta_i;
+    //   upstream_req_valid_d      = upstream_req_valid_i;
+    //   upstream_req_is_evict_d   = upstream_req_is_evict_i;
+    //   upstream_req_write_d      = upstream_req_write_i;
+    //   upstream_req_addr_d       = upstream_req_addr_i;
+    //   upstream_req_fake_read_d  = upstream_req_fake_read_i;
+    //   upstream_req_wdata_d      = upstream_req_wdata_i;
+    // end 
+    else if (upstream_req_evict_i.valid) begin
       upstream_req_evict_d   = upstream_req_evict_i;
     end else if (fwd_rx_valid_i) begin
       fwd_rx_d               = fwd_rx_i;
@@ -399,7 +433,8 @@ module cahcepool_dir_ctrl
   //   end
   // end
 
-  assign send_fake_read = upstream_req_fake_read_i && upstream_req_valid_i && upstream_req_ready_o;
+  // assign send_fake_read = upstream_req_fake_read_d && upstream_req_valid_i && upstream_req_ready_o;
+  assign send_fake_read = upstream_req_fake_read_d;
   always_comb begin
     fake_read_in_progress_d = fake_read_in_progress_q;
     if (send_fake_read) begin
@@ -986,12 +1021,22 @@ module cahcepool_dir_ctrl
   /***************************
   * Action handling
   ***************************/
+  logic replay_pending_esa, replay_pending_esa_d, replay_pending_esa_q;
+  `FF(replay_pending_esa, replay_pending_esa_q, 1'b0, clk_i, rst_ni)
+  `FF(pop_pending_esa_q, pop_pending_esa, 1'b0, clk_i, rst_ni)
+
+  assign pop_pending_esa = replay_pending_esa_q && downstream_req_ready_i;
+
   always_comb begin : act_req_to_l2_ctrl
     downstream_req_valid_d    = downstream_req_valid_q;
     downstream_req_addr_d     = downstream_req_addr_q;
     downstream_req_meta_d     = downstream_req_meta_q;
     downstream_req_write_d    = downstream_req_write_q;
     downstream_req_wdata_d    = downstream_req_wdata_q;
+
+    // pop_pending_esa     = 1'b0;
+    // replay_pending_esa  = 1'b0;
+    replay_pending_esa_d  = replay_pending_esa_q;
 
     // if(act.send_excl_data || act.send_sh_data) begin  // read req to L2
     if (act_q.send_excl_data || act_q.send_sh_data) begin  // read req to L2
@@ -1008,6 +1053,8 @@ module cahcepool_dir_ctrl
         downstream_req_write_d    = get_ack_info.get_write;
         downstream_req_wdata_d    = get_ack_info.get_wdata;
 
+        // pop_pending_esa     = pending_esa_valid;
+        replay_pending_esa_d  = pending_esa_valid;
       end else begin
         downstream_req_addr_d     = upstream_req_addr_d;
         // downstream_req_meta_d     = upstream_req_meta_d;
@@ -1080,7 +1127,17 @@ module cahcepool_dir_ctrl
     //   downstream_req_meta_d     = downstream_req_meta_q;
     //   downstream_req_write_d    = downstream_req_write_q;
     //   downstream_req_wdata_d    = downstream_req_wdata_q;
-    end 
+    end else if (pop_pending_esa_q) begin
+      downstream_req_valid_d    = 1'b1;
+      downstream_req_addr_d     = replay_esa_req.addr;
+      downstream_req_meta_d     = replay_esa_req.meta;
+      downstream_req_write_d    = replay_esa_req.write;
+      downstream_req_wdata_d    = replay_esa_req.wdata;
+    end
+
+    // if (downstream_req_ready_i) begin
+    //   replay_pending_esa_d  = 1'b0;
+    // end
   end
 
   always_ff @(posedge clk_i or negedge rst_ni) begin : act_req_to_l2_ctrl_ff
@@ -1090,6 +1147,8 @@ module cahcepool_dir_ctrl
       downstream_req_meta_q  <= '0;
       downstream_req_write_q <= 1'b0;
       downstream_req_wdata_q <= '0;
+
+      replay_pending_esa_q   <= 1'b0;
     end else if (downstream_req_ready_i) begin
       // Deassert after handshake
       downstream_req_valid_q <= 1'b0;
@@ -1097,6 +1156,8 @@ module cahcepool_dir_ctrl
       downstream_req_meta_q  <= '0;
       downstream_req_write_q <= 1'b0;
       downstream_req_wdata_q <= '0;
+
+      replay_pending_esa_q   <= 1'b0;
     end else begin
       // Otherwise hold
       downstream_req_valid_q <= downstream_req_valid_d;
@@ -1104,6 +1165,8 @@ module cahcepool_dir_ctrl
       downstream_req_meta_q  <= downstream_req_meta_d;
       downstream_req_write_q <= downstream_req_write_d;
       downstream_req_wdata_q <= downstream_req_wdata_d;
+
+      replay_pending_esa_q   <= replay_pending_esa_d;
     end
   end
 
@@ -1123,17 +1186,37 @@ module cahcepool_dir_ctrl
     .data_o  (get_ack_info)
   );
 
+  spill_register #(
+    .T      (pending_req_t),
+    .Bypass (1'b0)
+  ) i_spill_pending_esa (
+    .clk_i   (clk_i),
+    .rst_ni  (rst_ni),
+    .valid_i (push_pending_esa),
+    .ready_o (/* unused */),
+    .data_i  (pending_esa_req),
+    .valid_o (pending_esa_valid),
+    .ready_i (pop_pending_esa),
+    .data_o  (replay_esa_req)
+  );
+
   // assign downstream_req_valid_o = upstream_req_fake_read_i ? upstream_req_valid_i : downstream_req_valid_d;
   // assign downstream_req_addr_o  = upstream_req_fake_read_i ? upstream_req_addr_i : downstream_req_addr_d;
   // assign downstream_req_meta_o  = upstream_req_fake_read_i ? upstream_req_meta_i : downstream_req_meta_d;
   // assign downstream_req_write_o = upstream_req_fake_read_i ? upstream_req_write_i : downstream_req_write_d;
   // assign downstream_req_wdata_o = upstream_req_fake_read_i ? upstream_req_wdata_i : downstream_req_wdata_d;
 
-  assign downstream_req_valid_o = send_fake_read ? upstream_req_valid_i : downstream_req_valid_d;
-  assign downstream_req_addr_o  = send_fake_read ? upstream_req_addr_i : downstream_req_addr_d;
-  assign downstream_req_meta_o  = send_fake_read ? upstream_req_meta_i : downstream_req_meta_d;
-  assign downstream_req_write_o = send_fake_read ? upstream_req_write_i : downstream_req_write_d;
-  assign downstream_req_wdata_o = send_fake_read ? upstream_req_wdata_i : downstream_req_wdata_d;
+  // assign downstream_req_valid_o = send_fake_read ? upstream_req_valid_i : downstream_req_valid_d;
+  // assign downstream_req_addr_o  = send_fake_read ? upstream_req_addr_i : downstream_req_addr_d;
+  // assign downstream_req_meta_o  = send_fake_read ? upstream_req_meta_i : downstream_req_meta_d;
+  // assign downstream_req_write_o = send_fake_read ? upstream_req_write_i : downstream_req_write_d;
+  // assign downstream_req_wdata_o = send_fake_read ? upstream_req_wdata_i : downstream_req_wdata_d;
+
+  assign downstream_req_valid_o = send_fake_read ? upstream_req_valid_d : downstream_req_valid_d;
+  assign downstream_req_addr_o  = send_fake_read ? upstream_req_addr_d : downstream_req_addr_d;
+  assign downstream_req_meta_o  = send_fake_read ? upstream_req_meta_d : downstream_req_meta_d;
+  assign downstream_req_write_o = send_fake_read ? upstream_req_write_d : downstream_req_write_d;
+  assign downstream_req_wdata_o = send_fake_read ? upstream_req_wdata_d : downstream_req_wdata_d;
 
   always_comb begin
     case (next_coherence_meta.line_state)
@@ -1355,6 +1438,10 @@ module cahcepool_dir_ctrl
     free_coherence = 1'b0;
     need_inv_ack   = 1'b0;
 
+    push_pending_esa  = 1'b0;
+    pending_esa_req   = '0;
+    // pop_pending_esa   = 1'b0;
+
     // unique case (state_q)
     unique case (current_state)
       // Invalid state (I)
@@ -1464,11 +1551,12 @@ module cahcepool_dir_ctrl
             end else begin
               // Another reader arrives: probe owner first; go ESA
               act.send_probe_owner = 1'b1;
-              pending_req_d        = req_sid;
+              pending_req_d        = req_tid;
               state_d              = DIR_LINE_ESA;
               sharers_d            = current_sharers; // no change
               act.update_state     = 1'b1;
               receivers            = current_sharers;
+              // new_owner            = req_sid;
             end
           end
           OP_WRITE: begin
@@ -1538,8 +1626,16 @@ module cahcepool_dir_ctrl
       // ES_A state (transient state between E/M and S, waiting for GetAck)
       DIR_LINE_ESA: begin
         unique case (op)
-          OP_READ, OP_WRITE: begin
-            // Stall others on this line; arbiters should queue
+          OP_READ: begin
+            // Store pending req in spill reg waiting for in-flight get_ack
+            push_pending_esa = 1'b1;
+
+            pending_esa_req.addr  = upstream_req_addr_d;
+            pending_esa_req.meta  = upstream_req_meta_d;
+            pending_esa_req.write = upstream_req_write_d;
+            pending_esa_req.wdata = upstream_req_wdata_d;
+
+            free_coherence = 1'b1;
           end
           OP_GETACK: begin
             // Owner returned latest data → serve pending reader, then S
@@ -1548,7 +1644,9 @@ module cahcepool_dir_ctrl
             sharers_d          = set_bit(current_sharers, pending_req_q);
             act.update_sharers = 1'b1;
             state_d            = DIR_LINE_SHARED; // TODO: S or E if only one sharer left
-            act.update_state       = 1'b1;
+            act.update_state   = 1'b1;
+
+            // pop_pending_esa    = pending_esa_valid; // clear pending req after serving it
           end
           // Evictions while waiting: Ack them; still respond to pending read once GETACK arrives
           OP_EVICT_S, OP_EVICT_M_NONOWNER, OP_EVICT_E_NONOWNER: begin
@@ -1599,7 +1697,7 @@ module cahcepool_dir_ctrl
               act.update_state     = 1'b1;
             end else begin
               act.send_probe_owner = 1'b1;
-              pending_req_d        = req_sid;
+              pending_req_d        = req_tid;
               state_d              = DIR_LINE_ESA;
               act.update_state     = 1'b1;
               sharers_d            = current_sharers; // no change

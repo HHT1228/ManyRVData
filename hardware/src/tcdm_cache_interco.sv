@@ -148,7 +148,7 @@ module tcdm_cache_interco #(
     stream_fifo_optimal_wrap #(
       // .DATA_WIDTH($bits(tcdm_req_chan_t)),
       .type_t         (tcdm_req_chan_t          ),
-      .Depth(4)
+      .Depth(8)
     ) i_tcdm_req_reg (
       .clk_i      (clk_i),
       .rst_ni     (rst_ni),

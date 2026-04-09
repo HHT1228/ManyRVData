@@ -86,6 +86,7 @@ module coherence_interco
 );
 
   typedef logic [$clog2(NumL0CacheCtrl)-1:0] sel_t;
+  // typedef logic [$clog2(NumL1CacheCtrl)-1:0] prio_sel_t;
 
   cache_dir_fwd_t           [NumL0CacheCtrl-1:0] l1_l2_fwd_int;
   logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_valid_int;
@@ -95,6 +96,8 @@ module coherence_interco
   tcdm_req_coherence_t      [NumL0CacheCtrl-1:0] l1_l2_fwd_tcdm_int, l1_l2_evict_tcdm_int;
   tcdm_req_coherence_t      [NumL0CacheCtrl-1:0] l1_l2_coherence_tcdm;
   tcdm_req_coherence_t      [NumL1CacheCtrl-1:0] l1_l2_coherence_tcdm_xbar;
+  // prio_sel_t                [NumL1CacheCtrl-1:0] xbar_rr_prio;
+  // prio_sel_t                                     prio_sel;
 
   logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_gnt, l1_l2_evict_gnt;
   logic                     [NumL0CacheCtrl-1:0] l1_l2_fwd_empty, l1_l2_evict_empty;
@@ -241,12 +244,13 @@ module coherence_interco
     rr_arb_tree #(
       .NumIn     (2),
       .DataType  (tcdm_req_coherence_t),
+      .ExtPrio   (1'b0),
       .AxiVldRdy (1'b1)
     ) i_pre_fwd_evict_arb (
       .clk_i   (clk_i),
       .rst_ni  (rst_ni),
       .flush_i (1'b0),
-      .rr_i    (1'b1),
+      .rr_i    (1'b0),
       .req_i   ({l1_l2_fwd_tcdm_int[i].q_valid, l1_l2_evict_tcdm_int[i].q_valid}),  // valid_i
       .gnt_o   ({l1_l2_fwd_gnt[i], l1_l2_evict_gnt[i]}),  // ready_o
       .data_i  ({l1_l2_fwd_tcdm_int[i], l1_l2_evict_tcdm_int[i]}),
@@ -256,6 +260,25 @@ module coherence_interco
       .idx_o   ()
     );
   end
+
+  // logic prio_sel_done;
+  // always_comb begin : fwd_evict_prio_sel
+  //   prio_sel      = '0;
+  //   prio_sel_done = 1'b0;
+
+  //   // scan ways once (single always_comb)
+  //   for (int i = 0; i < NumL1CacheCtrl; i++) begin
+
+  //     if (!prio_sel_done && 
+  //         l1_l2_coherence_tcdm[i].q_valid && 
+  //         l1_l2_coherence_tcdm[i].q.user.is_fwd) begin
+  //       prio_sel = i;
+  //       prio_sel_done = 1'b1;  
+  //     end
+  //   end
+  // end
+
+  // assign xbar_rr_prio = {NumL1CacheCtrl{prio_sel}};
 
   // coherence_down_payload_t  [NumL0CacheCtrl-1:0] l1_l2_fwd_payload, l1_l2_evict_payload;
   for (genvar i = 0; i < NumL1CacheCtrl; i++) begin : downward_post_xbar
