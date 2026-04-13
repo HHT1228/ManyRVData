@@ -243,8 +243,12 @@ module cahcepool_dir_ctrl
   get_meta_t  get_info, get_ack_info;
   logic       push_get_info, get_ack_info_valid, pop_get_ack_info;
 
-  pending_req_t pending_esa_req, replay_esa_req;
+  pending_req_t pending_esa_req, replay_esa_req, replay_esa_req_q;
   logic         push_pending_esa, pop_pending_esa, pop_pending_esa_q, pending_esa_valid;
+
+  logic tag_bank_write_complete;
+  logic rw_busy, rw_busy_q, rw_busy_d;
+  logic pending_esa_fifo_full, pending_esa_fifo_empty;
 
   `FF(next_line_state_q, next_line_state, HPDCACHE_INVALID, clk_i, rst_ni)
   `FF(next_coherence_meta_q, next_coherence_meta, '0, clk_i, rst_ni)
@@ -255,6 +259,7 @@ module cahcepool_dir_ctrl
   `FF(tag_bank_write_req_q, tag_bank_write_req, '0, clk_i, rst_ni)
   `FF(free_coherence_q, free_coherence, 1'b0, clk_i, rst_ni)
   `FF(need_inv_ack_q, need_inv_ack, 1'b0, clk_i, rst_ni)
+  `FF(replay_esa_req_q, replay_esa_req, '0, clk_i, rst_ni)
   
   // TODO: meta may not need to be latched
   // `FF(upstream_req_meta_q, upstream_req_meta_i, '0, clk_i, rst_ni)
@@ -267,6 +272,7 @@ module cahcepool_dir_ctrl
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
   assign tag_bank_rdata_valid = tag_bank_gnt_q && !(|(tag_bank_write_req_q));
+  assign tag_bank_write_complete = tag_bank_gnt_q && |(tag_bank_write_req_q);
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if(!rst_ni) begin
@@ -465,7 +471,7 @@ module cahcepool_dir_ctrl
   always_ff @(posedge clk_i or negedge rst_ni) begin : evict_busy_ff
     if (!rst_ni) begin
       evict_busy_q <= 1'b0;
-    end else if ((coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) || free_coherence) begin
+    end else if ((coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) || free_coherence_q) begin
       evict_busy_q <= 1'b0;
     end else begin
       evict_busy_q <= evict_busy_d;
@@ -509,6 +515,25 @@ module cahcepool_dir_ctrl
     end
   end
 
+  // always_comb begin
+  //   rw_busy_d = rw_busy_q;
+  //   if (upstream_req_valid_i && upstream_req_ready_o) begin
+  //     rw_busy_d = 1'b1;
+  //   end
+  // end
+
+  // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   if (!rst_ni) begin
+  //     rw_busy_q <= 1'b0;
+  //   end else if (rw_busy_d && tag_bank_write_complete) begin
+  //     rw_busy_q <= 1'b0;
+  //   end else begin
+  //     rw_busy_q <= rw_busy_d;
+  //   end
+  // end
+
+  // assign rw_busy = rw_busy_q;
+
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       busy_q <= 1'b0;
@@ -517,6 +542,10 @@ module cahcepool_dir_ctrl
                  (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) || 
                  free_coherence_q) begin
       busy_q <= 1'b0;
+
+      if (upstream_req_valid_i && upstream_req_ready_o) begin
+        busy_q <= busy_d;
+      end
     end else begin
       busy_q <= busy_d;
     end
@@ -603,7 +632,8 @@ module cahcepool_dir_ctrl
     if (!rst_ni) begin
       tag_bank_rvalid_q <= 1'b0;
       tag_bank_addr_q   <= '0;
-    end else if (tag_bank_rvalid_d && |tag_bank_rready) begin
+    // end else if (tag_bank_rvalid_d && |tag_bank_rready) begin
+    end else if (tag_bank_rvalid_d && tag_bank_gnt) begin
       tag_bank_rvalid_q <= 1'b0;
       tag_bank_addr_q   <= tag_bank_addr_d;      
     end else begin
@@ -1022,10 +1052,10 @@ module cahcepool_dir_ctrl
   * Action handling
   ***************************/
   logic replay_pending_esa, replay_pending_esa_d, replay_pending_esa_q;
-  `FF(replay_pending_esa, replay_pending_esa_q, 1'b0, clk_i, rst_ni)
+  // `FF(replay_pending_esa, replay_pending_esa_q, 1'b0, clk_i, rst_ni)
   `FF(pop_pending_esa_q, pop_pending_esa, 1'b0, clk_i, rst_ni)
 
-  assign pop_pending_esa = replay_pending_esa_q && downstream_req_ready_i;
+  assign pop_pending_esa = replay_pending_esa_q && downstream_req_ready_i && pending_esa_valid;
 
   always_comb begin : act_req_to_l2_ctrl
     downstream_req_valid_d    = downstream_req_valid_q;
@@ -1045,16 +1075,18 @@ module cahcepool_dir_ctrl
 
       if (op_q == OP_GETACK) begin
         downstream_req_addr_d = fwd_rx_d.addr;
-        downstream_req_meta_d.core_id = get_ack_info.get_meta.core_id;
-        downstream_req_meta_d.is_amo  = get_ack_info.get_meta.is_amo;
-        downstream_req_meta_d.req_id  = get_ack_info.get_meta.req_id;
-        downstream_req_meta_d.is_fpu  = get_ack_info.get_meta.is_fpu;
+        downstream_req_meta_d.core_id   = get_ack_info.get_meta.core_id;
+        downstream_req_meta_d.is_amo    = get_ack_info.get_meta.is_amo;
+        downstream_req_meta_d.req_id    = get_ack_info.get_meta.req_id;
+        downstream_req_meta_d.is_fpu    = get_ack_info.get_meta.is_fpu;
+        downstream_req_meta_d.lost_bits = get_ack_info.get_meta.lost_bits;
 
         downstream_req_write_d    = get_ack_info.get_write;
         downstream_req_wdata_d    = get_ack_info.get_wdata;
 
         // pop_pending_esa     = pending_esa_valid;
         replay_pending_esa_d  = pending_esa_valid;
+        // replay_pending_esa_d = !pending_esa_fifo_empty;
       end else begin
         downstream_req_addr_d     = upstream_req_addr_d;
         // downstream_req_meta_d     = upstream_req_meta_d;
@@ -1062,6 +1094,7 @@ module cahcepool_dir_ctrl
         downstream_req_meta_d.is_amo  = upstream_req_meta_d.is_amo;
         downstream_req_meta_d.req_id  = upstream_req_meta_d.req_id;
         downstream_req_meta_d.is_fpu  = upstream_req_meta_d.is_fpu;
+        downstream_req_meta_d.lost_bits = upstream_req_meta_d.lost_bits;
 
         downstream_req_write_d    = upstream_req_write_d;
         // downstream_req_write_d    = '0;
@@ -1129,10 +1162,12 @@ module cahcepool_dir_ctrl
     //   downstream_req_wdata_d    = downstream_req_wdata_q;
     end else if (pop_pending_esa_q) begin
       downstream_req_valid_d    = 1'b1;
-      downstream_req_addr_d     = replay_esa_req.addr;
-      downstream_req_meta_d     = replay_esa_req.meta;
-      downstream_req_write_d    = replay_esa_req.write;
-      downstream_req_wdata_d    = replay_esa_req.wdata;
+      downstream_req_addr_d     = replay_esa_req_q.addr;
+      downstream_req_meta_d     = replay_esa_req_q.meta;
+      downstream_req_write_d    = replay_esa_req_q.write;
+      downstream_req_wdata_d    = replay_esa_req_q.wdata;
+
+      replay_pending_esa_d  = pending_esa_valid;
     end
 
     // if (downstream_req_ready_i) begin
@@ -1157,7 +1192,8 @@ module cahcepool_dir_ctrl
       downstream_req_write_q <= 1'b0;
       downstream_req_wdata_q <= '0;
 
-      replay_pending_esa_q   <= 1'b0;
+      // replay_pending_esa_q   <= 1'b0;
+      replay_pending_esa_q   <= replay_pending_esa_d;
     end else begin
       // Otherwise hold
       downstream_req_valid_q <= downstream_req_valid_d;
@@ -1170,7 +1206,7 @@ module cahcepool_dir_ctrl
     end
   end
 
-  assign pop_get_ack_info = op == OP_GETACK;
+  assign pop_get_ack_info = (op_q == OP_GETACK);
 
   spill_register #(
     .T      (get_meta_t),
@@ -1186,18 +1222,54 @@ module cahcepool_dir_ctrl
     .data_o  (get_ack_info)
   );
 
-  spill_register #(
-    .T      (pending_req_t),
-    .Bypass (1'b0)
-  ) i_spill_pending_esa (
-    .clk_i   (clk_i),
-    .rst_ni  (rst_ni),
-    .valid_i (push_pending_esa),
-    .ready_o (/* unused */),
-    .data_i  (pending_esa_req),
-    .valid_o (pending_esa_valid),
-    .ready_i (pop_pending_esa),
-    .data_o  (replay_esa_req)
+  // spill_register #(
+  //   .T      (pending_req_t),
+  //   .Bypass (1'b0)
+  // ) i_spill_pending_esa (
+  //   .clk_i   (clk_i),
+  //   .rst_ni  (rst_ni),
+  //   .valid_i (push_pending_esa),
+  //   .ready_o (/* unused */),
+  //   .data_i  (pending_esa_req),
+  //   .valid_o (pending_esa_valid),
+  //   .ready_i (pop_pending_esa),
+  //   .data_o  (replay_esa_req)
+  // );
+
+  // fifo_v3 #(
+  //   .FALL_THROUGH(1'b0),
+  //   .DATA_WIDTH($bits(pending_req_t)),  // +1 for valid bit
+  //   .DEPTH(4)
+  // ) i_fifo_pending_esa (
+  //   .clk_i      (clk_i),
+  //   .rst_ni     (rst_ni),
+  //   .flush_i    (1'b0),
+  //   .testmode_i (1'b0),
+  //   .full_o     (pending_esa_fifo_full),
+  //   .empty_o    (pending_esa_fifo_empty),
+  //   .usage_o    (/* unused */),
+  //   .data_i     (pending_esa_req),
+  //   .push_i     (push_pending_esa && !pending_esa_fifo_full),
+  //   .data_o     (replay_esa_req),
+  //   .pop_i      (pop_pending_esa && !pending_esa_fifo_empty)
+  // );
+
+  stream_fifo #(
+    .FALL_THROUGH(1'b0),
+    .DATA_WIDTH($bits(pending_req_t)),
+    .DEPTH(4)
+  ) i_l1_inv_fifo (
+    .clk_i      (clk_i),
+    .rst_ni     (rst_ni),
+    .flush_i    (1'b0),
+    .testmode_i (1'b0),
+    .usage_o    (/* unused */),
+    .data_i     (pending_esa_req),
+    .valid_i    (push_pending_esa),
+    .ready_o    (/* unused */),
+    .data_o     (replay_esa_req),
+    .valid_o    (pending_esa_valid),
+    .ready_i    (pop_pending_esa)
   );
 
   // assign downstream_req_valid_o = upstream_req_fake_read_i ? upstream_req_valid_i : downstream_req_valid_d;

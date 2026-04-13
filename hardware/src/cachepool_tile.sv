@@ -2145,19 +2145,19 @@ module cachepool_tile
     //   .pop_i      (l0_cache_req_inv_ready_buf[cb] && !inv_fifo_empty[cb])
     // );
 
-    // spill_register #(
-    //   .T      (hpdcache_req_t ),
-    //   .Bypass (1'b0)
-    // ) i_l1_inv_spill (
-    //   .clk_i   (clk_i),
-    //   .rst_ni  (rst_ni),
-    //   .valid_i (l0_cache_req_inv_valid[cb][1]),
-    //   .ready_o (l0_cache_req_inv_ready[cb][1]),
-    //   .data_i  (l0_cache_req_inv[cb][1]),
-    //   .valid_o (l0_cache_req_inv_valid_buf[cb]),
-    //   .ready_i (l0_cache_req_inv_ready_buf[cb]),
-    //   .data_o  (l0_cache_req_inv_buf[cb])
-    // );
+    spill_register #(
+      .T      (hpdcache_req_t ),
+      .Bypass (1'b0)
+    ) i_l1_inv_spill (
+      .clk_i   (clk_i),
+      .rst_ni  (rst_ni),
+      .valid_i (l0_cache_req_inv_valid[cb][1]),
+      .ready_o (l0_cache_req_inv_ready[cb][1]),
+      .data_i  (l0_cache_req_inv[cb][1]),
+      .valid_o (l0_cache_req_inv_valid_buf[cb]),
+      .ready_i (l0_cache_req_inv_ready_buf[cb]),
+      .data_o  (l0_cache_req_inv_buf[cb])
+    );
 
     // stream_fifo #(
     //   .FALL_THROUGH(1'b1),
@@ -2177,8 +2177,8 @@ module cachepool_tile
     //   .ready_i    (l0_cache_req_inv_ready_buf[cb])
     // );
 
-    assign l0_cache_req_inv_buf[cb] = l0_cache_req_inv[cb][1];
-    assign l0_cache_req_inv_valid_buf[cb] = l0_cache_req_inv_valid[cb][1];
+    // assign l0_cache_req_inv_buf[cb] = l0_cache_req_inv[cb][1];
+    // assign l0_cache_req_inv_valid_buf[cb] = l0_cache_req_inv_valid[cb][1];
 
     // fifo_v3 #(
     //   .FALL_THROUGH(1'b1),
