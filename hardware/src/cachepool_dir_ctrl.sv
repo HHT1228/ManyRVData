@@ -492,7 +492,7 @@ module cahcepool_dir_ctrl
     if (!rst_ni) begin
       fwd_busy_q <= 1'b0;
     // end else if (fwd_tx_valid_o || free_coherence_q) begin
-    end else if (downstream_req_valid_o && downstream_req_ready_i) begin
+    end else if (downstream_req_valid_o && downstream_req_ready_i && !pop_pending_esa) begin
       fwd_busy_q <= 1'b0;
     end else begin
       fwd_busy_q <= fwd_busy_d;
@@ -505,7 +505,7 @@ module cahcepool_dir_ctrl
     busy_d = busy_q;
     if (req_stall) begin
       busy_d = 1'b0;
-      if (fwd_rx_valid_i && (fwd_rx_i.fwd_msg_type == GET_ACK)) begin
+      if (fwd_rx_valid_i && fwd_rx_ready_o && (fwd_rx_i.fwd_msg_type == GET_ACK)) begin
         busy_d = 1'b1;
       end else if (op_decoded) begin
         busy_d = 1'b1;
@@ -1583,8 +1583,8 @@ module cahcepool_dir_ctrl
             act.update_state        = 1'b1;
             receivers               = current_sharers & ~(1'b1 << req_sid);
             new_owner               = req_sid;
-            // act.send_inv_ack_cnt    = 1'b1;
-            act.send_inv_ack_cnt    = need_inv_ack;
+            act.send_inv_ack_cnt    = 1'b1;
+            // act.send_inv_ack_cnt    = need_inv_ack;
             // receivers           = current_sharers;
           end
           // Evictions remove bit; S->I if last sharer leaves
