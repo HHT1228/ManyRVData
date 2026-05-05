@@ -22,7 +22,6 @@
 `include "hpdcache_typedef.svh"
 
 // WB not working properly, do not enable
-// `define TEMP_WB
 
 /// Tile implementation for CachePool
 module cachepool_tile
@@ -282,14 +281,15 @@ module cachepool_tile
       reqTransIdWidth: tidWidth + numWordOffsetBits,
       reqSrcIdWidth: 1, // track the requester port of HPDcache
       victimSel: hpdcache_pkg::HPDCACHE_VICTIM_PLRU,
+      // victimSel: hpdcache_pkg::HPDCACHE_VICTIM_RANDOM,
       dataWaysPerRamWord: 1,
       dataSetsPerRam: 64,
       dataRamByteEnable: 1'b1,    // Should always be 1, wmask SRAM not supported for backend
       accessWords: 4,
-      mshrSets: 4,
+      mshrSets: 8,
       mshrWays: 4,
-      mshrWaysPerRamWord: 1,
-      mshrSetsPerRam: 1,
+      mshrWaysPerRamWord: 4,
+      mshrSetsPerRam: 8,
       mshrRamByteEnable: 1'b1,    // Should always be 1, wmask SRAM not supported for backend
       mshrUseRegbank: 1'b1,
       cbufEntries: 2,
@@ -299,19 +299,14 @@ module cachepool_tile
       wbufDataEntries: 4,
       wbufWords: 4,          // Unsure
       wbufTimecntWidth: 3,
-      rtabEntries: 2,
+      rtabEntries: 4,
       flushEntries: 2,
       flushFifoDepth: 2,
       memAddrWidth: L1AddrWidth,
       memIdWidth: tidWidth,
       memDataWidth: L1LineWidth,
-`ifdef TEMP_WB
-      wtEn: 1'b0,
-      wbEn: 1'b1,
-`else
       wtEn: 1'b1,
       wbEn: 1'b0,
-`endif
       lowLatency: 1'b1
   };
 
@@ -1216,11 +1211,7 @@ module cachepool_tile
       assign l0_cache_req[cb][j].phys_indexed = 1'b1;
       assign l0_cache_req[cb][j].pma.uncacheable = 1'b0;
       assign l0_cache_req[cb][j].pma.io = 1'b0;
-`ifdef TEMP_WB
-      assign l0_cache_req[cb][j].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WB;
-`else
       assign l0_cache_req[cb][j].pma.wr_policy_hint = HPDCACHE_WR_POLICY_WT;
-`endif
       // assign l0_cache_req_info[cb][j].hpd_req = l0_cache_req[cb][j];
       // assign l0_cache_coal_rsp_info[cb][j].hpd_rsp = l0_cache_rsp_coal[cb][j];
       
@@ -2089,177 +2080,184 @@ module cachepool_tile
   // logic           l0_cache_req_coal_ready [NumL0CacheCtrl];
   logic           [NumL0CacheCtrl-1:0] inv_fifo_full, coal_fifo_full, inv_fifo_empty, coal_fifo_empty;
   
-  for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_inv_cmo
-    assign l0_cache_req_valid_final[cb][0] = hpd_l0_cache_req_valid_coal[cb][0];
-    assign l0_cache_req_final[cb][0]    = l0_cache_req_coal[cb][0];
+  // for (genvar cb = 0; cb < NumL1CacheCtrl; cb++) begin : coherence_inv_cmo
+  //   assign l0_cache_req_valid_final[cb][0] = hpd_l0_cache_req_valid_coal[cb][0];
+  //   assign l0_cache_req_final[cb][0]    = l0_cache_req_coal[cb][0];
 
-    // assign hpd_l0_cache_req_ready_coal[cb][1] = l0_cache_req_coal_ready_buf[cb];
-    assign hpd_l0_cache_req_ready_coal[cb][0] = l0_cache_req_ready_final[cb][0];
+  //   // assign hpd_l0_cache_req_ready_coal[cb][1] = l0_cache_req_coal_ready_buf[cb];
+  //   assign hpd_l0_cache_req_ready_coal[cb][0] = l0_cache_req_ready_final[cb][0];
 
-    always_comb begin
-      l0_cache_req_inv_valid[cb][1] = '0;
-      // l0_cache_req_inv_valid[cb][1] = l0_cache_req_inv_valid_q[cb][1];
-      l0_cache_req_inv[cb][1] = '0;
-      // if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
-      if (l0_fwd_rx_valid[cb] && l0_fwd_rx[cb].fwd_msg_type == INV) begin
-        // l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
-        l0_cache_req_inv[cb][1].addr_offset = l0_fwd_rx[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
-        l0_cache_req_inv[cb][1].op = HPDCACHE_REQ_CMO_INVAL_NLINE;
-        // l0_cache_req_inv[cb][1].size = HPDCACHE_CMO_INVAL_NLINE;
-        l0_cache_req_inv[cb][1].sid = '0;
-        l0_cache_req_inv[cb][1].tid = '0;
-        l0_cache_req_inv[cb][1].need_rsp = 1'b0;
-        l0_cache_req_inv[cb][1].phys_indexed = 1'b1;
-        // l0_cache_req_inv[cb][1].addr_tag = l1_l0_fwd_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
-        l0_cache_req_inv[cb][1].addr_tag = l0_fwd_rx[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+  //   always_comb begin
+  //     l0_cache_req_inv_valid[cb][1] = '0;
+  //     // l0_cache_req_inv_valid[cb][1] = l0_cache_req_inv_valid_q[cb][1];
+  //     l0_cache_req_inv[cb][1] = '0;
+  //     // if (l1_l0_fwd_xbar_valid[cb] && l1_l0_fwd_xbar[cb].fwd_msg_type == INV) begin
+  //     if (l0_fwd_rx_valid[cb] && l0_fwd_rx[cb].fwd_msg_type == INV) begin
+  //       // l0_cache_req_inv[cb][1].addr_offset = l1_l0_fwd_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+  //       l0_cache_req_inv[cb][1].addr_offset = l0_fwd_rx[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+  //       l0_cache_req_inv[cb][1].op = HPDCACHE_REQ_CMO_INVAL_NLINE;
+  //       // l0_cache_req_inv[cb][1].size = HPDCACHE_CMO_INVAL_NLINE;
+  //       l0_cache_req_inv[cb][1].sid = '0;
+  //       l0_cache_req_inv[cb][1].tid = '0;
+  //       l0_cache_req_inv[cb][1].need_rsp = 1'b0;
+  //       l0_cache_req_inv[cb][1].phys_indexed = 1'b1;
+  //       // l0_cache_req_inv[cb][1].addr_tag = l1_l0_fwd_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+  //       l0_cache_req_inv[cb][1].addr_tag = l0_fwd_rx[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
 
-        l0_cache_req_inv_valid[cb][1] = 1'b1;
-      end
-    end
+  //       l0_cache_req_inv_valid[cb][1] = 1'b1;
+  //     end
+  //   end
 
-    // always_ff @(posedge clk_i or negedge rst_ni) begin
-    //   if (!rst_ni) begin
-    //     l0_cache_req_inv_valid_q[cb][1] <= 1'b0;
-    //   end else if (l0_cache_req_inv_valid[cb][1] && l0_cache_req_inv_ready[cb][1]) begin
-    //     l0_cache_req_inv_valid_q[cb][1] <= 1'b0;
-    //   end else begin
-    //     l0_cache_req_inv_valid_q[cb][1] <= l0_cache_req_inv_valid[cb][1];
-    //   end
-    // end
+  //   // always_ff @(posedge clk_i or negedge rst_ni) begin
+  //   //   if (!rst_ni) begin
+  //   //     l0_cache_req_inv_valid_q[cb][1] <= 1'b0;
+  //   //   end else if (l0_cache_req_inv_valid[cb][1] && l0_cache_req_inv_ready[cb][1]) begin
+  //   //     l0_cache_req_inv_valid_q[cb][1] <= 1'b0;
+  //   //   end else begin
+  //   //     l0_cache_req_inv_valid_q[cb][1] <= l0_cache_req_inv_valid[cb][1];
+  //   //   end
+  //   // end
 
-    // fifo_v3 #(
-    //   .FALL_THROUGH(1'b1),
-    //   .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
-    //   .DEPTH(8)
-    // ) i_l1_inv_fifo (
-    //   .clk_i      (clk_i),
-    //   .rst_ni     (rst_ni),
-    //   .flush_i    (1'b0),
-    //   .testmode_i (1'b0),
-    //   .full_o     (inv_fifo_full[cb]),
-    //   .empty_o    (inv_fifo_empty[cb]),
-    //   .usage_o    (),
-    //   .data_i     ({l0_cache_req_inv_valid[cb][1], l0_cache_req_inv[cb][1]}),
-    //   .push_i     (l0_cache_req_inv_valid[cb][1] && !inv_fifo_full[cb]),
-    //   .data_o     ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_inv_buf[cb]}),
-    //   .pop_i      (l0_cache_req_inv_ready_buf[cb] && !inv_fifo_empty[cb])
-    // );
+  //   // fifo_v3 #(
+  //   //   .FALL_THROUGH(1'b1),
+  //   //   .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
+  //   //   .DEPTH(8)
+  //   // ) i_l1_inv_fifo (
+  //   //   .clk_i      (clk_i),
+  //   //   .rst_ni     (rst_ni),
+  //   //   .flush_i    (1'b0),
+  //   //   .testmode_i (1'b0),
+  //   //   .full_o     (inv_fifo_full[cb]),
+  //   //   .empty_o    (inv_fifo_empty[cb]),
+  //   //   .usage_o    (),
+  //   //   .data_i     ({l0_cache_req_inv_valid[cb][1], l0_cache_req_inv[cb][1]}),
+  //   //   .push_i     (l0_cache_req_inv_valid[cb][1] && !inv_fifo_full[cb]),
+  //   //   .data_o     ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_inv_buf[cb]}),
+  //   //   .pop_i      (l0_cache_req_inv_ready_buf[cb] && !inv_fifo_empty[cb])
+  //   // );
 
-    spill_register #(
-      .T      (hpdcache_req_t ),
-      .Bypass (1'b0)
-    ) i_l1_inv_spill (
-      .clk_i   (clk_i),
-      .rst_ni  (rst_ni),
-      .valid_i (l0_cache_req_inv_valid[cb][1]),
-      .ready_o (l0_cache_req_inv_ready[cb][1]),
-      .data_i  (l0_cache_req_inv[cb][1]),
-      .valid_o (l0_cache_req_inv_valid_buf[cb]),
-      .ready_i (l0_cache_req_inv_ready_buf[cb]),
-      .data_o  (l0_cache_req_inv_buf[cb])
-    );
+  //   spill_register #(
+  //     .T      (hpdcache_req_t ),
+  //     .Bypass (1'b0)
+  //   ) i_l1_inv_spill (
+  //     .clk_i   (clk_i),
+  //     .rst_ni  (rst_ni),
+  //     .valid_i (l0_cache_req_inv_valid[cb][1]),
+  //     .ready_o (l0_cache_req_inv_ready[cb][1]),
+  //     .data_i  (l0_cache_req_inv[cb][1]),
+  //     .valid_o (l0_cache_req_inv_valid_buf[cb]),
+  //     .ready_i (l0_cache_req_inv_ready_buf[cb]),
+  //     .data_o  (l0_cache_req_inv_buf[cb])
+  //   );
 
-    // stream_fifo #(
-    //   .FALL_THROUGH(1'b1),
-    //   .DATA_WIDTH($bits(hpdcache_req_t)),
-    //   .DEPTH(8)
-    // ) i_l1_inv_fifo (
-    //   .clk_i      (clk_i),
-    //   .rst_ni     (rst_ni),
-    //   .flush_i    (1'b0),
-    //   .testmode_i (1'b0),
-    //   .usage_o    (),
-    //   .data_i     (l0_cache_req_inv[cb][1]),
-    //   .valid_i    (l0_cache_req_inv_valid[cb][1]),
-    //   .ready_o    (l0_cache_req_inv_ready[cb][1]),
-    //   .data_o     (l0_cache_req_inv_buf[cb]),
-    //   .valid_o    (l0_cache_req_inv_valid_buf[cb]),
-    //   .ready_i    (l0_cache_req_inv_ready_buf[cb])
-    // );
+  //   // stream_fifo #(
+  //   //   .FALL_THROUGH(1'b1),
+  //   //   .DATA_WIDTH($bits(hpdcache_req_t)),
+  //   //   .DEPTH(8)
+  //   // ) i_l1_inv_fifo (
+  //   //   .clk_i      (clk_i),
+  //   //   .rst_ni     (rst_ni),
+  //   //   .flush_i    (1'b0),
+  //   //   .testmode_i (1'b0),
+  //   //   .usage_o    (),
+  //   //   .data_i     (l0_cache_req_inv[cb][1]),
+  //   //   .valid_i    (l0_cache_req_inv_valid[cb][1]),
+  //   //   .ready_o    (l0_cache_req_inv_ready[cb][1]),
+  //   //   .data_o     (l0_cache_req_inv_buf[cb]),
+  //   //   .valid_o    (l0_cache_req_inv_valid_buf[cb]),
+  //   //   .ready_i    (l0_cache_req_inv_ready_buf[cb])
+  //   // );
 
-    // assign l0_cache_req_inv_buf[cb] = l0_cache_req_inv[cb][1];
-    // assign l0_cache_req_inv_valid_buf[cb] = l0_cache_req_inv_valid[cb][1];
+  //   // assign l0_cache_req_inv_buf[cb] = l0_cache_req_inv[cb][1];
+  //   // assign l0_cache_req_inv_valid_buf[cb] = l0_cache_req_inv_valid[cb][1];
 
-    // fifo_v3 #(
-    //   .FALL_THROUGH(1'b1),
-    //   .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
-    //   .DEPTH(8)
-    // ) i_l1_coal_fifo (
-    //   .clk_i      (clk_i),
-    //   .rst_ni     (rst_ni),
-    //   .flush_i    (1'b0),
-    //   .testmode_i (1'b0),
-    //   .full_o     (coal_fifo_full[cb]),
-    //   .empty_o    (coal_fifo_empty[cb]),
-    //   .usage_o    (),
-    //   .data_i     ({hpd_l0_cache_req_valid_coal[cb][1], l0_cache_req_coal[cb][1]}),
-    //   .push_i     (hpd_l0_cache_req_valid_coal[cb][1] && !coal_fifo_full[cb]),
-    //   .data_o     ({l0_cache_req_coal_valid_buf[cb], l0_cache_req_coal_buf[cb]}),
-    //   .pop_i      (l0_cache_req_coal_ready_buf[cb] && !coal_fifo_empty[cb])
-    // );
+  //   // fifo_v3 #(
+  //   //   .FALL_THROUGH(1'b1),
+  //   //   .DATA_WIDTH($bits(hpdcache_req_t)+1),  // +1 for valid bit
+  //   //   .DEPTH(8)
+  //   // ) i_l1_coal_fifo (
+  //   //   .clk_i      (clk_i),
+  //   //   .rst_ni     (rst_ni),
+  //   //   .flush_i    (1'b0),
+  //   //   .testmode_i (1'b0),
+  //   //   .full_o     (coal_fifo_full[cb]),
+  //   //   .empty_o    (coal_fifo_empty[cb]),
+  //   //   .usage_o    (),
+  //   //   .data_i     ({hpd_l0_cache_req_valid_coal[cb][1], l0_cache_req_coal[cb][1]}),
+  //   //   .push_i     (hpd_l0_cache_req_valid_coal[cb][1] && !coal_fifo_full[cb]),
+  //   //   .data_o     ({l0_cache_req_coal_valid_buf[cb], l0_cache_req_coal_buf[cb]}),
+  //   //   .pop_i      (l0_cache_req_coal_ready_buf[cb] && !coal_fifo_empty[cb])
+  //   // );
 
-    // spill_register #(
-    //   .T      (hpdcache_req_t ),
-    //   .Bypass (1'b0)
-    // ) i_l1_coal_spill (
-    //   .clk_i   (clk_i),
-    //   .rst_ni  (rst_ni),
-    //   .valid_i (hpd_l0_cache_req_valid_coal[cb][1]),
-    //   .ready_o (hpd_l0_cache_req_ready_coal[cb][1]),
-    //   .data_i  (l0_cache_req_coal[cb][1]),
-    //   .valid_o (l0_cache_req_coal_valid_buf[cb]),
-    //   .ready_i (l0_cache_req_coal_ready_buf[cb]),
-    //   .data_o  (l0_cache_req_coal_buf[cb])
-    // );
+  //   // spill_register #(
+  //   //   .T      (hpdcache_req_t ),
+  //   //   .Bypass (1'b0)
+  //   // ) i_l1_coal_spill (
+  //   //   .clk_i   (clk_i),
+  //   //   .rst_ni  (rst_ni),
+  //   //   .valid_i (hpd_l0_cache_req_valid_coal[cb][1]),
+  //   //   .ready_o (hpd_l0_cache_req_ready_coal[cb][1]),
+  //   //   .data_i  (l0_cache_req_coal[cb][1]),
+  //   //   .valid_o (l0_cache_req_coal_valid_buf[cb]),
+  //   //   .ready_i (l0_cache_req_coal_ready_buf[cb]),
+  //   //   .data_o  (l0_cache_req_coal_buf[cb])
+  //   // );
 
-    stream_fifo #(
-      .FALL_THROUGH(1'b1),
-      .DATA_WIDTH($bits(hpdcache_req_t)),
-      .DEPTH(8)
-    ) i_l1_coal_fifo (
-      .clk_i      (clk_i),
-      .rst_ni     (rst_ni),
-      .flush_i    (1'b0),
-      .testmode_i (1'b0),
-      .usage_o    (),
-      .data_i     (l0_cache_req_coal[cb][1]),
-      .valid_i    (hpd_l0_cache_req_valid_coal[cb][1]),
-      .ready_o    (hpd_l0_cache_req_ready_coal[cb][1]),
-      .data_o     (l0_cache_req_coal_buf[cb]),
-      .valid_o    (l0_cache_req_coal_valid_buf[cb]),
-      .ready_i    (l0_cache_req_coal_ready_buf[cb])
-    );
+  //   stream_fifo #(
+  //     .FALL_THROUGH(1'b1),
+  //     .DATA_WIDTH($bits(hpdcache_req_t)),
+  //     .DEPTH(8)
+  //   ) i_l1_coal_fifo (
+  //     .clk_i      (clk_i),
+  //     .rst_ni     (rst_ni),
+  //     .flush_i    (1'b0),
+  //     .testmode_i (1'b0),
+  //     .usage_o    (),
+  //     .data_i     (l0_cache_req_coal[cb][1]),
+  //     .valid_i    (hpd_l0_cache_req_valid_coal[cb][1]),
+  //     .ready_o    (hpd_l0_cache_req_ready_coal[cb][1]),
+  //     .data_o     (l0_cache_req_coal_buf[cb]),
+  //     .valid_o    (l0_cache_req_coal_valid_buf[cb]),
+  //     .ready_i    (l0_cache_req_coal_ready_buf[cb])
+  //   );
 
-    rr_arb_tree #(
-      .NumIn     (2),
-      .DataType  (hpdcache_req_t),
-      .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
-    ) i_l0_req_inv_arb (
-      .clk_i   (clk_i),
-      .rst_ni  (rst_ni),
-      .flush_i (1'b0),
-      .rr_i    (1'b1),
-      // .req_i   ({(l0_cache_req_inv_valid_buf[cb] && !inv_fifo_empty[cb]), (l0_cache_req_coal_valid_buf[cb] && !coal_fifo_empty[cb])}),  // valid_i
-      .req_i   ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_coal_valid_buf[cb]}),  // valid_i
-      .gnt_o   ({l0_cache_req_inv_ready_buf[cb], l0_cache_req_coal_ready_buf[cb]}),  // ready_o
-      .data_i  ({l0_cache_req_inv_buf[cb], l0_cache_req_coal_buf[cb]}),
-      .req_o   (l0_cache_req_valid_final[cb][1]),                 // valid_o
-      .gnt_i   (l0_cache_req_ready_final[cb][1]),     // ready_i; old: cache_req_ready[cb]
-      .data_o  (l0_cache_req_final[cb][1]),
-      .idx_o   ()
-    );
-  end
+  //   rr_arb_tree #(
+  //     .NumIn     (2),
+  //     .DataType  (hpdcache_req_t),
+  //     .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
+  //   ) i_l0_req_inv_arb (
+  //     .clk_i   (clk_i),
+  //     .rst_ni  (rst_ni),
+  //     .flush_i (1'b0),
+  //     .rr_i    (1'b1),
+  //     // .req_i   ({(l0_cache_req_inv_valid_buf[cb] && !inv_fifo_empty[cb]), (l0_cache_req_coal_valid_buf[cb] && !coal_fifo_empty[cb])}),  // valid_i
+  //     .req_i   ({l0_cache_req_inv_valid_buf[cb], l0_cache_req_coal_valid_buf[cb]}),  // valid_i
+  //     .gnt_o   ({l0_cache_req_inv_ready_buf[cb], l0_cache_req_coal_ready_buf[cb]}),  // ready_o
+  //     .data_i  ({l0_cache_req_inv_buf[cb], l0_cache_req_coal_buf[cb]}),
+  //     .req_o   (l0_cache_req_valid_final[cb][1]),                 // valid_o
+  //     .gnt_i   (l0_cache_req_ready_final[cb][1]),     // ready_i; old: cache_req_ready[cb]
+  //     .data_o  (l0_cache_req_final[cb][1]),
+  //     .idx_o   ()
+  //   );
+  // end
 
+
+  // logic [NumL0CacheCtrl-1:0][32-1:0]  read_req_cnt_d, write_req_cnt_d, read_miss_cnt_d, write_miss_cnt_d;
+  // logic [NumL0CacheCtrl-1:0][32-1:0]  read_req_cnt_q, write_req_cnt_q, read_miss_cnt_q, write_miss_cnt_q;
+  // logic [NumL0CacheCtrl-1:0][32-1:0]  stall_cnt_d, stall_cnt_q; 
+  // logic [NumL0CacheCtrl-1:0]          read_evt, write_evt, read_miss_evt, write_miss_evt, stall_evt;
   // Connecting cache_req (after unmerge before xbar to L0 D$)
   for (genvar i = 0; i < NumL0CacheCtrl; i++) begin: gen_l0_cache
-    hpdcache_pma_t dummy_pma [HPDCACHE_NREQUESTERS]; // PMA is don't care for non-VIPT, to bypass lint check
-    for (genvar j = 0; j < HPDCACHE_NREQUESTERS; j++) begin
-      assign dummy_pma[j].uncacheable = 1'b0;
-      assign dummy_pma[j].io = 1'b0;
-      assign dummy_pma[j].wr_policy_hint = HPDCACHE_WR_POLICY_WT;
-    end
+    // hpdcache_pma_t dummy_pma [HPDCACHE_NREQUESTERS]; // PMA is don't care for non-VIPT, to bypass lint check
+    // for (genvar j = 0; j < HPDCACHE_NREQUESTERS; j++) begin
+    //   assign dummy_pma[j].uncacheable = 1'b0;
+    //   assign dummy_pma[j].io = 1'b0;
+    //   assign dummy_pma[j].wr_policy_hint = HPDCACHE_WR_POLICY_WT;
+    // end
 
-    hpdcache  #(
+    cachepool_l1_ctrl  #(
+      .tcdm_addr_t          (addr_t),
+      
       .HPDcacheCfg          (HPDcacheCfg),
       .wbuf_timecnt_t       (hpdcache_wbuf_timecnt_t),
       .hpdcache_tag_t       (hpdcache_tag_t),
@@ -2287,7 +2285,7 @@ module cachepool_tile
       // .hpdcache_coherence_req_t (hpdcache_coherence_req_t),
       // .hpdcache_coherence_evict_t (hpdcache_coherence_evict_t)
       .coherence_evict_t    (coherence_evict_t)
-    ) i_l0_cache (
+    ) i_l1_cache (
       .clk_i                              (clk_i),
       .rst_ni                             (rst_ni),
       .wbuf_flush_i                       (1'b0),
@@ -2300,15 +2298,15 @@ module cachepool_tile
       // .core_req_pma_i                     (/* unused */),
       // .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal_spill[i]),
       // .core_rsp_o                         (l0_cache_rsp_coal_spill[i]),
-      // .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
-      // .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
-      // .core_req_i                         (l0_cache_req_coal[i]),
-      .core_req_valid_i                   (l0_cache_req_valid_final[i]),
-      .core_req_ready_o                   (l0_cache_req_ready_final[i]),
-      .core_req_i                         (l0_cache_req_final[i]),
+      .core_req_valid_i                   (hpd_l0_cache_req_valid_coal[i]),
+      .core_req_ready_o                   (hpd_l0_cache_req_ready_coal[i]),
+      .core_req_i                         (l0_cache_req_coal[i]),
+      // .core_req_valid_i                   (l0_cache_req_valid_final[i]),
+      // .core_req_ready_o                   (l0_cache_req_ready_final[i]),
+      // .core_req_i                         (l0_cache_req_final[i]),
       .core_req_abort_i                   ('{default: 1'b0}),
       .core_req_tag_i                     ('{default: 1'b0}),
-      .core_req_pma_i                     (dummy_pma),
+      // .core_req_pma_i                     (dummy_pma),
       .core_rsp_valid_o                   (hpd_l0_cache_rsp_valid_coal[i]),
       .core_rsp_o                         (l0_cache_rsp_coal[i]),
 
@@ -2347,17 +2345,17 @@ module cachepool_tile
       .mem_resp_write_valid_i             (l0_mem_resp_write_valid[i]),
       .mem_resp_write_i                   (l0_mem_resp_write[i]),
 
-      .evt_cache_write_miss_o             (/* unused */),
-      .evt_cache_read_miss_o              (/* unused */),
+      .evt_cache_write_miss_o             (),
+      .evt_cache_read_miss_o              (),
       .evt_uncached_req_o                 (/* unused */),
       .evt_cmo_req_o                      (/* unused */),
-      .evt_write_req_o                    (/* unused */),
-      .evt_read_req_o                     (/* unused */),
+      .evt_write_req_o                    (),
+      .evt_read_req_o                     (),
       .evt_prefetch_req_o                 (/* unused */),
       .evt_req_on_hold_o                  (/* unused */),
       .evt_rtab_rollback_o                (/* unused */),
       .evt_stall_refill_o                 (/* unused */),
-      .evt_stall_o                        (/* unused */),
+      .evt_stall_o                        (),
 
       .wbuf_empty_o                       (/* unused */),
 
@@ -2369,13 +2367,24 @@ module cachepool_tile
       .cfg_prefetch_updt_plru_i           (1'b0),
       .cfg_error_on_cacheable_amo_i       (1'b0),
       .cfg_rtab_single_entry_i            (1'b0),
-`ifdef TEMP_WB
-      .cfg_default_wb_i                   (1'b1)
-`else
       .cfg_default_wb_i                   (1'b0)
-`endif
     );
+
+    // assign read_req_cnt_d[i] = read_evt[i] ? read_req_cnt_q[i] + 1 : read_req_cnt_q[i];
+    // assign write_req_cnt_d[i] = write_evt[i] ? write_req_cnt_q[i] + 1 : write_req_cnt_q[i];
+    // assign read_miss_cnt_d[i] = read_miss_evt[i] ? read_miss_cnt_q[i] + 1 : read_miss_cnt_q[i];
+    // assign write_miss_cnt_d[i] = write_miss_evt[i] ? write_miss_cnt_q[i] + 1 : write_miss_cnt_q[i];
+
+    // `FF(read_req_cnt_q[i], read_req_cnt_d[i], 32'h0, clk_i, rst_ni)
+    // `FF(write_req_cnt_q[i], write_req_cnt_d[i], 32'h0, clk_i, rst_ni)
+    // `FF(read_miss_cnt_q[i], read_miss_cnt_d[i], 32'h0, clk_i, rst_ni)
+    // `FF(write_miss_cnt_q[i], write_miss_cnt_d[i], 32'h0, clk_i, rst_ni)
+
+    // assign stall_cnt_d[i] = stall_evt[i] ? stall_cnt_q[i] + 1 : stall_cnt_q[i];
+    // `FF(stall_cnt_q[i], stall_cnt_d[i], clk_i, rst_ni)
   end
+
+
 
   //////////////////////////////
   // End HPDcache integration //

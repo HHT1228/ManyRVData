@@ -513,7 +513,8 @@ module cachepool_l2_wrapper
   // assign cache_meta_be = is_cache_meta ? {{CoherenceMetaBytes{1'b0}}, {SRAMBeWidth-CoherenceMetaBytes {1'b1}}} : {SRAMBeWidth{1'b1}};
 
   for (genvar j = 0; j < NumTagBankPerCtrl; j++) begin
-    assign meta_bank_be[j] = is_cache_meta[j] ? {{CoherenceMetaBytes{1'b0}}, {SRAMBeWidth-CoherenceMetaBytes {1'b1}}} : {SRAMBeWidth{1'b1}};
+    // assign meta_bank_be[j] = is_cache_meta[j] ? {{CoherenceMetaBytes{1'b0}}, {SRAMBeWidth-CoherenceMetaBytes {1'b1}}} : {SRAMBeWidth{1'b1}};
+    assign meta_bank_be[j] = l1_cache_tag_bank_gnt[j] ? {{CoherenceMetaBytes{1'b0}}, {SRAMBeWidth-CoherenceMetaBytes {1'b1}}} : {SRAMBeWidth{1'b1}};
 
     tc_sram_impl #(
       .NumWords  (L1CacheWayEntry/BankFactor),

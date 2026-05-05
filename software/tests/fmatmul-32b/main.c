@@ -190,6 +190,7 @@ int main() {
     long unsigned int performance =
         1000 * 2 * gemm_l.M * gemm_l.N * gemm_l.K / timer;
     long unsigned int utilization = performance / (2 * num_cores * 4);
+    // 4: spatz, 2: spatz capable of 1 mac per cycle
 
     long unsigned int performance_iter1 =
         1000 * 2 * gemm_l.M * gemm_l.N * gemm_l.K / timer_iter1;

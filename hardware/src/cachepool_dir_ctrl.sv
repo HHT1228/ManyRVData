@@ -269,6 +269,30 @@ module cahcepool_dir_ctrl
   
   // `FF(upstream_req_addr_q, upstream_req_addr_i, '0, clk_i, rst_ni)
 
+  // Operation classes
+  typedef enum logic [3:0] {
+    OP_NONE               = 4'd0,
+    OP_READ               = 4'd1, // GetS from requester
+    OP_WRITE              = 4'd2, // GetE/Upgrade from requester
+    OP_GETACK             = 4'd3, // Owner reply with latest data (after probe)
+    OP_EVICT_S            = 4'd4, // PutS from evictor
+    OP_EVICT_M_OWNER      = 4'd5, // PutM from current owner
+    OP_EVICT_M_NONOWNER   = 4'd6, // PutM from non-owner (illegal but Ack)
+    OP_EVICT_E_OWNER      = 4'd7, // PutE from owner
+    OP_EVICT_E_NONOWNER   = 4'd8  // PutE from non-owner (illegal but Ack)
+  } dir_op_t;
+
+  // ---- Inputs this FSM needs
+  dir_op_t                       op, op_q;
+  logic [$clog2(NumCores)-1:0]   req_sid;       // requester core id (for READ/WRITE)
+  logic [$clog2(NumCores)-1:0]   evict_sid;     // evictor core id (for EVICT)
+  reqid_t                        req_tid;       // request transaction id
+  // logic [$clog2(NumCores)-1:0]   evict_id;    // evictor id (for Put*/Evict*)
+
+  // assign op_d = op_decoded ? op : op_q;
+  // `FF(op_q, op_d, OP_NONE, clk_i, rst_ni)
+  `FF(op_q, op, OP_NONE, clk_i, rst_ni)
+
   assign tag_bank_gnt = |(dir_tag_bank_gnt_i);
   `FF(tag_bank_gnt_q, tag_bank_gnt, 1'b0, clk_i, rst_ni)
   assign tag_bank_rdata_valid = tag_bank_gnt_q && !(|(tag_bank_write_req_q));
@@ -510,40 +534,52 @@ module cahcepool_dir_ctrl
       end else if (op_decoded) begin
         busy_d = 1'b1;
       end
-    end else if ((upstream_req_valid_i || fwd_rx_valid_i || upstream_req_evict_i.valid) && !upstream_req_fake_read_i) begin
+    end else if (((upstream_req_valid_i && upstream_req_ready_o) || 
+                  (fwd_rx_valid_i && fwd_rx_ready_o) || 
+                  (upstream_req_evict_i.valid && upstream_req_evict_ready_o)) && 
+                  !upstream_req_fake_read_i) begin
       busy_d = 1'b1;
-    end
+    end 
+    // else if (op != OP_NONE) begin
+    //   busy_d = 1'b1;
+    // end
   end
 
-  // always_comb begin
-  //   rw_busy_d = rw_busy_q;
-  //   if (upstream_req_valid_i && upstream_req_ready_o) begin
-  //     rw_busy_d = 1'b1;
-  //   end
-  // end
+    // always_comb begin
+    //   rw_busy_d = rw_busy_q;
+    //   if (upstream_req_valid_i && upstream_req_ready_o) begin
+    //     rw_busy_d = 1'b1;
+    //   end
+    // end
 
-  // always_ff @(posedge clk_i or negedge rst_ni) begin
-  //   if (!rst_ni) begin
-  //     rw_busy_q <= 1'b0;
-  //   end else if (rw_busy_d && tag_bank_write_complete) begin
-  //     rw_busy_q <= 1'b0;
-  //   end else begin
-  //     rw_busy_q <= rw_busy_d;
-  //   end
-  // end
+    // always_ff @(posedge clk_i or negedge rst_ni) begin
+    //   if (!rst_ni) begin
+    //     rw_busy_q <= 1'b0;
+    //   end else if (rw_busy_d && tag_bank_write_complete) begin
+    //     rw_busy_q <= 1'b0;
+    //   end else begin
+    //     rw_busy_q <= rw_busy_d;
+    //   end
+    // end
 
-  // assign rw_busy = rw_busy_q;
+    // assign rw_busy = rw_busy_q;
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       busy_q <= 1'b0;
     // end else if (downstream_req_valid_o || fwd_tx_valid_o || tag_bank_write_req) begin
+    end else if (free_coherence_q) begin
+      busy_q <= 1'b0;
+    // || (downstream_req_valid_o && downstream_req_ready_i && !pop_pending_esa && !send_fake_read)
     end else if ((upstream_resp_valid_o && !fake_read_in_progress_q) || 
-                 (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt) || 
-                 free_coherence_q) begin
+                 (coherence_rsp_valid_o && !coherence_rsp_o.is_inv_ack_cnt)
+                 ) begin
       busy_q <= 1'b0;
 
       if (upstream_req_valid_i && upstream_req_ready_o) begin
+        busy_q <= busy_d;
+      end
+      if (tag_bank_gnt) begin
         busy_q <= busy_d;
       end
     end else begin
@@ -601,7 +637,7 @@ module cahcepool_dir_ctrl
     req_read    = 1'b0;
     evict_read  = 1'b0;
 
-    if (!busy) begin
+    // if (!busy) begin
       // if (downstream_resp_valid_i) begin
       //   tag_bank_rvalid_d = 1'b1;
       //   tag_bank_addr_d   = downstream_req_addr_q[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
@@ -620,7 +656,7 @@ module cahcepool_dir_ctrl
         tag_bank_addr_d   = upstream_req_evict_i.addr[$clog2(CacheBankDepth) + $clog2(CacheLineWidth/8)-1 : $clog2(CacheLineWidth/8)];
         evict_read        = 1'b1;
       end
-    end
+    // end
   end
 
   // TODO: dangrous, non-fix latency
@@ -886,31 +922,6 @@ module cahcepool_dir_ctrl
   // assign fwd_msg_type = fwd_rx_i.fwd_msg_type;
   assign fwd_msg_type = fwd_rx_d.fwd_msg_type;
 
-  // TODO: integrate with request/response interface
-  // Operation classes
-  typedef enum logic [3:0] {
-    OP_NONE               = 4'd0,
-    OP_READ               = 4'd1, // GetS from requester
-    OP_WRITE              = 4'd2, // GetE/Upgrade from requester
-    OP_GETACK             = 4'd3, // Owner reply with latest data (after probe)
-    OP_EVICT_S            = 4'd4, // PutS from evictor
-    OP_EVICT_M_OWNER      = 4'd5, // PutM from current owner
-    OP_EVICT_M_NONOWNER   = 4'd6, // PutM from non-owner (illegal but Ack)
-    OP_EVICT_E_OWNER      = 4'd7, // PutE from owner
-    OP_EVICT_E_NONOWNER   = 4'd8  // PutE from non-owner (illegal but Ack)
-  } dir_op_t;
-
-  // ---- Inputs this FSM needs
-  dir_op_t                       op, op_q;
-  logic [$clog2(NumCores)-1:0]   req_sid;       // requester core id (for READ/WRITE)
-  logic [$clog2(NumCores)-1:0]   evict_sid;     // evictor core id (for EVICT)
-  reqid_t                        req_tid;       // request transaction id
-  // logic [$clog2(NumCores)-1:0]   evict_id;    // evictor id (for Put*/Evict*)
-
-  // assign op_d = op_decoded ? op : op_q;
-  // `FF(op_q, op_d, OP_NONE, clk_i, rst_ni)
-  `FF(op_q, op, OP_NONE, clk_i, rst_ni)
-
   // ---- Per-line state
   dir_line_state_t  state_q, state_d;
   sharer_list_t     sharers_q, sharers_d;
@@ -967,7 +978,8 @@ module cahcepool_dir_ctrl
     // if(upstream_req_valid_i) begin
     //   if (upstream_req_is_evict_i) begin
     // if(upstream_req_valid_q && busy && !upstream_req_fake_read_q) begin
-    if (upstream_req_evict_d.valid && |(tag_bank_rdata_valid) && evict_busy) begin
+    // if (upstream_req_evict_d.valid && |(tag_bank_rdata_valid) && evict_busy) begin
+    if ((evict_read_q || evict_busy) && |(tag_bank_rdata_valid)) begin // FIXME
       // req_sid = upstream_req_evict_d.core_id;
       case (curr_line_state)
         DIR_LINE_INVALID: begin
@@ -1021,7 +1033,8 @@ module cahcepool_dir_ctrl
       end
     // end else if (fwd_rx_valid_i) begin
     // end else if (fwd_rx_valid_d && |(tag_bank_rdata_valid)) begin
-    end else if (fwd_read_q && |(tag_bank_rdata_valid)) begin
+    // end else if (fwd_read_q && |(tag_bank_rdata_valid)) begin
+    end else if ((fwd_busy || fwd_read_q) && |(tag_bank_rdata_valid)) begin
       case (fwd_msg_type)
         GET_ACK: begin
         // 2'b11: begin

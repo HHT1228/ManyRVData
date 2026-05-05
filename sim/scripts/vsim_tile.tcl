@@ -77,44 +77,44 @@ for {set c 0} {$c < 4} {incr c} {
 for {set c 0} {$c < 4} {incr c} {
 	onerror {resume}
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group miss_handler	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_miss_handler_i/*
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mshr	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_miss_handler_i/hpdcache_mshr_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group miss_handler	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_miss_handler_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mshr	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_miss_handler_i/hpdcache_mshr_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group cmo	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_cmo_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group cmo	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_cmo_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group ctrl_pe	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_ctrl_pe_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group ctrl_pe	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_ctrl_pe_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_memctrl_i/*
 
 	for {set b 0} {$b < 4} {incr b} {
-		add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group coh_bank[$b]	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/gen_dir_sram[$b]/coherence_sram/*
+		add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group coh_bank[$b]	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_memctrl_i/gen_dir_sram[$b]/coherence_sram/*
 	}
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group victim_sel	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/victim_sel_i/gen_plru_victim_sel/victim_plru_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group victim_sel	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_memctrl_i/victim_sel_i/gen_plru_victim_sel/victim_plru_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group coh_victim_sel	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_coherence_victim_sel/gen_plru_victim_sel/victim_plru_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group coh_victim_sel	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_coherence_victim_sel/gen_plru_victim_sel/victim_plru_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group rtab	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_rtab_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group rtab	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_rtab_i/*
 
-	# add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group dir_access_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_access_arb/*
+	# add wave -noupdate -group tile[$1] -group l0_cache[$c] -group mem_ctrl -group dir_access_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_access_arb/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group req_arbiter	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_arbiter_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group req_arbiter	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/core_req_arbiter_i/*
 
-	# add wave -noupdate -group tile[$1] -group l0_cache[$c] -group dir_access_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_access_arb/*
+	# add wave -noupdate -group tile[$1] -group l0_cache[$c] -group dir_access_arb	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/hpdcache_ctrl_i/hpdcache_memctrl_i/i_dir_access_arb/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group wbuf	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/gen_wbuf/hpdcache_wbuf_i/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group wbuf	/tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/gen_wbuf/hpdcache_wbuf_i/*
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_i
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/core_req_i
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_req_ready_o
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/core_req_ready_o
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_rsp_valid_o
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/core_rsp_valid_o
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/core_rsp_o
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/core_rsp_o
 
-	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l0_cache/*
+	add wave -noupdate -group tile[$1] -group l0_cache[$c] -group Internal   /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/gen_l0_cache[$c]/i_l1_cache/i_l1_hpdcache/*
 
 }
 

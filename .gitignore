@@ -34,6 +34,7 @@ util/lint/sg_projects
 util/lint/tmp
 sim.sh
 scratchpad.txt
+critical_path.txt
 hardware/src/deprecated
 hardware/tb/deprecated
 hardware/src/backup
