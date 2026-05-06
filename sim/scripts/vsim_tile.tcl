@@ -143,13 +143,13 @@ for {set c 0} {$c < 4} {incr c} {
 }
 # add wave -noupdate -group tile[$1] -group coherence_xbar -rsp_stream_xbar /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/i_coherence_interco/i_coherence_xbar/i_cache_xbar/i_rsp_xbar/*
 
-for {set c 0} {$c < 4} {incr c} {
-	onerror {resume}
+# for {set c 0} {$c < 4} {incr c} {
+# 	onerror {resume}
 
-	# add wave -noupdate -group tile[$1] -group inv_cmo -group l1_inv_fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l1_inv_fifo/*
-	add wave -noupdate -group tile[$1] -group inv_cmo -group l1_coal_fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l1_coal_fifo/*
-	add wave -noupdate -group tile[$1] -group inv_cmo -group l0_req_inv_arb[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l0_req_inv_arb/*
-}
+# 	# add wave -noupdate -group tile[$1] -group inv_cmo -group l1_inv_fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l1_inv_fifo/*
+# 	add wave -noupdate -group tile[$1] -group inv_cmo -group l1_coal_fifo[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l1_coal_fifo/*
+# 	add wave -noupdate -group tile[$1] -group inv_cmo -group l0_req_inv_arb[$c] /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/coherence_inv_cmo[$c]/i_l0_req_inv_arb/*
+# }
 
 # Add waves for remaining signals
 add wave -noupdate -group tile[$1] -group Internal /tb_cachepool/i_cluster_wrapper/i_cluster/gen_tiles[$1]/i_tile/*

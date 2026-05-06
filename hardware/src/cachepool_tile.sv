@@ -1569,7 +1569,7 @@ module cachepool_tile
   cacheline_data_t      [NumL1CacheCtrl-1:0] l0_l1_req_data;
   cacheline_strb_t      [NumL1CacheCtrl-1:0] l0_l1_req_wstrb;
 
-  tcdm_req_cacheline_t  [NumL1CacheCtrl-1:0] l0_l1_req_tcdm, l0_l1_tcdm_xbar_req;
+  tcdm_req_cacheline_t  [NumL1CacheCtrl-1:0] l0_l1_req_tcdm, l0_l1_req_tcdm_unique, l0_l1_tcdm_xbar_req;
   tcdm_rsp_cacheline_t  [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm, l1_l0_tcdm_xbar_rsp;
   logic                 [NumL1CacheCtrl-1:0] l1_l0_rsp_xbar_ready;
   logic                 [NumL1CacheCtrl-1:0] l1_l0_rsp_tcdm_ready;
@@ -1581,142 +1581,171 @@ module cachepool_tile
   logic                 [NumL1CacheCtrl-1:0] l0_l1_fake_read;
 
   /* RR arbiter to select between R/W channel of HPDcache */
-  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: gen_l0_l1_req_arbiter
-    // Combine R/W channel requests
-    assign l0_mem_req_combined[cb][0] = l0_mem_req_read[cb];
-    assign l0_mem_req_combined[cb][1] = l0_mem_req_write[cb];
-    // Combine upstream handshake signals
-    assign l0_mem_req_valid_combined[cb][0] = l0_mem_req_read_valid[cb];
-    // assign l0_mem_req_valid_combined[cb][1] = l0_mem_req_write_valid[cb];
-    assign l0_mem_req_valid_combined[cb][1] = l0_mem_req_write_valid[cb] & l0_mem_req_write_data_valid[cb];
+  // for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: gen_l0_l1_req_arbiter
+  //   // Combine R/W channel requests
+  //   assign l0_mem_req_combined[cb][0] = l0_mem_req_read[cb];
+  //   assign l0_mem_req_combined[cb][1] = l0_mem_req_write[cb];
+  //   // Combine upstream handshake signals
+  //   assign l0_mem_req_valid_combined[cb][0] = l0_mem_req_read_valid[cb];
+  //   // assign l0_mem_req_valid_combined[cb][1] = l0_mem_req_write_valid[cb];
+  //   assign l0_mem_req_valid_combined[cb][1] = l0_mem_req_write_valid[cb] & l0_mem_req_write_data_valid[cb];
 
-    rr_arb_tree #(
-      .NumIn     (NrL0L1ArbiterInputs),
-      .DataType  (hpdcache_mem_req_t),
-      .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
-    ) i_l0_l1_rr_arb (
-      .clk_i   (clk_i),
-      .rst_ni  (rst_ni),
-      .flush_i (1'b0),
-      .rr_i    (1'b1),
-      .req_i   (l0_mem_req_valid_combined[cb]),  // valid_i
-      .gnt_o   (l0_mem_req_ready_combined[cb]),  // ready_o
-      .data_i  (l0_mem_req_combined[cb]),
-      .req_o   (l0_l1_req_valid[cb]),            // valid_o
-      .gnt_i   (1'b1),                           // ready_i; old: cache_req_ready[cb]
-      .data_o  (l0_l1_req[cb]),
-      .idx_o   (arb_out_id[cb])
-    );
-    // TODO: how to handle separate req and data channels for write? Use a large type? separate handshake (valid?)
-    // core_req_ready_o can go directly into hpdcache (to 2 ports), but what about data_valid?
-    // Idea: send data into core_req_wdata_i when data_valid is asserted by HPDcache
-    // assign l0_l1_req_wdata[cb] = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
+  //   rr_arb_tree #(
+  //     .NumIn     (NrL0L1ArbiterInputs),
+  //     .DataType  (hpdcache_mem_req_t),
+  //     .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
+  //   ) i_l0_l1_rr_arb (
+  //     .clk_i   (clk_i),
+  //     .rst_ni  (rst_ni),
+  //     .flush_i (1'b0),
+  //     .rr_i    (1'b1),
+  //     .req_i   (l0_mem_req_valid_combined[cb]),  // valid_i
+  //     .gnt_o   (l0_mem_req_ready_combined[cb]),  // ready_o
+  //     .data_i  (l0_mem_req_combined[cb]),
+  //     .req_o   (l0_l1_req_valid[cb]),            // valid_o
+  //     .gnt_i   (1'b1),                           // ready_i; old: cache_req_ready[cb]
+  //     .data_o  (l0_l1_req[cb]),
+  //     .idx_o   (arb_out_id[cb])
+  //   );
+  //   // TODO: how to handle separate req and data channels for write? Use a large type? separate handshake (valid?)
+  //   // core_req_ready_o can go directly into hpdcache (to 2 ports), but what about data_valid?
+  //   // Idea: send data into core_req_wdata_i when data_valid is asserted by HPDcache
+  //   // assign l0_l1_req_wdata[cb] = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
 
-    // // Translate HPD requests to L1 requests
-    // assign l0_l1_req_addr[cb] = l0_l1_req[cb].mem_req_addr;
-    assign l0_l1_req_meta_int[cb].is_amo = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_ATOMIC);
-    assign l0_l1_req_meta_int[cb].req_id  = l0_l1_req[cb].mem_req_id[ReqIdWidth-1:0] + cb; // make req_id unique across cores
-    // assign l0_l1_req_meta_int[cb].core_id = l0_l1_req[cb].mem_req_id[tidWidth-2:ReqIdWidth+1];
-    assign l0_l1_req_meta_int[cb].core_id = cb;  // manually tag core_id
-    assign l0_l1_req_meta_int[cb].is_fpu  = l0_l1_req[cb].mem_req_id[tidWidth-1]; // FIXME: doesn't sound rights
-    assign l0_l1_req_meta_int[cb].data_exclusive = '0;      // req does not carry this info, groudned
-    assign l0_l1_req_meta_int[cb].lost_bits = l0_l1_req[cb].mem_req_addr[dynamic_offset+$clog2(NumL0CacheCtrl)-1-:$clog2(NumL0CacheCtrl)];
-    // assign l0_l1_req_meta_int[cb].lost_bits = '0;
-    // assign l0_l1_req_write[cb] = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
-    // assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
+  //   // // Translate HPD requests to L1 requests
+  //   // assign l0_l1_req_addr[cb] = l0_l1_req[cb].mem_req_addr;
+  //   assign l0_l1_req_meta_int[cb].is_amo = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_ATOMIC);
+  //   assign l0_l1_req_meta_int[cb].req_id  = l0_l1_req[cb].mem_req_id[ReqIdWidth-1:0] + cb; // make req_id unique across cores
+  //   // assign l0_l1_req_meta_int[cb].core_id = l0_l1_req[cb].mem_req_id[tidWidth-2:ReqIdWidth+1];
+  //   assign l0_l1_req_meta_int[cb].core_id = cb;  // manually tag core_id
+  //   assign l0_l1_req_meta_int[cb].is_fpu  = l0_l1_req[cb].mem_req_id[tidWidth-1]; // FIXME: doesn't sound rights
+  //   assign l0_l1_req_meta_int[cb].data_exclusive = '0;      // req does not carry this info, groudned
+  //   assign l0_l1_req_meta_int[cb].lost_bits = l0_l1_req[cb].mem_req_addr[dynamic_offset+$clog2(NumL0CacheCtrl)-1-:$clog2(NumL0CacheCtrl)];
+  //   // assign l0_l1_req_meta_int[cb].lost_bits = '0;
+  //   // assign l0_l1_req_write[cb] = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
+  //   // assign l0_l1_req_data[cb]  = l0_l1_req_wdata[cb].mem_req_w_data;
 
-    // Connect upstream ready (gnt_o) to L0
-    assign l0_mem_req_read_ready  [cb] = l0_mem_req_ready_combined[cb][0];
-    // assign l0_mem_req_write_ready [cb] = l0_mem_req_ready_combined[cb][1];
-    assign l0_mem_req_write_ready [cb] = l0_mem_req_ready_combined[cb][1] & (l0_mem_req_write_valid[cb] & l0_mem_req_write_data_valid[cb]);
-    assign l0_mem_req_write_data_ready[cb] = l0_mem_req_ready_combined[cb][1];
+  //   // Connect upstream ready (gnt_o) to L0
+  //   assign l0_mem_req_read_ready  [cb] = l0_mem_req_ready_combined[cb][0];
+  //   // assign l0_mem_req_write_ready [cb] = l0_mem_req_ready_combined[cb][1];
+  //   assign l0_mem_req_write_ready [cb] = l0_mem_req_ready_combined[cb][1] & (l0_mem_req_write_valid[cb] & l0_mem_req_write_data_valid[cb]);
+  //   assign l0_mem_req_write_data_ready[cb] = l0_mem_req_ready_combined[cb][1];
 
-    // translate hpd requests to tcdm requests for xbar
-    assign l0_l1_req_tcdm[cb].q.addr  = l0_l1_req[cb].mem_req_addr;
-    assign l0_l1_req_tcdm[cb].q.write = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
-    assign l0_l1_req_tcdm[cb].q.amo   = AMONone;                      // AMO handled by HPDcache, should not pass to L2
-    // assign l0_l1_req_tcdm[cb].q.strb  = 32'hFFFF;
-    // assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_be : 64'hFFFFFFFFFFFFFFFF;                    // TODO: remove hardcoding
-    // assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_be : 32'hFFFFFFFF;
-    // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
-    // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_data : '0;
-    // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_data : '0;
-    assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data[cb].mem_req_w_be;
-    assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data[cb].mem_req_w_data;
+  //   // translate hpd requests to tcdm requests for xbar
+  //   assign l0_l1_req_tcdm[cb].q.addr  = l0_l1_req[cb].mem_req_addr;
+  //   assign l0_l1_req_tcdm[cb].q.write = (l0_l1_req[cb].mem_req_command == HPDCACHE_MEM_WRITE);
+  //   assign l0_l1_req_tcdm[cb].q.amo   = AMONone;                      // AMO handled by HPDcache, should not pass to L2
+  //   // assign l0_l1_req_tcdm[cb].q.strb  = 32'hFFFF;
+  //   // assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_be : 64'hFFFFFFFFFFFFFFFF;                    // TODO: remove hardcoding
+  //   // assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_be : 32'hFFFFFFFF;
+  //   // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb] : '0;
+  //   // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_data : '0;
+  //   // assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_valid[cb] ? l0_mem_req_write_data[cb].mem_req_w_data : '0;
+  //   assign l0_l1_req_tcdm[cb].q.strb  = l0_mem_req_write_data[cb].mem_req_w_be;
+  //   assign l0_l1_req_tcdm[cb].q.data  = l0_mem_req_write_data[cb].mem_req_w_data;
 
-    // DANGEROUS LEGACY CODE, DO NOT UNCOMMENT
-    // Mask data with BE to remove invalid bytes, prevent X being written into the mem
-    // for (genvar i = 0; i < L1LineWidth/8; i++) begin
-    //   assign l0_l1_req_tcdm[cb].q.data[i*8 +: 8] = l0_mem_req_write_data[cb].mem_req_w_data[i*8 +: 8] & {8{l0_l1_req_tcdm[cb].q.strb[i]}};
-    // end
+  //   // DANGEROUS LEGACY CODE, DO NOT UNCOMMENT
+  //   // Mask data with BE to remove invalid bytes, prevent X being written into the mem
+  //   // for (genvar i = 0; i < L1LineWidth/8; i++) begin
+  //   //   assign l0_l1_req_tcdm[cb].q.data[i*8 +: 8] = l0_mem_req_write_data[cb].mem_req_w_data[i*8 +: 8] & {8{l0_l1_req_tcdm[cb].q.strb[i]}};
+  //   // end
 
-    assign l0_l1_req_tcdm[cb].q.user  = l0_l1_req_meta_int[cb];
-    assign l0_l1_req_tcdm[cb].q_valid = l0_l1_req_valid[cb];
+  //   assign l0_l1_req_tcdm[cb].q.user  = l0_l1_req_meta_int[cb];
+  //   assign l0_l1_req_tcdm[cb].q_valid = l0_l1_req_valid[cb];
+  // end
+
+  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: l1_l2_req_unique
+    logic [$clog2(NumL1CacheCtrl)-1:0]  c_id;
+    always_comb begin
+      case (cb)
+        0: c_id = 2'b00;
+        1: c_id = 2'b01;
+        2: c_id = 2'b10;
+        3: c_id = 2'b11;
+        default: c_id = '0;
+      endcase
+    end
+
+    assign l0_l1_req_tcdm_unique[cb].q.addr   = l0_l1_req_tcdm[cb].q.addr;
+    assign l0_l1_req_tcdm_unique[cb].q.write  = l0_l1_req_tcdm[cb].q.write;
+    assign l0_l1_req_tcdm_unique[cb].q.amo    = l0_l1_req_tcdm[cb].q.amo;
+    assign l0_l1_req_tcdm_unique[cb].q.strb   = l0_l1_req_tcdm[cb].q.strb;
+    assign l0_l1_req_tcdm_unique[cb].q.data   = l0_l1_req_tcdm[cb].q.data;
+
+    assign l0_l1_req_tcdm_unique[cb].q_valid = l0_l1_req_tcdm[cb].q_valid;
+
+    assign l0_l1_req_tcdm_unique[cb].q.user.is_amo          = l0_l1_req_tcdm[cb].q.user.is_amo;
+    assign l0_l1_req_tcdm_unique[cb].q.user.is_fpu          = l0_l1_req_tcdm[cb].q.user.is_fpu;
+    assign l0_l1_req_tcdm_unique[cb].q.user.data_exclusive  = l0_l1_req_tcdm[cb].q.user.data_exclusive;
+    assign l0_l1_req_tcdm_unique[cb].q.user.lost_bits       = l0_l1_req_tcdm[cb].q.user.lost_bits;
+
+    assign l0_l1_req_tcdm_unique[cb].q.user.core_id = c_id; // manually tag core_id
+    assign l0_l1_req_tcdm_unique[cb].q.user.req_id  = l0_l1_req_tcdm[cb].q.user.req_id + c_id;
   end
 
   /* Upstream traffic from L2 to L1 */
-  // Logic to identify R/W response from L1 in order to interface to the AXI-llike interface of HPDcache
-  for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: l1_l0_rsp_connect
-    always_comb begin
-      l0_mem_resp_read[cb].data_exclusive = l1_l0_rsp_tcdm[cb].p.user.data_exclusive;
-      // l0_mem_resp_read[cb].lost_bits = '0; // don't care
+  // Logic to identify R/W response from L1 in order to interface to the AXI-like interface of HPDcache
+  // for (genvar cb = 0; cb < NumL0CacheCtrl; cb++) begin: l1_l0_rsp_connect
+  //   always_comb begin
+  //     l0_mem_resp_read[cb].data_exclusive = l1_l0_rsp_tcdm[cb].p.user.data_exclusive;
+  //     // l0_mem_resp_read[cb].lost_bits = '0; // don't care
 
-      if (l1_l0_rsp_tcdm[cb].p.write) begin  // write response should go to write channel of HPDcache
-        // handshake
-        // l0_mem_resp_write_valid[cb] = cache_rsp_valid[cb];
-        // cache_rsp_ready[cb] = l0_mem_resp_write_ready[cb];
-        l0_mem_resp_write_valid[cb] = l1_l0_rsp_tcdm[cb].p_valid;
-        // l1_l0_tcdm_xbar_rsp[cb].q_ready = l0_mem_resp_write_ready[cb];
-        // l1_l0_rsp_tcdm[cb].q_ready = l0_mem_resp_write_ready[cb];
-        l1_l0_rsp_tcdm_ready[cb] = l0_mem_resp_write_ready[cb];
+  //     if (l1_l0_rsp_tcdm[cb].p.write) begin  // write response should go to write channel of HPDcache
+  //       // handshake
+  //       // l0_mem_resp_write_valid[cb] = cache_rsp_valid[cb];
+  //       // cache_rsp_ready[cb] = l0_mem_resp_write_ready[cb];
+  //       l0_mem_resp_write_valid[cb] = l1_l0_rsp_tcdm[cb].p_valid;
+  //       // l1_l0_tcdm_xbar_rsp[cb].q_ready = l0_mem_resp_write_ready[cb];
+  //       // l1_l0_rsp_tcdm[cb].q_ready = l0_mem_resp_write_ready[cb];
+  //       l1_l0_rsp_tcdm_ready[cb] = l0_mem_resp_write_ready[cb];
 
-        // write response payload
-        // l0_mem_resp_write[cb].mem_resp_w_is_atomic = cache_rsp_meta[cb].is_amo;
-        l0_mem_resp_write[cb].mem_resp_w_is_atomic = l1_l0_rsp_tcdm[cb].p.user.is_amo;
-        l0_mem_resp_write[cb].mem_resp_w_error = HPDCACHE_MEM_RESP_OK; // grounded for now
-        // l0_mem_resp_write[cb].mem_resp_w_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
-        // l0_mem_resp_write[cb].mem_resp_w_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
-        //                                        l1_l0_rsp_tcdm[cb].p.user.core_id,
-        //                                        l1_l0_rsp_tcdm[cb].p.write,
-        //                                        l1_l0_rsp_tcdm[cb].p.user.req_id};
-        l0_mem_resp_write[cb].mem_resp_w_id = l1_l0_rsp_tcdm[cb].p.user.req_id - cb; // reconstruct the original req_id
-        // core_resp_data_o from L1 unused on write response as no data is expected
+  //       // write response payload
+  //       // l0_mem_resp_write[cb].mem_resp_w_is_atomic = cache_rsp_meta[cb].is_amo;
+  //       l0_mem_resp_write[cb].mem_resp_w_is_atomic = l1_l0_rsp_tcdm[cb].p.user.is_amo;
+  //       l0_mem_resp_write[cb].mem_resp_w_error = HPDCACHE_MEM_RESP_OK; // grounded for now
+  //       // l0_mem_resp_write[cb].mem_resp_w_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
+  //       // l0_mem_resp_write[cb].mem_resp_w_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
+  //       //                                        l1_l0_rsp_tcdm[cb].p.user.core_id,
+  //       //                                        l1_l0_rsp_tcdm[cb].p.write,
+  //       //                                        l1_l0_rsp_tcdm[cb].p.user.req_id};
+  //       l0_mem_resp_write[cb].mem_resp_w_id = l1_l0_rsp_tcdm[cb].p.user.req_id - cb; // reconstruct the original req_id
+  //       // core_resp_data_o from L1 unused on write response as no data is expected
 
-        // defaults of read response when handling write
-        l0_mem_resp_read_valid[cb] = 1'b0;
-        l0_mem_resp_read[cb].mem_resp_r_error = HPDCACHE_MEM_RESP_OK;
-        l0_mem_resp_read[cb].mem_resp_r_id = '0;
-        l0_mem_resp_read[cb].mem_resp_r_data = '0;
-        l0_mem_resp_read[cb].mem_resp_r_last = 1'b1;
-      end else begin                  // read response should go to read channel of HPDcache
-        // handshake
-        // l0_mem_resp_read_valid[cb] = cache_rsp_valid[cb];
-        // cache_rsp_ready[cb] = l0_mem_resp_read_ready[cb];
-        l0_mem_resp_read_valid[cb] = l1_l0_rsp_tcdm[cb].p_valid;
-        // l1_l0_tcdm_xbar_rsp[cb].q_ready = l0_mem_resp_read_ready[cb];
-        // l1_l0_rsp_tcdm[cb].q_ready = l0_mem_resp_read_ready[cb];
-        l1_l0_rsp_tcdm_ready[cb] = l0_mem_resp_read_ready[cb];
+  //       // defaults of read response when handling write
+  //       l0_mem_resp_read_valid[cb] = 1'b0;
+  //       l0_mem_resp_read[cb].mem_resp_r_error = HPDCACHE_MEM_RESP_OK;
+  //       l0_mem_resp_read[cb].mem_resp_r_id = '0;
+  //       l0_mem_resp_read[cb].mem_resp_r_data = '0;
+  //       l0_mem_resp_read[cb].mem_resp_r_last = 1'b1;
+  //     end else begin                  // read response should go to read channel of HPDcache
+  //       // handshake
+  //       // l0_mem_resp_read_valid[cb] = cache_rsp_valid[cb];
+  //       // cache_rsp_ready[cb] = l0_mem_resp_read_ready[cb];
+  //       l0_mem_resp_read_valid[cb] = l1_l0_rsp_tcdm[cb].p_valid;
+  //       // l1_l0_tcdm_xbar_rsp[cb].q_ready = l0_mem_resp_read_ready[cb];
+  //       // l1_l0_rsp_tcdm[cb].q_ready = l0_mem_resp_read_ready[cb];
+  //       l1_l0_rsp_tcdm_ready[cb] = l0_mem_resp_read_ready[cb];
 
-        // read response payload
-        l0_mem_resp_read[cb].mem_resp_r_error = HPDCACHE_MEM_RESP_OK;    // grounded as there is nowhere for it to go
-        // l0_mem_resp_read[cb].mem_resp_r_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
-        // l0_mem_resp_read[cb].mem_resp_r_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
-        //                                       l1_l0_rsp_tcdm[cb].p.user.core_id,
-        //                                       l1_l0_rsp_tcdm[cb].p.write,
-        //                                       l1_l0_rsp_tcdm[cb].p.user.req_id};
-        l0_mem_resp_read[cb].mem_resp_r_id = l1_l0_rsp_tcdm[cb].p.user.req_id - cb; // reconstruct the original req_id
-        // l0_mem_resp_read[cb].mem_resp_r_data = cache_rsp_data[cb];
-        l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_rsp_tcdm[cb].p.data;
-        l0_mem_resp_read[cb].mem_resp_r_last = 1'b1;
+  //       // read response payload
+  //       l0_mem_resp_read[cb].mem_resp_r_error = HPDCACHE_MEM_RESP_OK;    // grounded as there is nowhere for it to go
+  //       // l0_mem_resp_read[cb].mem_resp_r_id = {cache_rsp_meta[cb].is_fpu, cache_rsp_meta[cb].core_id, cache_rsp_write[cb], cache_rsp_meta[cb].req_id}; // doesn't sound right
+  //       // l0_mem_resp_read[cb].mem_resp_r_id = {l1_l0_rsp_tcdm[cb].p.user.is_fpu,
+  //       //                                       l1_l0_rsp_tcdm[cb].p.user.core_id,
+  //       //                                       l1_l0_rsp_tcdm[cb].p.write,
+  //       //                                       l1_l0_rsp_tcdm[cb].p.user.req_id};
+  //       l0_mem_resp_read[cb].mem_resp_r_id = l1_l0_rsp_tcdm[cb].p.user.req_id - cb; // reconstruct the original req_id
+  //       // l0_mem_resp_read[cb].mem_resp_r_data = cache_rsp_data[cb];
+  //       l0_mem_resp_read[cb].mem_resp_r_data = l1_l0_rsp_tcdm[cb].p.data;
+  //       l0_mem_resp_read[cb].mem_resp_r_last = 1'b1;
 
-        // defaults of write response when handling read
-        l0_mem_resp_write_valid[cb] = 1'b0;
-        l0_mem_resp_write[cb].mem_resp_w_is_atomic = 1'b0;
-        l0_mem_resp_write[cb].mem_resp_w_error = HPDCACHE_MEM_RESP_OK;
-        l0_mem_resp_write[cb].mem_resp_w_id = '0;
-      end
-    end
-  end
+  //       // defaults of write response when handling read
+  //       l0_mem_resp_write_valid[cb] = 1'b0;
+  //       l0_mem_resp_write[cb].mem_resp_w_is_atomic = 1'b0;
+  //       l0_mem_resp_write[cb].mem_resp_w_error = HPDCACHE_MEM_RESP_OK;
+  //       l0_mem_resp_write[cb].mem_resp_w_id = '0;
+  //     end
+  //   end
+  // end
 
   // TCDM interconnect between L0 and L1
   tcdm_cache_interco #(
@@ -1731,7 +1760,8 @@ module cachepool_tile
     .clk_i            (clk_i),
     .rst_ni           (rst_ni),
     .dynamic_offset_i (dynamic_offset),
-    .core_req_i       (l0_l1_req_tcdm),
+    // .core_req_i       (l0_l1_req_tcdm),
+    .core_req_i       (l0_l1_req_tcdm_unique),
     .core_rsp_ready_i (l1_l0_rsp_tcdm_ready),
     .core_rsp_o       (l1_l0_rsp_tcdm),
     .mem_req_o        (l0_l1_tcdm_xbar_req),
@@ -1867,11 +1897,11 @@ module cachepool_tile
     // assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_tcdm[cb].req_id;
     // assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_tcdm[cb].is_inv_ack_cnt;
     // assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_tcdm[cb].inv_ack_cnt;
-    assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
-    assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
-    assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_xbar[cb].req_id;
-    assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_xbar[cb].is_inv_ack_cnt;
-    assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_xbar[cb].inv_ack_cnt;
+    // assign l1_l0_coherence_rsp_hpd[cb].addr_tag       = l1_l0_coherence_rsp_xbar[cb].addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+    // assign l1_l0_coherence_rsp_hpd[cb].addr_offset    = l1_l0_coherence_rsp_xbar[cb].addr[HPDcacheCfg.reqOffsetWidth-1:0];
+    // assign l1_l0_coherence_rsp_hpd[cb].tid            = l1_l0_coherence_rsp_xbar[cb].req_id;
+    // assign l1_l0_coherence_rsp_hpd[cb].is_inv_ack_cnt = l1_l0_coherence_rsp_xbar[cb].is_inv_ack_cnt;
+    // assign l1_l0_coherence_rsp_hpd[cb].inv_ack_cnt    = l1_l0_coherence_rsp_xbar[cb].inv_ack_cnt;
 
     assign l0_l1_coherence_evict_tcdm[cb].addr        = l0_l1_coherence_evict[cb].addr;
     assign l0_l1_coherence_evict_tcdm[cb].valid       = l0_l1_coherence_evict[cb].valid;
@@ -2256,7 +2286,13 @@ module cachepool_tile
     // end
 
     cachepool_l1_ctrl  #(
+      .CachePoolReqIdWidth  (ReqIdWidth),
+      .TCDMAddrWidth        (TCDMAddrWidth),
+
       .tcdm_addr_t          (addr_t),
+      .coherence_rsp_t      (coherence_rsp_t),
+      .l2_cache_req_t       (tcdm_req_cacheline_t),
+      .l2_cache_rsp_t       (tcdm_rsp_cacheline_t),
       
       .HPDcacheCfg          (HPDcacheCfg),
       .wbuf_timecnt_t       (hpdcache_wbuf_timecnt_t),
@@ -2319,7 +2355,8 @@ module cachepool_tile
       .fwd_tx_o                           (l0_l1_fwd[i]),
       .fwd_tx_valid_o                     (l0_l1_fwd_valid[i]),
       .fwd_tx_ready_i                     (l0_l1_fwd_ready[i]),
-      .coherence_rsp_i                    (l1_l0_coherence_rsp_hpd[i]),
+      // .coherence_rsp_i                    (l1_l0_coherence_rsp_hpd[i]),
+      .coherence_rsp_i                    (l1_l0_coherence_rsp_xbar[i]),
       .coherence_rsp_valid_i              (l1_l0_coherence_rsp_xbar_valid[i]),
       .coherence_rsp_ready_o              (l1_l0_coherence_rsp_xbar_ready[i]),
       .coherence_evict_o                  (l0_l1_coherence_evict[i]),
@@ -2328,22 +2365,29 @@ module cachepool_tile
       // .coherence_req_o                    (/*  */),
       // .coherence_req_valid_o              (/*  */),
 
-      .mem_req_read_ready_i               (l0_mem_req_read_ready[i]),
-      .mem_req_read_valid_o               (l0_mem_req_read_valid[i]),
-      .mem_req_read_o                     (l0_mem_req_read[i]),
-      .mem_resp_read_ready_o              (l0_mem_resp_read_ready[i]),
-      .mem_resp_read_valid_i              (l0_mem_resp_read_valid[i]),
-      .mem_resp_read_i                    (l0_mem_resp_read[i]),
+      // .mem_req_read_ready_i               (l0_mem_req_read_ready[i]),
+      // .mem_req_read_valid_o               (l0_mem_req_read_valid[i]),
+      // .mem_req_read_o                     (l0_mem_req_read[i]),
+      // .mem_resp_read_ready_o              (l0_mem_resp_read_ready[i]),
+      // .mem_resp_read_valid_i              (l0_mem_resp_read_valid[i]),
+      // .mem_resp_read_i                    (l0_mem_resp_read[i]),
 
-      .mem_req_write_ready_i              (l0_mem_req_write_ready[i]),
-      .mem_req_write_valid_o              (l0_mem_req_write_valid[i]),
-      .mem_req_write_o                    (l0_mem_req_write[i]),
-      .mem_req_write_data_ready_i         (l0_mem_req_write_data_ready[i]),
-      .mem_req_write_data_valid_o         (l0_mem_req_write_data_valid[i]),
-      .mem_req_write_data_o               (l0_mem_req_write_data[i]),
-      .mem_resp_write_ready_o             (l0_mem_resp_write_ready[i]),
-      .mem_resp_write_valid_i             (l0_mem_resp_write_valid[i]),
-      .mem_resp_write_i                   (l0_mem_resp_write[i]),
+      // .mem_req_write_ready_i              (l0_mem_req_write_ready[i]),
+      // .mem_req_write_valid_o              (l0_mem_req_write_valid[i]),
+      // .mem_req_write_o                    (l0_mem_req_write[i]),
+      // .mem_req_write_data_ready_i         (l0_mem_req_write_data_ready[i]),
+      // .mem_req_write_data_valid_o         (l0_mem_req_write_data_valid[i]),
+      // .mem_req_write_data_o               (l0_mem_req_write_data[i]),
+      // .mem_resp_write_ready_o             (l0_mem_resp_write_ready[i]),
+      // .mem_resp_write_valid_i             (l0_mem_resp_write_valid[i]),
+      // .mem_resp_write_i                   (l0_mem_resp_write[i]),
+
+      .l2_req_o                            (l0_l1_req_tcdm[i]),
+      .l2_rsp_i                            (l1_l0_rsp_tcdm[i]),
+      // .l2_rsp_valid_i                      (l1_l0_rsp_valid_tcdm[i]),
+      .l2_rsp_ready_o                      (l1_l0_rsp_tcdm_ready[i]),
+
+      .dynamic_offset_i                   (dynamic_offset),
 
       .evt_cache_write_miss_o             (),
       .evt_cache_read_miss_o              (),

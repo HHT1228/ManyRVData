@@ -3,8 +3,15 @@
 module cachepool_l1_ctrl
   import cachepool_pkg::*; 
   import hpdcache_pkg::*;
+  import reqrsp_pkg::*;
   #(
+  parameter int unsigned CachePoolReqIdWidth = 8,
+  parameter int unsigned TCDMAddrWidth = 32,
+
   parameter type tcdm_addr_t = logic,
+  parameter type coherence_rsp_t = logic,
+  parameter type l2_cache_req_t = logic,
+  parameter type l2_cache_rsp_t = logic,
 
   parameter hpdcache_cfg_t HPDcacheCfg = '0,
 
@@ -74,39 +81,47 @@ module cachepool_l1_ctrl
   output  logic                         fwd_tx_valid_o,
   input   logic                         fwd_tx_ready_i,
   
-  input   hpdcache_coherence_rsp_t      coherence_rsp_i,
+  // input   hpdcache_coherence_rsp_t      coherence_rsp_i,
+  input   coherence_rsp_t               coherence_rsp_i,
   input   logic                         coherence_rsp_valid_i,
   output  logic                         coherence_rsp_ready_o,
   // output  hpdcache_coherence_req_t      coherence_req_o,
   // output  logic                         coherence_req_valid_o,
-  output  coherence_evict_t    coherence_evict_o,
+  output  coherence_evict_t             coherence_evict_o,
   input   logic                         coherence_evict_ready_i,
 
   //      Read / Invalidation memory interface
-  input  logic                          mem_req_read_ready_i,
-  output logic                          mem_req_read_valid_o,
-  output hpdcache_mem_req_t             mem_req_read_o,
+  // input  logic                          mem_req_read_ready_i,
+  // output logic                          mem_req_read_valid_o,
+  // output hpdcache_mem_req_t             mem_req_read_o,
 
-  output logic                          mem_resp_read_ready_o,
-  input  logic                          mem_resp_read_valid_i,
-  input  hpdcache_mem_resp_r_t          mem_resp_read_i,
-`ifdef HPDCACHE_OPENPITON
-  input  logic                          mem_resp_read_inval_i,
-  input  hpdcache_nline_t               mem_resp_read_inval_nline_i,
-`endif
+//   output logic                          mem_resp_read_ready_o,
+//   input  logic                          mem_resp_read_valid_i,
+//   input  hpdcache_mem_resp_r_t          mem_resp_read_i,
+// `ifdef HPDCACHE_OPENPITON
+//   input  logic                          mem_resp_read_inval_i,
+//   input  hpdcache_nline_t               mem_resp_read_inval_nline_i,
+// `endif
 
   //      Write memory interface
-  input  logic                          mem_req_write_ready_i,
-  output logic                          mem_req_write_valid_o,
-  output hpdcache_mem_req_t             mem_req_write_o,
+  // input  logic                          mem_req_write_ready_i,
+  // output logic                          mem_req_write_valid_o,
+  // output hpdcache_mem_req_t             mem_req_write_o,
 
-  input  logic                          mem_req_write_data_ready_i,
-  output logic                          mem_req_write_data_valid_o,
-  output hpdcache_mem_req_w_t           mem_req_write_data_o,
+  // input  logic                          mem_req_write_data_ready_i,
+  // output logic                          mem_req_write_data_valid_o,
+  // output hpdcache_mem_req_w_t           mem_req_write_data_o,
 
-  output logic                          mem_resp_write_ready_o,
-  input  logic                          mem_resp_write_valid_i,
-  input  hpdcache_mem_resp_w_t          mem_resp_write_i,
+  // output logic                          mem_resp_write_ready_o,
+  // input  logic                          mem_resp_write_valid_i,
+  // input  hpdcache_mem_resp_w_t          mem_resp_write_i,
+
+  output l2_cache_req_t                 l2_req_o,
+  input  l2_cache_rsp_t                 l2_rsp_i,
+  // input  logic                          l2_rsp_valid_i,
+  output logic                          l2_rsp_ready_o,
+
+  input logic [$clog2(TCDMAddrWidth)-1:0] dynamic_offset_i,
 
   //      Performance events
   output logic                          evt_cache_write_miss_o,
@@ -146,6 +161,11 @@ module cachepool_l1_ctrl
   ///////////////////
   // LOCAL SIGNALS //
   ///////////////////
+  hpdcache_mem_resp_w_t l1_mem_resp_write;
+  logic                 l1_mem_resp_write_valid, l1_mem_resp_write_ready;
+  hpdcache_mem_resp_r_t l1_mem_resp_read;
+  logic                 l1_mem_resp_read_valid, l1_mem_resp_read_ready;
+
   // Coalesced requests
   // logic hpd_l1_cache_req_valid_coal [HPDCACHE_NREQUESTERS];
   // logic hpd_l1_cache_req_ready_coal [HPDCACHE_NREQUESTERS];
@@ -171,6 +191,107 @@ module cachepool_l1_ctrl
   hpdcache_req_t  l1_cache_req_coal_buf;
   logic           l1_cache_req_coal_valid_buf;
   logic           l1_cache_req_coal_ready_buf;
+
+  hpdcache_coherence_rsp_t l1_coherence_rsp;
+
+  hpdcache_mem_req_t    l1_mem_req_read, l1_mem_req_write, l1_l2_req;
+  hpdcache_mem_req_w_t  l1_mem_req_write_data;
+  logic                 l1_mem_req_read_valid, l1_mem_req_read_ready;
+  logic                 l1_mem_req_write_valid, l1_mem_req_write_data_valid, l1_mem_req_write_both_valid;
+  logic                 l1_mem_req_write_ready, l1_mem_req_write_data_ready, __l1_mem_req_write_ready;
+  logic                 l1_l2_req_valid, l1_l2_req_ready;
+  tcdm_user_t           l1_l2_req_meta;
+
+  ////////////////////////
+  // L1 Rsp translation //
+  ////////////////////////
+
+  always_comb begin : rsp_translation
+    l1_mem_resp_read_valid  = 1'b0;
+    l1_mem_resp_write_valid = 1'b0;
+    l1_mem_resp_write       = '0;
+    l1_mem_resp_read        = '0;
+
+    if (l2_rsp_i.p.write) begin
+      l1_mem_resp_write_valid = l2_rsp_i.p_valid;
+      l2_rsp_ready_o          = l1_mem_resp_write_ready;
+
+      l1_mem_resp_write.mem_resp_w_is_atomic  = l2_rsp_i.p.user.is_amo;
+      l1_mem_resp_write.mem_resp_w_error      = HPDCACHE_MEM_RESP_OK; // grounded for now
+      l1_mem_resp_write.mem_resp_w_id         = l2_rsp_i.p.user.req_id - l2_rsp_i.p.user.core_id;
+    end else begin
+      l1_mem_resp_read_valid = l2_rsp_i.p_valid;
+      l2_rsp_ready_o         = l1_mem_resp_read_ready;
+
+      l1_mem_resp_read.data_exclusive = l2_rsp_i.p.user.data_exclusive;
+      l1_mem_resp_read.mem_resp_r_id    = l2_rsp_i.p.user.req_id - l2_rsp_i.p.user.core_id;
+      l1_mem_resp_read.mem_resp_r_error = HPDCACHE_MEM_RESP_OK; // grounded for now
+      l1_mem_resp_read.mem_resp_r_data  = l2_rsp_i.p.data;
+      l1_mem_resp_read.mem_resp_r_last  = 1'b1;
+    end
+  end
+
+  ///////////////////////////
+  // L1-L2 Req translation //
+  ///////////////////////////
+
+  assign l1_mem_req_write_both_valid = l1_mem_req_write_valid && l1_mem_req_write_data_valid;
+
+  rr_arb_tree #(
+    .NumIn     (2),
+    .DataType  (hpdcache_mem_req_t),
+    .AxiVldRdy (1'b1)  // treat req/gnt as valid/ready
+  ) i_l1_l2_req_rr_arb (
+    .clk_i   (clk_i),
+    .rst_ni  (rst_ni),
+    .flush_i (1'b0),
+    .rr_i    (1'b1),
+    .req_i   ({l1_mem_req_read_valid, l1_mem_req_write_both_valid}),  // valid_i
+    .gnt_o   ({l1_mem_req_read_ready, __l1_mem_req_write_ready}),  // ready_o
+    .data_i  ({l1_mem_req_read, l1_mem_req_write} ),
+    .req_o   (l1_l2_req_valid),            // valid_o
+    // .gnt_i   (l2_rsp_i.q_ready),  // TODO: test
+    .gnt_i   (1'b1),
+    .data_o  (l1_l2_req),
+    .idx_o   ()
+  );
+
+  // Request meta
+  assign l1_l2_req_meta.is_amo          = (l1_l2_req.mem_req_command == HPDCACHE_MEM_ATOMIC);
+  assign l1_l2_req_meta.is_fpu          = l1_l2_req.mem_req_id[HPDcacheCfg.u.memIdWidth-1];
+  assign l1_l2_req_meta.data_exclusive  = '0;      // req does not carry this info, groudned
+  assign l1_l2_req_meta.lost_bits       = l1_l2_req.mem_req_addr[dynamic_offset_i+$clog2(NumL0CacheCtrl)-1-:$clog2(NumL0CacheCtrl)];
+
+  // TODO: handle these at tile-level, HPD does not carry core_id
+  // assign l1_l2_req_meta.req_id          = l1_l2_req.mem_req_id[ReqIdWidth-1:0] + cb; // make req_id unique across cores
+  assign l1_l2_req_meta.req_id          = l1_l2_req.mem_req_id[CachePoolReqIdWidth-1:0];
+  // // assign l1_l2_req_meta.core_id = l1_l2_req.mem_req_id[tidWidth-2:ReqIdWidth+1];
+  assign l1_l2_req_meta.core_id         = '0;  // manually tag core_id
+
+  assign l2_req_o.q.addr  = l1_l2_req.mem_req_addr;
+  assign l2_req_o.q.write = (l1_l2_req.mem_req_command == HPDCACHE_MEM_WRITE);
+  assign l2_req_o.q.amo   = AMONone;
+
+  // Data channel
+  assign l2_req_o.q.strb  = l1_mem_req_write_data.mem_req_w_be;
+  assign l2_req_o.q.data  = l1_mem_req_write_data.mem_req_w_data;
+
+  // User and handshake
+  assign l2_req_o.q.user  = l1_l2_req_meta;
+  assign l2_req_o.q_valid = l1_l2_req_valid;
+
+  // Write ready
+  assign l1_mem_req_write_ready = __l1_mem_req_write_ready & (l1_mem_req_write_valid & l1_mem_req_write_data_valid);
+  assign l1_mem_req_write_data_ready = __l1_mem_req_write_ready;
+
+  ///////////////////////////////
+  // Coherence Rsp translation //
+  ///////////////////////////////
+  assign l1_coherence_rsp.addr_tag        = coherence_rsp_i.addr[L0AddrWidth-1:HPDcacheCfg.reqOffsetWidth];
+  assign l1_coherence_rsp.addr_offset     = coherence_rsp_i.addr[HPDcacheCfg.reqOffsetWidth-1:0];
+  assign l1_coherence_rsp.tid             = coherence_rsp_i.req_id;
+  assign l1_coherence_rsp.is_inv_ack_cnt  = coherence_rsp_i.is_inv_ack_cnt;
+  assign l1_coherence_rsp.inv_ack_cnt     = coherence_rsp_i.inv_ack_cnt;
 
   ///////////////////////
   // Coherence INV CMO //
@@ -318,29 +439,45 @@ module cachepool_l1_ctrl
     .fwd_tx_valid_o                     (fwd_tx_valid_o),
     .fwd_tx_ready_i                     (fwd_tx_ready_i),
 
-    .coherence_rsp_i                    (coherence_rsp_i),
+    // .coherence_rsp_i                    (coherence_rsp_i),
+    .coherence_rsp_i                    (l1_coherence_rsp),
     .coherence_rsp_valid_i              (coherence_rsp_valid_i),
     .coherence_rsp_ready_o              (coherence_rsp_ready_o),
 
     .coherence_evict_o                  (coherence_evict_o),
     .coherence_evict_ready_i            (coherence_evict_ready_i),
 
-    .mem_req_read_ready_i               (mem_req_read_ready_i),
-    .mem_req_read_valid_o               (mem_req_read_valid_o),
-    .mem_req_read_o                     (mem_req_read_o),
-    .mem_resp_read_ready_o              (mem_resp_read_ready_o),
-    .mem_resp_read_valid_i              (mem_resp_read_valid_i),
-    .mem_resp_read_i                    (mem_resp_read_i),
+    // .mem_req_read_ready_i               (mem_req_read_ready_i),
+    // .mem_req_read_valid_o               (mem_req_read_valid_o),
+    // .mem_req_read_o                     (mem_req_read_o),
+    .mem_req_read_ready_i               (l1_mem_req_read_ready),
+    .mem_req_read_valid_o               (l1_mem_req_read_valid),
+    .mem_req_read_o                     (l1_mem_req_read),
+    // .mem_resp_read_ready_o              (mem_resp_read_ready_o),
+    // .mem_resp_read_valid_i              (mem_resp_read_valid_i),
+    // .mem_resp_read_i                    (mem_resp_read_i),
+    .mem_resp_read_ready_o              (l1_mem_resp_read_ready),
+    .mem_resp_read_valid_i              (l1_mem_resp_read_valid),
+    .mem_resp_read_i                    (l1_mem_resp_read),
 
-    .mem_req_write_ready_i              (mem_req_write_ready_i),
-    .mem_req_write_valid_o              (mem_req_write_valid_o),
-    .mem_req_write_o                    (mem_req_write_o),
-    .mem_req_write_data_ready_i         (mem_req_write_data_ready_i),
-    .mem_req_write_data_valid_o         (mem_req_write_data_valid_o),
-    .mem_req_write_data_o               (mem_req_write_data_o),
-    .mem_resp_write_ready_o             (mem_resp_write_ready_o),
-    .mem_resp_write_valid_i             (mem_resp_write_valid_i),
-    .mem_resp_write_i                   (mem_resp_write_i),
+    // .mem_req_write_ready_i              (mem_req_write_ready_i),
+    // .mem_req_write_valid_o              (mem_req_write_valid_o),
+    // .mem_req_write_o                    (mem_req_write_o),
+    .mem_req_write_ready_i              (l1_mem_req_write_ready),
+    .mem_req_write_valid_o              (l1_mem_req_write_valid),
+    .mem_req_write_o                    (l1_mem_req_write),
+    // .mem_req_write_data_ready_i         (mem_req_write_data_ready_i),
+    // .mem_req_write_data_valid_o         (mem_req_write_data_valid_o),
+    // .mem_req_write_data_o               (mem_req_write_data_o),
+    .mem_req_write_data_ready_i         (l1_mem_req_write_data_ready),
+    .mem_req_write_data_valid_o         (l1_mem_req_write_data_valid),
+    .mem_req_write_data_o               (l1_mem_req_write_data),
+    // .mem_resp_write_ready_o             (mem_resp_write_ready_o),
+    // .mem_resp_write_valid_i             (mem_resp_write_valid_i),
+    // .mem_resp_write_i                   (mem_resp_write_i),
+    .mem_resp_write_ready_o             (l1_mem_resp_write_ready),
+    .mem_resp_write_valid_i             (l1_mem_resp_write_valid),
+    .mem_resp_write_i                   (l1_mem_resp_write),
 
     .evt_cache_write_miss_o             (),
     .evt_cache_read_miss_o              (),
